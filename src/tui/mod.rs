@@ -1,0 +1,1200 @@
+//! Terminal user interface for Omni.
+
+mod app;
+mod components;
+mod message;
+mod state;
+
+use std::fmt::Write as _;
+use std::io;
+use std::time::Duration;
+
+use crossterm::{
+    event::{
+        self, Event, KeyCode, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    },
+    execute,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+};
+use ratatui::{
+    Terminal,
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout, Position, Rect},
+    style::{Color, Style},
+    widgets::{Block, Borders, Paragraph, Wrap},
+};
+use tokio::sync::mpsc;
+
+use crate::core::agent::{
+    AskUserResponse, InterfaceMessage, PermissionAction, PermissionActor, PermissionClient,
+    PermissionContext, PermissionMessage, PermissionResponse,
+};
+
+pub use app::App;
+use app::{ActiveAskUserDialog, ActiveDialog, ActivePermissionDialog, ChatMessage};
+use components::{
+    MESSAGE_PADDING_X, calculate_content_height, filter_commands, render_command_dropdown,
+    render_session, render_session_list, render_welcome, should_show_dropdown,
+};
+use message::DisplayMessage;
+use state::ViewState;
+
+/// Run the TUI application.
+///
+/// # Errors
+///
+/// Returns an error if terminal initialization fails or the event loop encounters an error.
+pub async fn run() -> anyhow::Result<()> {
+    // Set up terminal.
+    // Note: Mouse capture is disabled to allow native terminal copy/paste.
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
+
+    // Enable enhanced keyboard support for terminals like Kitty.
+    // DISAMBIGUATE_ESCAPE_CODES allows Shift+Enter detection without breaking shifted chars.
+    let supports_keyboard_enhancement =
+        crossterm::terminal::supports_keyboard_enhancement().unwrap_or(false);
+    if supports_keyboard_enhancement {
+        execute!(
+            stdout,
+            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+        )?;
+    }
+
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    // Set up permission system.
+    let (permission_actor, permission_tx) = PermissionActor::new();
+    let (interface_tx, interface_rx) = mpsc::unbounded_channel();
+    let (perm_response_tx, mut perm_response_rx) = mpsc::unbounded_channel::<(
+        uuid::Uuid,
+        String,
+        String,
+        PermissionAction,
+        PermissionResponse,
+    )>();
+    let (ask_response_tx, mut ask_response_rx) =
+        mpsc::unbounded_channel::<(uuid::Uuid, AskUserResponse)>();
+
+    // Register interface with permission actor.
+    permission_tx
+        .send(PermissionMessage::RegisterInterface { interface_tx })
+        .ok();
+
+    // Spawn permission actor with response handling.
+    tokio::spawn(async move {
+        let mut actor = permission_actor;
+
+        loop {
+            tokio::select! {
+                // Process actor inbox.
+                msg = actor.inbox.recv() => {
+                    match msg {
+                        Some(m) => actor.handle_message(m),
+                        None => break,
+                    }
+                }
+
+                // Process permission responses from TUI.
+                Some((request_id, session_id, tool_name, action, response)) = perm_response_rx.recv() => {
+                    actor.respond(request_id, response, &session_id, &tool_name, &action);
+                }
+
+                // Process ask_user responses from TUI.
+                Some((request_id, response)) = ask_response_rx.recv() => {
+                    actor.respond_ask_user(request_id, response);
+                }
+            }
+        }
+    });
+
+    // Create app state with permission channels.
+    let mut app = App::new();
+    app.interface_rx = Some(interface_rx);
+    app.permission_response_tx = Some(perm_response_tx);
+    app.ask_user_response_tx = Some(ask_response_tx);
+
+    // Set up permission client for agent with current permission presets.
+    let presets = app.current_permissions();
+    if let Some(ref mut agent) = app.agent {
+        let client = PermissionClient::with_presets(
+            "tui-session".to_string(),
+            permission_tx.clone(),
+            presets,
+        );
+        agent.set_permission_client(client);
+    }
+
+    // Store permission_tx for new agents.
+    let result = run_app(&mut terminal, &mut app, permission_tx).await;
+
+    // Restore terminal.
+    if supports_keyboard_enhancement {
+        execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags)?;
+    }
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    terminal.show_cursor()?;
+
+    result
+}
+
+#[allow(clippy::too_many_lines)]
+async fn run_app(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    app: &mut App,
+    permission_tx: mpsc::UnboundedSender<PermissionMessage>,
+) -> anyhow::Result<()> {
+    loop {
+        // Clear selected text before render (will be populated if selection is active).
+        app.selected_text.clear();
+
+        // Calculate content height for scroll calculations (account for horizontal padding).
+        let padded_width = app.term_width.saturating_sub(MESSAGE_PADDING_X * 2);
+        let content_height =
+            calculate_content_height(&app.messages, &app.streaming_text, padded_width);
+
+        terminal.draw(|f| {
+            let full_area = f.area();
+
+            // Apply horizontal padding to main content area.
+            let area = Rect::new(
+                full_area.x + 1,
+                full_area.y,
+                full_area.width.saturating_sub(2),
+                full_area.height,
+            );
+
+            // Update dimensions for scroll calculations.
+            app.update_dimensions(area.width, area.height, content_height);
+
+            // Dispatch rendering based on view state.
+            let (cursor_pos, prompt_area) = match app.view_state {
+                ViewState::Welcome => {
+                    // Full-screen welcome with centered logo and prompt.
+                    render_welcome(
+                        f,
+                        area,
+                        app.tagline,
+                        app.tip,
+                        &app.input,
+                        app.cursor,
+                        app.placeholder,
+                        app.agent_mode,
+                        &app.model,
+                    )
+                }
+                ViewState::Session => {
+                    // Session view with messages and bottom prompt.
+                    render_session(
+                        f,
+                        area,
+                        &app.messages,
+                        &app.streaming_text,
+                        &app.input,
+                        app.cursor,
+                        app.message_scroll,
+                        app.loading,
+                        &app.model,
+                        app.agent_mode,
+                        app.selection.as_ref(),
+                        &mut app.selected_text,
+                        app.session_cost,
+                    )
+                }
+            };
+
+            // Set cursor position.
+            f.set_cursor_position(Position::new(cursor_pos.0, cursor_pos.1));
+
+            // Render command dropdown if visible - use the exact prompt area returned
+            if app.show_command_dropdown && should_show_dropdown(&app.input) {
+                render_command_dropdown(f, prompt_area, &app.input, app.command_selection);
+            }
+
+            // Render dialog overlay if active.
+            if let Some(ref mut dialog) = app.active_dialog {
+                match dialog {
+                    ActiveDialog::Permission(d) => render_permission_dialog(f, d),
+                    ActiveDialog::AskUser(d) => render_ask_user_dialog(f, d),
+                    ActiveDialog::SessionList(d) => render_session_list(f, d),
+                }
+            }
+        })?;
+
+        // Poll for events and messages concurrently.
+        tokio::select! {
+            // Check for input events.
+            () = tokio::time::sleep(Duration::from_millis(10)) => {
+                while event::poll(Duration::from_millis(0))? {
+                    if let Event::Key(key) = event::read()? {
+                        if key.kind == KeyEventKind::Press {
+                            if app.has_dialog() {
+                                // Handle dialog input.
+                                if handle_dialog_key(app, key.code, key.modifiers) {
+                                    return Ok(());
+                                }
+                            } else if handle_key(app, key.code, key.modifiers, &permission_tx) {
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Check for chat messages.
+            msg = async {
+                if let Some(ref mut rx) = app.chat_rx {
+                    rx.recv().await
+                } else {
+                    std::future::pending().await
+                }
+            } => {
+                match msg {
+                    Some(ChatMessage::Text(text)) => {
+                        // Accumulate streaming text
+                        app.streaming_text.push_str(&text);
+                        app.output.push_str(&text);
+                    }
+                    Some(ChatMessage::Tool { name, invocation, output, is_error }) => {
+                        // Finalize any pending streaming text before tool message
+                        app.finalize_streaming();
+                        // Add tool message
+                        app.messages.push(DisplayMessage::tool(&name, &invocation, &output, is_error));
+                    }
+                    Some(ChatMessage::Usage { input_tokens, output_tokens, cost_usd }) => {
+                        // Accumulate session usage
+                        app.session_tokens.0 += input_tokens;
+                        app.session_tokens.1 += output_tokens;
+                        app.session_cost += cost_usd;
+                    }
+                    Some(ChatMessage::Done(agent)) => {
+                        // Finalize streaming text into an assistant message.
+                        app.finalize_streaming();
+
+                        // Save conversation history.
+                        if let Err(e) = agent.save_history() {
+                            tracing::warn!("failed to save history: {e}");
+                        }
+                        app.agent = Some(agent);
+                        app.loading = false;
+                        app.chat_rx = None;
+                    }
+                    Some(ChatMessage::Error(e, agent)) => {
+                        // Finalize any partial streaming text.
+                        app.finalize_streaming();
+
+                        // Add error message.
+                        app.messages.push(DisplayMessage::tool_error("Error", &e));
+
+                        app.agent = Some(agent);
+                        let _ = write!(app.output, "\nError: {e}");
+                        app.loading = false;
+                        app.chat_rx = None;
+                    }
+                    None => {
+                        app.finalize_streaming();
+                        app.loading = false;
+                        app.chat_rx = None;
+                    }
+                }
+            }
+
+            // Check for interface messages (permission dialogs).
+            msg = async {
+                if let Some(ref mut rx) = app.interface_rx {
+                    rx.recv().await
+                } else {
+                    std::future::pending().await
+                }
+            } => {
+                if let Some(msg) = msg {
+                    match msg {
+                        InterfaceMessage::ShowPermissionDialog { request_id, tool_name, action, context } => {
+                            app.show_permission_dialog(request_id, tool_name, action, context);
+                        }
+                        InterfaceMessage::ShowAskUserDialog { request_id, question, options } => {
+                            app.show_ask_user_dialog(request_id, question, options);
+                        }
+                        InterfaceMessage::HideDialog => {
+                            app.hide_dialog();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Handle a key press. Returns true if the app should exit.
+#[allow(clippy::too_many_lines)]
+fn handle_key(
+    app: &mut App,
+    code: KeyCode,
+    modifiers: KeyModifiers,
+    permission_tx: &mpsc::UnboundedSender<PermissionMessage>,
+) -> bool {
+    // Handle Shift+Enter or Alt+Enter for newline insertion.
+    if (modifiers.contains(KeyModifiers::SHIFT) || modifiers.contains(KeyModifiers::ALT))
+        && code == KeyCode::Enter
+    {
+        if !app.loading {
+            app.insert_char('\n');
+        }
+        return false;
+    }
+
+    // Handle Ctrl combinations.
+    if modifiers.contains(KeyModifiers::CONTROL) {
+        match code {
+            KeyCode::Char('c') => {
+                if app.loading {
+                    // Cancel streaming.
+                    app.chat_rx = None;
+                    app.finalize_streaming();
+                    app.loading = false;
+                } else if app.input.is_empty() {
+                    return true; // Exit.
+                } else {
+                    app.clear_input();
+                    app.show_command_dropdown = false;
+                }
+            }
+            KeyCode::Char('a') => app.cursor = 0,
+            KeyCode::Char('e') => app.cursor = app.input.len(),
+            KeyCode::Char('u') => {
+                app.delete_to_start();
+                app.show_command_dropdown = should_show_dropdown(&app.input);
+                app.command_selection = 0;
+            }
+            KeyCode::Char('k') => {
+                app.delete_to_end();
+                app.show_command_dropdown = should_show_dropdown(&app.input);
+                app.command_selection = 0;
+            }
+            KeyCode::Char('w') => {
+                app.delete_word();
+                app.show_command_dropdown = should_show_dropdown(&app.input);
+                app.command_selection = 0;
+            }
+            KeyCode::Char('l') => {
+                // Clear output and conversation history.
+                app.output.clear();
+                app.scroll_offset = 0;
+                app.clear_conversation();
+                app.view_state = ViewState::Welcome;
+                app.show_welcome = true;
+                app.show_command_dropdown = false;
+                if let Some(ref mut agent) = app.agent {
+                    agent.clear();
+                    if let Err(e) = agent.save_history() {
+                        tracing::warn!("failed to save cleared history: {e}");
+                    }
+                }
+                app.output = "Conversation cleared.".to_string();
+            }
+            KeyCode::Char('s') => {
+                // Open session list dialog.
+                app.show_session_list();
+            }
+            _ => {}
+        }
+        return false;
+    }
+
+    // Use stored max scroll values from app state.
+
+    // Handle regular keys.
+    match code {
+        KeyCode::Enter => {
+            if !app.input.is_empty() && !app.loading {
+                // If dropdown is visible, execute selected command.
+                if app.show_command_dropdown {
+                    let filtered = filter_commands(&app.input);
+                    if let Some(cmd) = filtered.get(app.command_selection) {
+                        app.input = cmd.name.to_string();
+                        app.show_command_dropdown = false;
+                    }
+                }
+
+                let trimmed = app.input.trim();
+
+                // Handle exit commands.
+                if trimmed == "/exit" || trimmed == "/quit" || trimmed == "exit" {
+                    return true;
+                }
+
+                // Handle clear command.
+                if trimmed == "/clear" {
+                    app.clear_input();
+                    app.output.clear();
+                    app.scroll_offset = 0;
+                    app.clear_conversation();
+                    app.view_state = ViewState::Welcome;
+                    app.show_welcome = true;
+                    if let Some(ref mut agent) = app.agent {
+                        agent.clear();
+                        if let Err(e) = agent.save_history() {
+                            tracing::warn!("failed to save cleared history: {e}");
+                        }
+                    }
+                    app.output = "Conversation cleared.".to_string();
+                    return false;
+                }
+
+                // Handle model switch command
+                if trimmed == "/model" || trimmed.starts_with("/model ") {
+                    let model_arg = trimmed.strip_prefix("/model").unwrap_or("").trim();
+                    if model_arg.is_empty() {
+                        // Show available models
+                        app.messages.push(DisplayMessage::tool(
+                            "model",
+                            "Available models",
+                            "Anthropic: claude-sonnet-4-20250514, claude-opus-4-20250514, claude-haiku-3-5-20241022\n\
+                             OpenAI: gpt-4o, gpt-4-turbo, gpt-3.5-turbo\n\n\
+                             Usage: /model <name>",
+                            false,
+                        ));
+                        app.enter_session();
+                    } else if let Some(agent) = &mut app.agent {
+                        agent.set_model(model_arg);
+                        app.model = model_arg.to_string();
+                        app.messages.push(DisplayMessage::tool(
+                            "model",
+                            format!("Switched to {model_arg}"),
+                            "",
+                            false,
+                        ));
+                        app.enter_session();
+                    }
+                    app.clear_input();
+                    return false;
+                }
+
+                // Handle mode switch commands
+                if trimmed == "/plan" {
+                    if let Some(agent) = &mut app.agent {
+                        agent.switch_mode(crate::core::agent::AgentMode::Plan, None);
+                        app.sync_agent_mode();
+                        app.input.clear();
+                        app.cursor = 0;
+                    }
+                    return false;
+                }
+                if trimmed == "/build" {
+                    if let Some(agent) = &mut app.agent {
+                        agent.switch_mode(crate::core::agent::AgentMode::Build, None);
+                        app.sync_agent_mode();
+                        app.input.clear();
+                        app.cursor = 0;
+                    }
+                    return false;
+                }
+
+                // Handle sessions command.
+                if trimmed == "/sessions" {
+                    app.clear_input();
+                    app.show_session_list();
+                    return false;
+                }
+
+                start_chat(app, permission_tx.clone());
+            }
+        }
+        KeyCode::Tab => {
+            if !app.loading {
+                // Autocomplete if dropdown visible, otherwise toggle mode.
+                if app.show_command_dropdown {
+                    let filtered = filter_commands(&app.input);
+                    if let Some(cmd) = filtered.get(app.command_selection) {
+                        app.input = cmd.name.to_string();
+                        app.cursor = app.input.len();
+                    }
+                } else if let Some(agent) = &mut app.agent {
+                    let new_mode = match app.agent_mode {
+                        crate::core::agent::AgentMode::Build => crate::core::agent::AgentMode::Plan,
+                        crate::core::agent::AgentMode::Plan => crate::core::agent::AgentMode::Build,
+                    };
+                    agent.switch_mode(new_mode, None);
+                    app.sync_agent_mode();
+                }
+            }
+        }
+        KeyCode::Char(c) => {
+            if !app.loading {
+                app.insert_char(c);
+                // Update dropdown visibility.
+                app.show_command_dropdown = should_show_dropdown(&app.input);
+                if app.show_command_dropdown {
+                    app.command_selection = 0;
+                }
+            }
+        }
+        KeyCode::Backspace => {
+            if !app.loading {
+                app.delete_char();
+                // Update dropdown visibility.
+                app.show_command_dropdown = should_show_dropdown(&app.input);
+                if app.show_command_dropdown {
+                    app.command_selection = 0;
+                }
+            }
+        }
+        KeyCode::Esc => {
+            // Dismiss dropdown and clear input.
+            if app.show_command_dropdown {
+                app.show_command_dropdown = false;
+                app.clear_input();
+            }
+        }
+        KeyCode::Left => app.move_left(),
+        KeyCode::Right => app.move_right(),
+        KeyCode::Home => app.cursor = 0,
+        KeyCode::End => app.cursor = app.input.len(),
+        // Scrolling - use message scroll in session view.
+        KeyCode::PageUp => {
+            if app.view_state == ViewState::Session {
+                app.scroll_messages_up(10);
+            } else {
+                app.scroll_up(10);
+            }
+        }
+        KeyCode::PageDown => {
+            if app.view_state == ViewState::Session {
+                app.scroll_messages_down(10);
+            } else {
+                app.scroll_down(10, 1000); // Welcome screen uses fixed max.
+            }
+        }
+        KeyCode::Up => {
+            if app.show_command_dropdown {
+                // Navigate dropdown selection up.
+                app.command_selection = app.command_selection.saturating_sub(1);
+            } else if app.is_multiline() {
+                app.move_up();
+            } else if app.view_state == ViewState::Session {
+                app.scroll_messages_up(1);
+            } else {
+                app.scroll_up(1);
+            }
+        }
+        KeyCode::Down => {
+            if app.show_command_dropdown {
+                // Navigate dropdown selection down.
+                let filtered = filter_commands(&app.input);
+                let max_idx = filtered.len().saturating_sub(1);
+                app.command_selection = (app.command_selection + 1).min(max_idx);
+            } else if app.is_multiline() {
+                app.move_down();
+            } else if app.view_state == ViewState::Session {
+                app.scroll_messages_down(1);
+            } else {
+                app.scroll_down(1, 1000); // Welcome screen uses fixed max.
+            }
+        }
+        _ => {}
+    }
+
+    false
+}
+
+/// Permission dialog colors.
+const PERMISSION_BORDER: Color = Color::Rgb(245, 167, 66); // Orange/warning
+const PERMISSION_HIGHLIGHT: Color = Color::Rgb(245, 167, 66);
+const PERMISSION_DIM: Color = Color::Rgb(100, 100, 110);
+
+/// Render a centered dialog overlay.
+fn render_dialog(
+    frame: &mut ratatui::Frame,
+    title: &str,
+    content: Vec<ratatui::text::Line>,
+    buttons: &[(&str, bool)],
+    width_percent: u16,
+    height: u16,
+    border_color: Option<Color>,
+) {
+    use ratatui::layout::{Alignment, Rect};
+    use ratatui::text::Line;
+    use ratatui::widgets::Clear;
+
+    let area = frame.area();
+
+    // Calculate dialog size.
+    let dialog_width = area.width * width_percent / 100;
+    let dialog_height = height.min(area.height - 4);
+
+    // Center the dialog.
+    let x = (area.width.saturating_sub(dialog_width)) / 2;
+    let y = (area.height.saturating_sub(dialog_height)) / 2;
+    let dialog_area = Rect::new(x, y, dialog_width, dialog_height);
+
+    // Clear the area behind the dialog.
+    frame.render_widget(Clear, dialog_area);
+
+    // Render dialog box.
+    let color = border_color.unwrap_or(Color::Yellow);
+    let block = Block::default()
+        .title(format!(" {title} "))
+        .title_style(Style::default().fg(color))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(color));
+
+    let inner = block.inner(dialog_area);
+    frame.render_widget(block, dialog_area);
+
+    // Split inner area for content and buttons.
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(3)])
+        .split(inner);
+
+    // Render content.
+    let content_para = Paragraph::new(content).wrap(Wrap { trim: false });
+    frame.render_widget(content_para, chunks[0]);
+
+    // Render buttons.
+    let button_text: Vec<ratatui::text::Span> = buttons
+        .iter()
+        .enumerate()
+        .flat_map(|(i, (label, selected))| {
+            let style = if *selected {
+                Style::default().fg(Color::Black).bg(color)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let mut spans = vec![ratatui::text::Span::styled(format!(" {label} "), style)];
+            if i < buttons.len() - 1 {
+                spans.push(ratatui::text::Span::raw("  "));
+            }
+            spans
+        })
+        .collect();
+
+    let buttons_para = Paragraph::new(Line::from(button_text)).alignment(Alignment::Center);
+    frame.render_widget(buttons_para, chunks[1]);
+}
+
+/// Render permission dialog with improved UX.
+#[allow(clippy::too_many_lines)]
+fn render_permission_dialog(frame: &mut ratatui::Frame, dialog: &ActivePermissionDialog) {
+    use ratatui::text::{Line, Span};
+
+    // Determine icon and title based on operation type.
+    let (icon, title) = match &dialog.context {
+        PermissionContext::Bash { .. } => ("$", "Run Command"),
+        PermissionContext::WriteFile { .. } => ("+", "Create File"),
+        PermissionContext::EditFile { .. } => ("~", "Edit File"),
+        PermissionContext::AskUser { .. } => ("?", "Question"),
+        PermissionContext::WebSearch { .. } => ("⊕", "Web Search"),
+        PermissionContext::CodeSearch { .. } => ("◈", "Code Search"),
+        PermissionContext::Glob { .. } => ("*", "Find Files"),
+        PermissionContext::Grep { .. } => ("⊛", "Search Content"),
+        PermissionContext::ListDir { .. } => ("▤", "List Directory"),
+        PermissionContext::WebFetch { .. } => ("↓", "Fetch URL"),
+    };
+
+    let header_style = Style::default().fg(PERMISSION_HIGHLIGHT);
+    let dim_style = Style::default().fg(PERMISSION_DIM);
+    let code_style = Style::default().fg(Color::White);
+
+    let mut content = vec![
+        Line::from(vec![
+            Span::styled(format!("{icon} "), header_style),
+            Span::styled(title, header_style),
+            Span::styled(format!(" ({})", dialog.tool_name), dim_style),
+        ]),
+        Line::from(""),
+    ];
+
+    match &dialog.context {
+        PermissionContext::Bash {
+            command,
+            working_dir,
+        } => {
+            content.push(Line::from(Span::styled("Command:", dim_style)));
+            // Truncate long commands for display.
+            let display_cmd = if command.len() > 80 {
+                format!("{}...", &command[..77])
+            } else {
+                command.clone()
+            };
+            content.push(Line::from(Span::styled(
+                format!("  {display_cmd}"),
+                code_style,
+            )));
+            content.push(Line::from(""));
+            content.push(Line::from(Span::styled(
+                format!("in {}", working_dir.display()),
+                dim_style,
+            )));
+        }
+        PermissionContext::WriteFile {
+            path,
+            content_preview,
+        } => {
+            content.push(Line::from(Span::styled(
+                format!("{}", path.display()),
+                code_style,
+            )));
+            content.push(Line::from(""));
+            content.push(Line::from(Span::styled("Preview:", dim_style)));
+            for line in content_preview.lines().take(8) {
+                content.push(Line::from(Span::styled(format!("  {line}"), dim_style)));
+            }
+            if content_preview.lines().count() > 8 {
+                content.push(Line::from(Span::styled("  ...", dim_style)));
+            }
+        }
+        PermissionContext::EditFile { path, diff } => {
+            content.push(Line::from(Span::styled(
+                format!("{}", path.display()),
+                code_style,
+            )));
+            content.push(Line::from(""));
+            content.push(Line::from(Span::styled("Changes:", dim_style)));
+            for line in diff.lines().take(12) {
+                // Color diff lines appropriately.
+                let line_style = if line.starts_with('+') && !line.starts_with("+++") {
+                    Style::default().fg(Color::Green)
+                } else if line.starts_with('-') && !line.starts_with("---") {
+                    Style::default().fg(Color::Red)
+                } else if line.starts_with("@@") {
+                    Style::default().fg(Color::Cyan)
+                } else {
+                    dim_style
+                };
+                content.push(Line::from(Span::styled(format!("  {line}"), line_style)));
+            }
+            if diff.lines().count() > 12 {
+                content.push(Line::from(Span::styled("  ...", dim_style)));
+            }
+        }
+        PermissionContext::AskUser { .. } => {}
+        PermissionContext::WebSearch { query } => {
+            content.push(Line::from(Span::styled("Query:", dim_style)));
+            let display_query = if query.len() > 60 {
+                format!("{}...", &query[..57])
+            } else {
+                query.clone()
+            };
+            content.push(Line::from(Span::styled(
+                format!("  {display_query}"),
+                code_style,
+            )));
+        }
+        PermissionContext::CodeSearch { query, tokens } => {
+            content.push(Line::from(Span::styled("Query:", dim_style)));
+            let display_query = if query.len() > 60 {
+                format!("{}...", &query[..57])
+            } else {
+                query.clone()
+            };
+            content.push(Line::from(Span::styled(
+                format!("  {display_query}"),
+                code_style,
+            )));
+            content.push(Line::from(""));
+            content.push(Line::from(Span::styled(
+                format!("Tokens: {tokens}"),
+                dim_style,
+            )));
+        }
+        PermissionContext::Glob { pattern, path } => {
+            content.push(Line::from(Span::styled("Pattern:", dim_style)));
+            content.push(Line::from(Span::styled(format!("  {pattern}"), code_style)));
+            content.push(Line::from(""));
+            content.push(Line::from(Span::styled(
+                format!("in {}", path.display()),
+                dim_style,
+            )));
+        }
+        PermissionContext::Grep { pattern, path } => {
+            content.push(Line::from(Span::styled("Pattern:", dim_style)));
+            content.push(Line::from(Span::styled(format!("  {pattern}"), code_style)));
+            content.push(Line::from(""));
+            content.push(Line::from(Span::styled(
+                format!("in {}", path.display()),
+                dim_style,
+            )));
+        }
+        PermissionContext::ListDir { path } => {
+            content.push(Line::from(Span::styled(
+                format!("{}", path.display()),
+                code_style,
+            )));
+        }
+        PermissionContext::WebFetch { url } => {
+            content.push(Line::from(Span::styled("URL:", dim_style)));
+            let display_url = if url.len() > 60 {
+                format!("{}...", &url[..57])
+            } else {
+                url.clone()
+            };
+            content.push(Line::from(Span::styled(
+                format!("  {display_url}"),
+                code_style,
+            )));
+        }
+    }
+
+    // Add navigation hint
+    content.push(Line::from(""));
+    content.push(Line::from(Span::styled(
+        "←/→ navigate · Enter confirm · Esc deny",
+        dim_style,
+    )));
+
+    // Button labels with keyboard shortcuts
+    let buttons = [
+        ("[a] Allow once", dialog.selected == 0),
+        ("[s] Always", dialog.selected == 1),
+        ("[d] Deny", dialog.selected == 2),
+    ];
+
+    render_dialog(
+        frame,
+        "Permission Required",
+        content,
+        &buttons,
+        70,
+        22,
+        Some(PERMISSION_BORDER),
+    );
+}
+
+/// Render `ask_user` dialog.
+fn render_ask_user_dialog(frame: &mut ratatui::Frame, dialog: &ActiveAskUserDialog) {
+    use ratatui::style::Modifier;
+    use ratatui::text::{Line, Span};
+
+    let area = frame.area();
+    let width_percent: u16 = 70;
+
+    // Split question by newlines to render multi-line questions properly
+    let question_line_count = dialog.question.lines().count().max(1);
+    let mut content: Vec<Line> = dialog
+        .question
+        .lines()
+        .map(|line| Line::from(line.to_string()))
+        .collect();
+    content.push(Line::from(""));
+
+    let buttons: Vec<(&str, bool)> = if let Some(ref options) = dialog.options {
+        // Render options as vertical list in content area.
+        for (i, opt) in options.iter().enumerate() {
+            let is_selected = i == dialog.selected;
+            let prefix = if is_selected { "▸ " } else { "  " };
+            let style = if is_selected {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            content.push(Line::from(Span::styled(format!("{prefix}{opt}"), style)));
+        }
+        content.push(Line::from(""));
+        vec![("[Enter] Select", false), ("[Esc] Cancel", false)]
+    } else {
+        content.push(Line::from(format!("> {}_", dialog.input)));
+        vec![("[Enter] Submit", true), ("[Esc] Cancel", false)]
+    };
+
+    // Calculate height dynamically
+    // Base: 2 (borders) + 3 (button area) + 2 (padding)
+    let base_height: u16 = 7;
+    #[allow(clippy::cast_possible_truncation)]
+    let content_lines = question_line_count as u16
+        + 1 // Empty line after question
+        + dialog.options.as_ref().map_or(1, |opts| opts.len() as u16 + 1);
+    let needed_height = base_height + content_lines;
+    let height = needed_height.clamp(10, area.height.saturating_sub(4));
+
+    render_dialog(
+        frame,
+        "Question",
+        content,
+        &buttons,
+        width_percent,
+        height,
+        None,
+    );
+}
+
+/// Handle key press in dialog. Returns true if app should exit.
+#[allow(clippy::too_many_lines)]
+fn handle_dialog_key(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> bool {
+    let Some(dialog) = app.active_dialog.take() else {
+        return false;
+    };
+
+    match dialog {
+        ActiveDialog::Permission(d) => match code {
+            // Direct shortcuts - work regardless of selection
+            KeyCode::Char('a') => {
+                if let Some(ref tx) = app.permission_response_tx {
+                    let _ = tx.send((
+                        d.request_id,
+                        "tui-session".to_string(),
+                        d.tool_name,
+                        d.action,
+                        PermissionResponse::Allow,
+                    ));
+                }
+            }
+            KeyCode::Char('s') => {
+                if let Some(ref tx) = app.permission_response_tx {
+                    let _ = tx.send((
+                        d.request_id,
+                        "tui-session".to_string(),
+                        d.tool_name,
+                        d.action,
+                        PermissionResponse::AllowForSession,
+                    ));
+                }
+            }
+            KeyCode::Char('d') | KeyCode::Esc => {
+                // Esc always denies (cancel = abort = deny)
+                if let Some(ref tx) = app.permission_response_tx {
+                    let _ = tx.send((
+                        d.request_id,
+                        "tui-session".to_string(),
+                        d.tool_name,
+                        d.action,
+                        PermissionResponse::Deny,
+                    ));
+                }
+            }
+            // Enter confirms current selection
+            KeyCode::Enter => {
+                let response = match d.selected {
+                    0 => PermissionResponse::Allow,
+                    1 => PermissionResponse::AllowForSession,
+                    _ => PermissionResponse::Deny,
+                };
+                if let Some(ref tx) = app.permission_response_tx {
+                    let _ = tx.send((
+                        d.request_id,
+                        "tui-session".to_string(),
+                        d.tool_name,
+                        d.action,
+                        response,
+                    ));
+                }
+            }
+            // Navigation
+            KeyCode::Left | KeyCode::Char('h') => {
+                let mut new_d = d;
+                new_d.selected = new_d.selected.saturating_sub(1);
+                app.active_dialog = Some(ActiveDialog::Permission(new_d));
+            }
+            KeyCode::Right | KeyCode::Char('l') => {
+                let mut new_d = d;
+                new_d.selected = (new_d.selected + 1).min(2);
+                app.active_dialog = Some(ActiveDialog::Permission(new_d));
+            }
+            _ => {
+                app.active_dialog = Some(ActiveDialog::Permission(d));
+            }
+        },
+        ActiveDialog::AskUser(d) => {
+            if d.options.is_some() {
+                let num_options = d.options.as_ref().map_or(0, Vec::len);
+                match code {
+                    KeyCode::Enter => {
+                        if let Some(ref options) = d.options {
+                            if let Some(selected) = options.get(d.selected) {
+                                if let Some(ref tx) = app.ask_user_response_tx {
+                                    let _ = tx.send((
+                                        d.request_id,
+                                        AskUserResponse::Answer(selected.clone()),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    KeyCode::Esc => {
+                        if let Some(ref tx) = app.ask_user_response_tx {
+                            let _ = tx.send((d.request_id, AskUserResponse::Cancelled));
+                        }
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        let mut new_d = d;
+                        new_d.selected = new_d.selected.saturating_sub(1);
+                        app.active_dialog = Some(ActiveDialog::AskUser(new_d));
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        let mut new_d = d;
+                        new_d.selected = (new_d.selected + 1).min(num_options.saturating_sub(1));
+                        app.active_dialog = Some(ActiveDialog::AskUser(new_d));
+                    }
+                    _ => {
+                        app.active_dialog = Some(ActiveDialog::AskUser(d));
+                    }
+                }
+            } else {
+                match code {
+                    KeyCode::Char(c) => {
+                        let mut new_d = d;
+                        new_d.input.insert(new_d.cursor, c);
+                        new_d.cursor += c.len_utf8();
+                        app.active_dialog = Some(ActiveDialog::AskUser(new_d));
+                    }
+                    KeyCode::Backspace => {
+                        let mut new_d = d;
+                        if new_d.cursor > 0 {
+                            let prev = new_d.input[..new_d.cursor]
+                                .char_indices()
+                                .next_back()
+                                .map_or(0, |(i, _)| i);
+                            new_d.input.drain(prev..new_d.cursor);
+                            new_d.cursor = prev;
+                        }
+                        app.active_dialog = Some(ActiveDialog::AskUser(new_d));
+                    }
+                    KeyCode::Enter => {
+                        if let Some(ref tx) = app.ask_user_response_tx {
+                            let _ = tx.send((d.request_id, AskUserResponse::Answer(d.input)));
+                        }
+                    }
+                    KeyCode::Esc => {
+                        if let Some(ref tx) = app.ask_user_response_tx {
+                            let _ = tx.send((d.request_id, AskUserResponse::Cancelled));
+                        }
+                    }
+                    _ => {
+                        app.active_dialog = Some(ActiveDialog::AskUser(d));
+                    }
+                }
+            }
+        }
+        ActiveDialog::SessionList(mut d) => match code {
+            KeyCode::Esc => {
+                // Close dialog without selecting.
+            }
+            KeyCode::Enter => {
+                // Select the current session.
+                if let Some(session) = d.selected_session() {
+                    tracing::info!(session_id = %session.id, "selected session: {}", session.title);
+                    // TODO: actually switch to the selected session
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                d.select_previous();
+                app.active_dialog = Some(ActiveDialog::SessionList(d));
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                d.select_next();
+                app.active_dialog = Some(ActiveDialog::SessionList(d));
+            }
+            KeyCode::Char('n') => {
+                // TODO: create new session
+                tracing::info!("new session requested");
+            }
+            KeyCode::Char(c) => {
+                d.filter_push(c);
+                app.active_dialog = Some(ActiveDialog::SessionList(d));
+            }
+            KeyCode::Backspace => {
+                d.filter_pop();
+                app.active_dialog = Some(ActiveDialog::SessionList(d));
+            }
+            _ => {
+                app.active_dialog = Some(ActiveDialog::SessionList(d));
+            }
+        },
+    }
+
+    false
+}
+
+/// Start a chat request in the background.
+fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMessage>) {
+    let Some(mut agent) = app.agent.take() else {
+        app.output = "No API key configured.".to_string();
+        return;
+    };
+
+    // Ensure agent has permission client with current permission presets.
+    let client = PermissionClient::with_presets(
+        "tui-session".to_string(),
+        permission_tx,
+        app.current_permissions(),
+    );
+    agent.set_permission_client(client);
+
+    let prompt = std::mem::take(&mut app.input);
+    app.cursor = 0;
+
+    // Transition to session view on first message.
+    app.enter_session();
+
+    // Add user message to the conversation.
+    app.add_user_message(&prompt);
+
+    // Clear streaming state for new response.
+    app.streaming_text.clear();
+    app.output.clear();
+    app.loading = true;
+
+    let (tx, rx) = mpsc::unbounded_channel();
+    app.chat_rx = Some(rx);
+
+    tokio::spawn(async move {
+        let mut agent = agent;
+        let tx_clone = tx.clone();
+
+        let result = agent
+            .chat_with_events(&prompt, |event| {
+                use crate::core::agent::ChatEvent;
+                match event {
+                    ChatEvent::Text(text) => {
+                        let _ = tx_clone.send(ChatMessage::Text(text));
+                    }
+                    ChatEvent::ToolCall {
+                        name,
+                        invocation,
+                        output,
+                        is_error,
+                    } => {
+                        let _ = tx_clone.send(ChatMessage::Tool {
+                            name,
+                            invocation,
+                            output,
+                            is_error,
+                        });
+                    }
+                    ChatEvent::Usage {
+                        input_tokens,
+                        output_tokens,
+                        cost_usd,
+                    } => {
+                        let _ = tx_clone.send(ChatMessage::Usage {
+                            input_tokens,
+                            output_tokens,
+                            cost_usd,
+                        });
+                    }
+                }
+            })
+            .await;
+
+        match result {
+            Ok(_) => {
+                // Generate title if needed (first message with default title)
+                if let Some(first_msg) = agent.needs_title_generation() {
+                    if let Err(e) = agent.generate_title(&first_msg).await {
+                        tracing::debug!("title generation failed: {e}");
+                    }
+                }
+                let _ = tx.send(ChatMessage::Done(agent));
+            }
+            Err(e) => {
+                let _ = tx.send(ChatMessage::Error(e.to_string(), agent));
+            }
+        }
+    });
+}

@@ -1,0 +1,6 @@
+<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Simple O -->
+  <circle cx="42" cy="50" r="28" stroke="currentColor" stroke-width="6" fill="none"/>
+  <!-- Underscore cursor -->
+  <rect x="76" y="78" width="20" height="5" fill="currentColor" rx="1"/>
+</svg>

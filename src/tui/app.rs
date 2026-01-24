@@ -1,0 +1,701 @@
+//! TUI application state.
+
+use rand::prelude::IndexedRandom;
+use tokio::sync::mpsc;
+use uuid::Uuid;
+
+use super::components::SessionListDialog;
+use super::message::DisplayMessage;
+use super::state::ViewState;
+
+/// ASCII art logo lines (main text).
+pub const LOGO_LINES: &[&str] = &[
+    "  █▀▀█ █▀▄▀█ █▀▀▄ ▀█▀",
+    "  █  █ █ █ █ █  █  █ ",
+    "  ▀▀▀▀ ▀   ▀ ▀  ▀ ▀▀▀",
+];
+
+/// Shadow lines (offset down-right from main).
+pub const LOGO_SHADOW: &[&str] = &[
+    "  ░░░░ ░░░░░ ░░░░ ░░░",
+    "  ░  ░ ░ ░ ░ ░  ░  ░ ",
+    "  ░░░░ ░   ░ ░  ░ ░░░",
+];
+
+/// Rotating taglines for the welcome screen.
+const TAGLINES: &[&str] = &[
+    "let's ride",
+    "let's begin",
+    "let's cook",
+    "let's create",
+    "let's build",
+    "let's go",
+];
+
+/// Ecosystem tips for the welcome screen
+pub const ECOSYSTEM_TIPS: &[&str] = &[
+    "Try Runa: drag-and-drop kanban boards for your work · runa.omni.dev",
+    "Try Backfeed: let your community shape your roadmap · backfeed.omni.dev",
+    "Omni is open source · github.com/omnidotdev",
+    "You're doing great, mass hallucination or not",
+    "Remember: if the code works, it works",
+    "Tip: the bugs are features you haven't documented yet",
+    "Friendly reminder: commit early, commit often, blame later",
+];
+
+use crate::config::{AgentConfig, AgentPermissions, Config, load_persona};
+use crate::core::Agent;
+use crate::core::agent::{
+    AgentMode, AskUserResponse, InterfaceMessage, PermissionAction, PermissionContext,
+    PermissionResponse,
+};
+use crate::core::session::SessionManager;
+
+/// Active text selection state.
+#[derive(Debug, Clone)]
+pub struct Selection {
+    /// Starting screen Y coordinate.
+    pub start_y: u16,
+    /// Current end Y coordinate.
+    pub end_y: u16,
+}
+
+impl Selection {
+    /// Get the selection bounds as (`min_y`, `max_y`).
+    #[must_use]
+    pub fn bounds(&self) -> (u16, u16) {
+        (self.start_y.min(self.end_y), self.start_y.max(self.end_y))
+    }
+}
+
+/// Message from the chat task.
+pub enum ChatMessage {
+    /// Text chunk to append
+    Text(String),
+    /// Tool invocation with name, args, output, and error status
+    Tool {
+        name: String,
+        invocation: String,
+        output: String,
+        is_error: bool,
+    },
+    /// Token usage and cost information
+    Usage {
+        input_tokens: u32,
+        output_tokens: u32,
+        cost_usd: f64,
+    },
+    /// Chat completed, returning the agent
+    Done(Agent),
+    /// Error occurred, returning the agent
+    Error(String, Agent),
+}
+
+/// Active permission dialog state.
+pub struct ActivePermissionDialog {
+    /// Unique request ID.
+    pub request_id: Uuid,
+    /// Tool requesting permission.
+    pub tool_name: String,
+    /// Action being requested.
+    pub action: PermissionAction,
+    /// Context for display.
+    pub context: PermissionContext,
+    /// Currently selected button (0=Allow, 1=Session, 2=Deny).
+    pub selected: usize,
+}
+
+/// Active `ask_user` dialog state.
+pub struct ActiveAskUserDialog {
+    /// Unique request ID.
+    pub request_id: Uuid,
+    /// Question text.
+    pub question: String,
+    /// Predefined options, if any.
+    pub options: Option<Vec<String>>,
+    /// Selected option index (if options provided).
+    pub selected: usize,
+    /// User input (if no options).
+    pub input: String,
+    /// Cursor position in input.
+    pub cursor: usize,
+}
+
+/// Currently active dialog, if any.
+pub enum ActiveDialog {
+    Permission(ActivePermissionDialog),
+    AskUser(ActiveAskUserDialog),
+    SessionList(SessionListDialog),
+}
+
+/// Application state for the TUI.
+#[allow(clippy::struct_excessive_bools)]
+pub struct App {
+    /// Current input buffer.
+    pub input: String,
+
+    /// Cursor position (byte offset).
+    pub cursor: usize,
+
+    /// Current output display (legacy, for streaming text).
+    pub output: String,
+
+    /// Scroll offset for output (line number).
+    pub scroll_offset: u16,
+
+    /// Whether auto-scroll is enabled (follows new content).
+    pub auto_scroll: bool,
+
+    /// Whether a request is in progress.
+    pub loading: bool,
+
+    /// Whether to show the welcome screen with logo.
+    pub show_welcome: bool,
+
+    /// Selected tagline for the welcome screen.
+    pub tagline: &'static str,
+
+    /// Selected ecosystem tip for the welcome screen.
+    pub tip: &'static str,
+
+    /// Selected placeholder for the input prompt.
+    pub placeholder: &'static str,
+
+    /// The agent (if configured).
+    pub agent: Option<Agent>,
+
+    /// Receiver for streaming chat messages.
+    pub chat_rx: Option<mpsc::UnboundedReceiver<ChatMessage>>,
+
+    /// Active dialog, if any.
+    pub active_dialog: Option<ActiveDialog>,
+
+    /// Receiver for interface messages from permission system.
+    pub interface_rx: Option<mpsc::UnboundedReceiver<InterfaceMessage>>,
+
+    /// Sender for permission responses.
+    #[allow(clippy::type_complexity)]
+    pub permission_response_tx: Option<
+        mpsc::UnboundedSender<(
+            uuid::Uuid,
+            String,
+            String,
+            PermissionAction,
+            PermissionResponse,
+        )>,
+    >,
+
+    /// Sender for `ask_user` responses.
+    pub ask_user_response_tx: Option<mpsc::UnboundedSender<(uuid::Uuid, AskUserResponse)>>,
+
+    /// Current view state (Welcome or Session).
+    pub view_state: ViewState,
+
+    /// Conversation messages for display.
+    pub messages: Vec<DisplayMessage>,
+
+    /// Currently streaming assistant text (accumulated before adding to messages).
+    pub streaming_text: String,
+
+    /// Scroll offset for the message list.
+    pub message_scroll: u16,
+
+    /// Current model name for display.
+    pub model: String,
+
+    /// Session token usage (cumulative).
+    pub session_tokens: (u32, u32),
+
+    /// Session cost in USD (cumulative).
+    pub session_cost: f64,
+
+    /// Current agent mode (Build or Plan).
+    pub agent_mode: AgentMode,
+
+    /// Active text selection, if any.
+    pub selection: Option<Selection>,
+
+    /// Text collected from current selection (populated during render).
+    pub selected_text: String,
+
+    /// Terminal width (updated on render).
+    pub term_width: u16,
+
+    /// Terminal height (updated on render).
+    pub term_height: u16,
+
+    /// Calculated max scroll for message list.
+    pub max_message_scroll: u16,
+
+    /// Whether command dropdown is visible.
+    pub show_command_dropdown: bool,
+
+    /// Currently selected command index in dropdown.
+    pub command_selection: usize,
+
+    /// Agent configuration for permission presets.
+    pub agent_config: AgentConfig,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl App {
+    /// Create a new application state.
+    #[must_use]
+    pub fn new() -> Self {
+        let config = Config::load().unwrap_or_default();
+        let model = config.agent.model.clone();
+        let persona = load_persona(&config.agent.persona).unwrap_or_default();
+        let persona_prompt = persona.build_system_prompt();
+
+        let mut agent = config.agent.create_provider().ok().map(|provider| {
+            Agent::with_context(
+                provider,
+                &config.agent.model,
+                config.agent.max_tokens,
+                Some(&persona_prompt),
+            )
+        });
+
+        // Enable session persistence
+        if let Some(ref mut a) = agent {
+            if let Err(e) = a.enable_sessions() {
+                tracing::warn!("failed to enable sessions: {e}");
+            }
+        }
+
+        // Load persisted mode and apply to agent
+        let persisted_mode = crate::config::Config::load_mode();
+        if let Some(ref mut a) = agent {
+            if persisted_mode != AgentMode::default() {
+                a.switch_mode(persisted_mode, None);
+            }
+        }
+
+        // Try to load conversation history (legacy, for migration)
+        let mut history_loaded = false;
+        if let Some(ref mut a) = agent {
+            if a.load_history().is_ok() && a.has_history() {
+                history_loaded = true;
+            }
+        }
+
+        // Pick a random tagline, tip, and placeholder
+        let tagline = TAGLINES
+            .choose(&mut rand::rng())
+            .copied()
+            .unwrap_or("let's create");
+        let tip = if config.tui.tips {
+            ECOSYSTEM_TIPS
+                .choose(&mut rand::rng())
+                .copied()
+                .unwrap_or("")
+        } else {
+            ""
+        };
+        let placeholder = super::components::PLACEHOLDERS
+            .choose(&mut rand::rng())
+            .copied()
+            .unwrap_or("ask anything...");
+
+        let output = if agent.is_none() {
+            "Warning: No API key configured. Set ANTHROPIC_API_KEY or add to config.".to_string()
+        } else if history_loaded {
+            "Welcome back! Conversation history loaded.".to_string()
+        } else {
+            String::new()
+        };
+
+        Self {
+            input: String::new(),
+            cursor: 0,
+            output,
+            scroll_offset: 0,
+            auto_scroll: true,
+            loading: false,
+            show_welcome: true,
+            tagline,
+            tip,
+            placeholder,
+            agent,
+            chat_rx: None,
+            active_dialog: None,
+            interface_rx: None,
+            permission_response_tx: None,
+            ask_user_response_tx: None,
+            view_state: ViewState::Welcome,
+            messages: Vec::new(),
+            streaming_text: String::new(),
+            message_scroll: 0,
+            model,
+            session_tokens: (0, 0),
+            session_cost: 0.0,
+            agent_mode: persisted_mode,
+            selection: None,
+            selected_text: String::new(),
+            term_width: 80,
+            term_height: 24,
+            max_message_scroll: 0,
+            show_command_dropdown: false,
+            command_selection: 0,
+            agent_config: config.agent,
+        }
+    }
+
+    /// Get permission presets for the current agent mode.
+    #[must_use]
+    pub fn current_permissions(&self) -> AgentPermissions {
+        let agent_name = match self.agent_mode {
+            AgentMode::Build => "build",
+            AgentMode::Plan => "plan",
+        };
+        self.agent_config
+            .agents
+            .get(agent_name)
+            .map(|a| a.permissions.clone())
+            .unwrap_or_default()
+    }
+
+    /// Sync agent mode from the agent (call after mode changes)
+    pub fn sync_agent_mode(&mut self) {
+        if let Some(agent) = &self.agent {
+            self.agent_mode = agent.mode();
+            // Persist mode to disk
+            if let Err(e) = crate::config::Config::save_mode(self.agent_mode) {
+                tracing::warn!("failed to save mode: {e}");
+            }
+        }
+    }
+
+    /// Delete from cursor to beginning of line.
+    pub fn delete_to_start(&mut self) {
+        self.input.drain(..self.cursor);
+        self.cursor = 0;
+    }
+
+    /// Delete from cursor to end of line.
+    pub fn delete_to_end(&mut self) {
+        self.input.truncate(self.cursor);
+    }
+
+    /// Delete word before cursor.
+    pub fn delete_word(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+
+        // Find start of word (skip trailing spaces, then skip word chars).
+        let before = &self.input[..self.cursor];
+        let trimmed = before.trim_end();
+
+        let word_start = trimmed
+            .rfind(|c: char| c.is_whitespace())
+            .map_or(0, |i| i + 1);
+
+        self.input.drain(word_start..self.cursor);
+        self.cursor = word_start;
+    }
+
+    /// Move cursor left by one character.
+    pub fn move_left(&mut self) {
+        if self.cursor > 0 {
+            // Find previous char boundary.
+            self.cursor = self.input[..self.cursor]
+                .char_indices()
+                .next_back()
+                .map_or(0, |(i, _)| i);
+        }
+    }
+
+    /// Move cursor right by one character.
+    pub fn move_right(&mut self) {
+        if self.cursor < self.input.len() {
+            // Find next char boundary.
+            self.cursor = self.input[self.cursor..]
+                .char_indices()
+                .nth(1)
+                .map_or(self.input.len(), |(i, _)| self.cursor + i);
+        }
+    }
+
+    /// Get the current cursor position as (`line_index`, `column`)
+    ///
+    /// Line index is 0-based, column is the character count from line start
+    #[must_use]
+    pub fn cursor_line_col(&self) -> (usize, usize) {
+        let before_cursor = &self.input[..self.cursor];
+        let line_index = before_cursor.matches('\n').count();
+        let line_start = before_cursor.rfind('\n').map_or(0, |i| i + 1);
+        let column = before_cursor[line_start..].chars().count();
+        (line_index, column)
+    }
+
+    /// Check if input contains multiple lines.
+    #[must_use]
+    pub fn is_multiline(&self) -> bool {
+        self.input.contains('\n')
+    }
+
+    /// Move cursor up one line, preserving column position.
+    pub fn move_up(&mut self) {
+        let (line, col) = self.cursor_line_col();
+        if line == 0 {
+            return;
+        }
+
+        // Find start of current line.
+        let current_line_start = self.input[..self.cursor].rfind('\n').map_or(0, |i| i + 1);
+
+        // Find start of previous line.
+        let prev_line_start = if current_line_start > 0 {
+            self.input[..current_line_start - 1]
+                .rfind('\n')
+                .map_or(0, |i| i + 1)
+        } else {
+            0
+        };
+
+        // Previous line content (without newline).
+        let prev_line_end = current_line_start - 1;
+        let prev_line = &self.input[prev_line_start..prev_line_end];
+        let prev_line_len = prev_line.chars().count();
+
+        // Move to same column or end of previous line.
+        let target_col = col.min(prev_line_len);
+        self.cursor = prev_line_start
+            + prev_line
+                .char_indices()
+                .nth(target_col)
+                .map_or(prev_line.len(), |(i, _)| i);
+    }
+
+    /// Move cursor down one line, preserving column position.
+    pub fn move_down(&mut self) {
+        let (line, col) = self.cursor_line_col();
+        let total_lines = self.input.matches('\n').count() + 1;
+        if line >= total_lines - 1 {
+            return;
+        }
+
+        // Find end of current line (position of newline).
+        let next_newline = self.input[self.cursor..]
+            .find('\n')
+            .map(|i| self.cursor + i);
+
+        let Some(newline_pos) = next_newline else {
+            return;
+        };
+
+        // Next line starts after the newline.
+        let next_line_start = newline_pos + 1;
+
+        // Find end of next line.
+        let next_line_end = self.input[next_line_start..]
+            .find('\n')
+            .map_or(self.input.len(), |i| next_line_start + i);
+
+        let next_line = &self.input[next_line_start..next_line_end];
+        let next_line_len = next_line.chars().count();
+
+        // Move to same column or end of next line.
+        let target_col = col.min(next_line_len);
+        self.cursor = next_line_start
+            + next_line
+                .char_indices()
+                .nth(target_col)
+                .map_or(next_line.len(), |(i, _)| i);
+    }
+
+    /// Insert character at cursor.
+    pub fn insert_char(&mut self, c: char) {
+        self.input.insert(self.cursor, c);
+        self.cursor += c.len_utf8();
+    }
+
+    /// Delete character before cursor.
+    pub fn delete_char(&mut self) {
+        if self.cursor > 0 {
+            let prev = self.input[..self.cursor]
+                .char_indices()
+                .next_back()
+                .map_or(0, |(i, _)| i);
+            self.input.drain(prev..self.cursor);
+            self.cursor = prev;
+        }
+    }
+
+    /// Clear input and reset cursor.
+    pub fn clear_input(&mut self) {
+        self.input.clear();
+        self.cursor = 0;
+    }
+
+    /// Show a permission dialog.
+    pub fn show_permission_dialog(
+        &mut self,
+        request_id: Uuid,
+        tool_name: String,
+        action: PermissionAction,
+        context: PermissionContext,
+    ) {
+        self.active_dialog = Some(ActiveDialog::Permission(ActivePermissionDialog {
+            request_id,
+            tool_name,
+            action,
+            context,
+            selected: 0,
+        }));
+    }
+
+    /// Show an `ask_user` dialog.
+    pub fn show_ask_user_dialog(
+        &mut self,
+        request_id: Uuid,
+        question: String,
+        options: Option<Vec<String>>,
+    ) {
+        self.active_dialog = Some(ActiveDialog::AskUser(ActiveAskUserDialog {
+            request_id,
+            question,
+            options,
+            selected: 0,
+            input: String::new(),
+            cursor: 0,
+        }));
+    }
+
+    /// Hide any active dialog.
+    pub fn hide_dialog(&mut self) {
+        self.active_dialog = None;
+    }
+
+    /// Show the session list dialog.
+    pub fn show_session_list(&mut self) {
+        match SessionManager::for_current_project() {
+            Ok(manager) => match SessionListDialog::from_manager(&manager) {
+                Ok(dialog) => {
+                    self.active_dialog = Some(ActiveDialog::SessionList(dialog));
+                }
+                Err(e) => {
+                    tracing::warn!("failed to load sessions: {e}");
+                }
+            },
+            Err(e) => {
+                tracing::warn!("failed to initialize session manager: {e}");
+            }
+        }
+    }
+
+    /// Check if a dialog is active.
+    #[must_use]
+    pub const fn has_dialog(&self) -> bool {
+        self.active_dialog.is_some()
+    }
+
+    /// Scroll up by the given number of lines.
+    pub const fn scroll_up(&mut self, lines: u16) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(lines);
+        self.auto_scroll = false;
+    }
+
+    /// Scroll down by the given number of lines.
+    pub fn scroll_down(&mut self, lines: u16, max_scroll: u16) {
+        self.scroll_offset = self.scroll_offset.saturating_add(lines).min(max_scroll);
+        // Re-enable auto-scroll if we're at the bottom.
+        if self.scroll_offset >= max_scroll {
+            self.auto_scroll = true;
+        }
+    }
+
+    /// Scroll to the bottom and enable auto-scroll.
+    pub const fn scroll_to_bottom(&mut self, max_scroll: u16) {
+        self.scroll_offset = max_scroll;
+        self.auto_scroll = true;
+    }
+
+    /// Count the number of lines in the output.
+    #[must_use]
+    pub fn output_line_count(&self) -> usize {
+        self.output.lines().count()
+    }
+
+    /// Transition from Welcome to Session view.
+    pub const fn enter_session(&mut self) {
+        self.view_state = ViewState::Session;
+        self.show_welcome = false;
+    }
+
+    /// Add a user message to the conversation.
+    pub fn add_user_message(&mut self, text: impl Into<String>) {
+        self.messages.push(DisplayMessage::user(text));
+    }
+
+    /// Add an assistant message to the conversation.
+    pub fn add_assistant_message(&mut self, text: impl Into<String>) {
+        self.messages.push(DisplayMessage::assistant(text));
+    }
+
+    /// Add a tool message to the conversation.
+    pub fn add_tool_message(&mut self, message: DisplayMessage) {
+        self.messages.push(message);
+    }
+
+    /// Finalize streaming text into an assistant message.
+    pub fn finalize_streaming(&mut self) {
+        if !self.streaming_text.is_empty() {
+            let text = std::mem::take(&mut self.streaming_text);
+            self.add_assistant_message(text);
+        }
+    }
+
+    /// Clear the conversation.
+    pub fn clear_conversation(&mut self) {
+        self.messages.clear();
+        self.streaming_text.clear();
+        self.message_scroll = 0;
+    }
+
+    /// Scroll the message list up.
+    pub const fn scroll_messages_up(&mut self, lines: u16) {
+        self.message_scroll = self.message_scroll.saturating_sub(lines);
+        self.auto_scroll = false;
+    }
+
+    /// Scroll the message list down.
+    pub fn scroll_messages_down(&mut self, lines: u16) {
+        self.message_scroll = self
+            .message_scroll
+            .saturating_add(lines)
+            .min(self.max_message_scroll);
+        if self.message_scroll >= self.max_message_scroll {
+            self.auto_scroll = true;
+        }
+    }
+
+    /// Update terminal dimensions and recalculate max scroll.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn update_dimensions(&mut self, width: u16, height: u16, content_height: u16) {
+        self.term_width = width;
+        self.term_height = height;
+        // Calculate visible message area height (subtract prompt area)
+        // Must match render_session: (input_lines + 3).clamp(4, 13)
+        let input_lines = self.input.lines().count().max(1) as u16;
+        let input_lines = if self.input.ends_with('\n') {
+            input_lines + 1
+        } else {
+            input_lines
+        };
+        let prompt_height = (input_lines + 3).clamp(4, 13);
+        let visible_height = height.saturating_sub(prompt_height);
+        self.max_message_scroll = content_height.saturating_sub(visible_height);
+
+        // Auto-scroll to bottom when enabled.
+        if self.auto_scroll {
+            self.message_scroll = self.max_message_scroll;
+        }
+    }
+}
