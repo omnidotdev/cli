@@ -1,0 +1,7 @@
+/target
+/node_modules
+
+# AI agent instructions (private)
+AGENTS.md
+CLAUDE.md
+.gitattributes
