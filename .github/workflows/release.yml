@@ -1,4 +1,4 @@
-name: Release
+name: Release 🏗️
 
 on:
   push:
@@ -13,25 +13,27 @@ permissions:
 
 jobs:
   release:
-    name: Handle release
+    name: Handle release 🦋
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
-        run: bun install
+        run: bun i
       - name: Create release pull request
         id: changesets
         uses: changesets/action@v1
         with:
           version: bun run version
+          title: "feature(release): version packages"
+          commit: "ci(changesets): version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build:
     name: Build ${{ matrix.target }}
     needs: release
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'Version Packages'))
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'ci(changesets): version packages'))
     strategy:
       matrix:
         include:
@@ -77,7 +79,7 @@ jobs:
   publish:
     name: Create GitHub Release
     needs: build
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'Version Packages'))
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'ci(changesets): version packages'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
