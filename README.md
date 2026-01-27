@@ -16,11 +16,15 @@
 ## Installation
 
 ```bash
-# From source
+cargo install omnidotdev-cli
+```
+
+Or build from source:
+
+```bash
 git clone https://github.com/omnidotdev/cli
 cd cli
 cargo build --release
-
 # Binary will be at target/release/omni
 ```
 
@@ -99,6 +103,43 @@ curl -X POST http://localhost:7890/api/agent \
   -H "Content-Type: application/json" \
   -d '{"prompt": "What is 2+2?"}'
 ```
+
+## Development
+
+### Version Syncing
+
+Omni CLI uses a dual-package setup (Rust crate + npm package) with automated version synchronization:
+
+- **Source of truth**: `package.json` holds the canonical version, and is used for Changesets
+- **Sync script**: `scripts/syncVersion.ts` propagates the version to `Cargo.toml`
+- **Changesets**: Manages version bumps and changelog generation
+
+The sync script runs automatically during the release process via the `version` npm script:
+
+```sh
+bun run version  # syncs `package.json` version → `Cargo.toml`
+```
+
+### CI/CD
+
+Two GitHub workflows handle versioning:
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `test.yml` | Push/PR to `master` | Runs tests and builds |
+| `release.yml` | Push to `master` | Creates releases via Changesets, builds multi-platform binaries |
+
+### Release Process
+
+1. Create a changeset: `bun changeset`
+2. Push to `master`
+3. Changesets action creates a "Version Packages" PR
+4. Merge the PR to trigger a release with binaries for:
+   - `x86_64-unknown-linux-gnu`
+   - `aarch64-unknown-linux-gnu`
+   - `x86_64-apple-darwin`
+   - `aarch64-apple-darwin`
+5. **Manually** publish to crates.io: `cargo publish`
 
 ## License
 
