@@ -255,8 +255,21 @@ fn render_tool_message(
         )));
     }
 
-    let height = lines.len() as u16;
-    let para = Paragraph::new(lines);
+    // Calculate wrapped height - each line may take multiple rows
+    let width = area.width.max(1) as usize;
+    let prefix_len = 5; // "  ⎿  " or "     "
+    let effective_width = width.saturating_sub(prefix_len).max(1);
+
+    let mut height: u16 = 1; // Header line
+    for line_text in output_lines.iter().take(show_lines) {
+        let chars = line_text.chars().count();
+        height += ((chars / effective_width) + 1) as u16;
+    }
+    if truncated {
+        height += 1;
+    }
+
+    let para = Paragraph::new(lines).wrap(Wrap { trim: false });
     let render_area = Rect::new(area.x, area.y, area.width, height.min(area.height));
     frame.render_widget(para, render_area);
 
@@ -312,10 +325,24 @@ pub fn message_height(message: &DisplayMessage, width: u16) -> u16 {
             .sum::<u16>()
             .max(1),
         DisplayMessage::Tool { output, .. } => {
-            let output_lines = output.lines().count().min(12);
-            let truncated = output.lines().count() > 12;
-            // 1 for header + output lines + optional truncation line
-            1 + output_lines as u16 + u16::from(truncated)
+            let max_output_lines = 12;
+            let output_line_count = output.lines().count();
+            let truncated = output_line_count > max_output_lines;
+            let prefix_len = 5; // "  ⎿  " or "     "
+            let effective_width = width.saturating_sub(prefix_len).max(1);
+
+            // Calculate wrapped height for each output line
+            let output_height: u16 = output
+                .lines()
+                .take(max_output_lines)
+                .map(|line| {
+                    let chars = line.chars().count();
+                    ((chars / effective_width) + 1) as u16
+                })
+                .sum();
+
+            // 1 for header + wrapped output lines + optional truncation line
+            1 + output_height + u16::from(truncated)
         }
     }
 }
