@@ -1076,10 +1076,34 @@ fn handle_dialog_key(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> 
                 // Close dialog without selecting
             }
             KeyCode::Enter => {
-                // Select the current session
+                // Select and switch to the session
                 if let Some(session) = d.selected_session() {
-                    tracing::info!(session_id = %session.id, "selected session: {}", session.title);
-                    // TODO: actually switch to the selected session
+                    let session_id = session.id.clone();
+                    tracing::info!(session_id = %session_id, "switching to session: {}", session.title);
+
+                    // Switch agent to new session
+                    if let Some(ref mut agent) = app.agent {
+                        if let Err(e) = agent.switch_session(&session_id) {
+                            tracing::error!("failed to switch session: {e}");
+                        } else {
+                            // Load messages for display
+                            if let Some(manager) = agent.session_manager() {
+                                match App::load_session_messages(manager, &session_id) {
+                                    Ok(messages) => {
+                                        app.messages = messages;
+                                        app.message_scroll = 0;
+                                        app.streaming_text.clear();
+                                        // Switch to session view if we have messages
+                                        if !app.messages.is_empty() {
+                                            app.view_state = ViewState::Session;
+                                            app.show_welcome = false;
+                                        }
+                                    }
+                                    Err(e) => tracing::error!("failed to load messages: {e}"),
+                                }
+                            }
+                        }
+                    }
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -1091,8 +1115,68 @@ fn handle_dialog_key(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> 
                 app.active_dialog = Some(ActiveDialog::SessionList(d));
             }
             KeyCode::Char('n') => {
-                // TODO: create new session
-                tracing::info!("new session requested");
+                // Create new session
+                if let Some(ref mut agent) = app.agent {
+                    match agent.new_session() {
+                        Ok(session_id) => {
+                            tracing::info!(session_id = %session_id, "created new session");
+                            // Clear display and switch to welcome
+                            app.messages.clear();
+                            app.streaming_text.clear();
+                            app.message_scroll = 0;
+                            app.view_state = ViewState::Welcome;
+                            app.show_welcome = true;
+                        }
+                        Err(e) => tracing::error!("failed to create session: {e}"),
+                    }
+                }
+            }
+            KeyCode::Char('d') => {
+                // Delete selected session
+                if let Some(session) = d.selected_session() {
+                    let session_id = session.id.clone();
+                    let is_current = app.agent.as_ref()
+                        .and_then(|a| a.session_id())
+                        .is_some_and(|id| id == session_id);
+
+                    tracing::info!(session_id = %session_id, "deleting session");
+
+                    // Delete from storage
+                    if let Some(ref agent) = app.agent {
+                        if let Some(manager) = agent.session_manager() {
+                            if let Err(e) = manager.delete_session(&session_id) {
+                                tracing::error!("failed to delete session: {e}");
+                                app.active_dialog = Some(ActiveDialog::SessionList(d));
+                                return false;
+                            }
+                        }
+                    }
+
+                    // Remove from dialog list
+                    d.remove_session(&session_id);
+
+                    // If we deleted the current session, create a new one
+                    if is_current {
+                        if let Some(ref mut agent) = app.agent {
+                            match agent.new_session() {
+                                Ok(_) => {
+                                    app.messages.clear();
+                                    app.streaming_text.clear();
+                                    app.message_scroll = 0;
+                                }
+                                Err(e) => tracing::error!("failed to create replacement session: {e}"),
+                            }
+                        }
+                    }
+
+                    // Keep dialog open if there are more sessions
+                    if !d.sessions().is_empty() {
+                        app.active_dialog = Some(ActiveDialog::SessionList(d));
+                    }
+                    // Otherwise dialog closes (active_dialog stays None)
+                } else {
+                    app.active_dialog = Some(ActiveDialog::SessionList(d));
+                }
             }
             KeyCode::Char(c) => {
                 d.filter_push(c);

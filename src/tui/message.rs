@@ -102,7 +102,6 @@ impl DisplayMessage {
 
 /// Format tool input for display
 #[must_use]
-#[allow(dead_code)]
 pub fn format_tool_invocation(name: &str, input: &serde_json::Value) -> String {
     match name {
         "shell" | "Bash" | "bash" => input
