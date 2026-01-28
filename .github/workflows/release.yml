@@ -33,7 +33,7 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     needs: release
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'ci(changesets): version packages'))
+    if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'ci(changesets): version packages')) }}"
     strategy:
       matrix:
         include:
@@ -79,7 +79,7 @@ jobs:
   publish:
     name: Create GitHub Release
     needs: build
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'ci(changesets): version packages'))
+    if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'ci(changesets): version packages')) }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

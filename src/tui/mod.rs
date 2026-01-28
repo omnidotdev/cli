@@ -1135,7 +1135,9 @@ fn handle_dialog_key(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> 
                 // Delete selected session
                 if let Some(session) = d.selected_session() {
                     let session_id = session.id.clone();
-                    let is_current = app.agent.as_ref()
+                    let is_current = app
+                        .agent
+                        .as_ref()
                         .and_then(|a| a.session_id())
                         .is_some_and(|id| id == session_id);
 
@@ -1164,7 +1166,9 @@ fn handle_dialog_key(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> 
                                     app.streaming_text.clear();
                                     app.message_scroll = 0;
                                 }
-                                Err(e) => tracing::error!("failed to create replacement session: {e}"),
+                                Err(e) => {
+                                    tracing::error!("failed to create replacement session: {e}");
+                                }
                             }
                         }
                     }
