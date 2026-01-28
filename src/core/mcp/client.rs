@@ -99,8 +99,8 @@ impl McpClient {
         for (server_name, server) in &self.servers {
             if server.is_connected() {
                 for tool in server.tools() {
-                    // Prefix tool name with server name
-                    let qualified_name = format!("{server_name}_{}", tool.name);
+                    // Use :: as delimiter to avoid conflicts with underscores in names
+                    let qualified_name = format!("{server_name}::{}", tool.name);
                     tools.push((qualified_name, tool.clone()));
                 }
             }
@@ -109,7 +109,7 @@ impl McpClient {
         tools
     }
 
-    /// Call a tool by qualified name (`server_toolname`)
+    /// Call a tool by qualified name (`server::toolname`)
     ///
     /// # Errors
     ///
@@ -120,7 +120,7 @@ impl McpClient {
         arguments: serde_json::Value,
     ) -> anyhow::Result<String> {
         // Parse server name and tool name
-        let parts: Vec<&str> = qualified_name.splitn(2, '_').collect();
+        let parts: Vec<&str> = qualified_name.splitn(2, "::").collect();
         if parts.len() != 2 {
             anyhow::bail!("Invalid tool name format: {qualified_name}");
         }

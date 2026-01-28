@@ -147,7 +147,8 @@ impl PluginRegistry {
         let mut tools = Vec::new();
         for (plugin_name, plugin) in &self.plugins {
             for tool in plugin.tools() {
-                let qualified_name = format!("{plugin_name}_{}", tool.name);
+                // Use :: as delimiter to avoid conflicts with underscores in names
+                let qualified_name = format!("{plugin_name}::{}", tool.name);
                 tools.push((qualified_name, tool));
             }
         }
@@ -164,7 +165,7 @@ impl PluginRegistry {
         qualified_name: &str,
         args: serde_json::Value,
     ) -> anyhow::Result<ToolResult> {
-        let parts: Vec<&str> = qualified_name.splitn(2, '_').collect();
+        let parts: Vec<&str> = qualified_name.splitn(2, "::").collect();
         if parts.len() != 2 {
             anyhow::bail!("Invalid tool name format: {qualified_name}");
         }
@@ -372,7 +373,7 @@ mod tests {
         registry.register("test", Box::new(TestPlugin));
         let tools = registry.all_tools();
         assert_eq!(tools.len(), 1);
-        assert_eq!(tools[0].0, "test_test_tool");
+        assert_eq!(tools[0].0, "test::test_tool");
     }
 
     #[tokio::test]
@@ -380,7 +381,7 @@ mod tests {
         let mut registry = PluginRegistry::new();
         registry.register("test", Box::new(TestPlugin));
         let result = registry
-            .execute_tool("test_test_tool", serde_json::json!({}))
+            .execute_tool("test::test_tool", serde_json::json!({}))
             .await
             .unwrap();
         assert_eq!(result.output, "test output");

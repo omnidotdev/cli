@@ -22,8 +22,8 @@ const SECRET_PATTERNS: &[(&str, &str)] = &[
     (r"ghr_[a-zA-Z0-9]{36}", "[MASKED_GITHUB_TOKEN]"),
     // Bearer tokens
     (r"(?i)bearer\s+[a-zA-Z0-9._-]+", "[MASKED_BEARER_TOKEN]"),
-    // Private keys
-    (r"-----BEGIN[A-Z ]+PRIVATE KEY-----", "[MASKED_PRIVATE_KEY]"),
+    // Private keys (match entire block including content)
+    (r"-----BEGIN[A-Z ]+PRIVATE KEY-----[\s\S]*?-----END[A-Z ]+PRIVATE KEY-----", "[MASKED_PRIVATE_KEY]"),
     // JWT tokens
     (r"eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+", "[MASKED_JWT]"),
     // Generic API key patterns (simpler)
@@ -148,9 +148,10 @@ mod tests {
 
     #[test]
     fn mask_private_key() {
-        let text = "-----BEGIN RSA PRIVATE KEY-----\nMIIE...";
+        let text = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----";
         let masked = mask_secrets(text);
         assert!(masked.contains("[MASKED_PRIVATE_KEY]"));
+        assert!(!masked.contains("MIIE")); // Content should be masked
     }
 
     #[test]
