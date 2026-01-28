@@ -192,6 +192,28 @@ impl Storage {
     pub fn exists(&self, key: &[&str]) -> bool {
         self.path(key).exists()
     }
+
+    /// List and deserialize all items under a prefix
+    ///
+    /// # Errors
+    ///
+    /// Returns error if reading or deserialization fails
+    pub fn list_prefix<T>(&self, prefix: &str) -> Result<Vec<T>>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let keys = self.list(&[prefix])?;
+        let mut items = Vec::new();
+
+        for key in keys {
+            let key_refs: Vec<&str> = key.iter().map(String::as_str).collect();
+            if let Ok(item) = self.read(&key_refs) {
+                items.push(item);
+            }
+        }
+
+        Ok(items)
+    }
 }
 
 #[cfg(test)]

@@ -121,6 +121,26 @@ pub enum SessionCommands {
         #[arg(short, long)]
         output: Option<String>,
     },
+
+    /// Share a session via URL.
+    Share {
+        /// Session ID to share.
+        session_id: String,
+
+        /// Expiration time (e.g., 1h, 7d, 30d).
+        #[arg(short, long)]
+        expires: Option<String>,
+    },
+
+    /// Revoke a shared session.
+    Unshare {
+        /// Share token to revoke.
+        token: String,
+
+        /// Secret for authorization.
+        #[arg(short, long)]
+        secret: String,
+    },
 }
 
 #[cfg(test)]

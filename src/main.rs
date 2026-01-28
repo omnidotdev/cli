@@ -194,7 +194,62 @@ fn handle_session_command(command: SessionCommands) -> anyhow::Result<()> {
                 println!("{content}");
             }
         }
+
+        SessionCommands::Share { session_id, expires } => {
+            use omni_cli::core::session::ShareOptions;
+
+            let ttl_seconds = expires.map(|e| parse_duration(&e)).transpose()?;
+            let options = ShareOptions { ttl_seconds };
+
+            let share = manager.create_share(&session_id, options)?;
+
+            println!("Share created!");
+            println!();
+            println!("  Token:  {}", share.token);
+            println!("  Secret: {}", share.secret);
+            println!();
+            println!("Access via API:");
+            println!("  GET http://localhost:7890/api/share/{}", share.token);
+            println!();
+            if share.expires_at.is_some() {
+                let expires = chrono::DateTime::from_timestamp_millis(share.expires_at.unwrap())
+                    .map_or_else(|| "Unknown".to_string(), |dt| dt.format("%Y-%m-%d %H:%M UTC").to_string());
+                println!("Expires: {expires}");
+            } else {
+                println!("Expires: Never");
+            }
+            println!();
+            println!("To revoke:");
+            println!("  omni session unshare {} --secret {}", share.token, share.secret);
+        }
+
+        SessionCommands::Unshare { token, secret } => {
+            manager.revoke_share(&token, &secret)?;
+            println!("Share revoked");
+        }
     }
 
     Ok(())
+}
+
+/// Parse a duration string (e.g., "1h", "7d") to seconds
+fn parse_duration(s: &str) -> anyhow::Result<u64> {
+    let s = s.trim();
+    if s.is_empty() {
+        anyhow::bail!("empty duration");
+    }
+
+    let (num, unit) = s.split_at(s.len() - 1);
+    let num: u64 = num.parse().map_err(|_| anyhow::anyhow!("invalid duration number"))?;
+
+    let seconds = match unit {
+        "s" => num,
+        "m" => num * 60,
+        "h" => num * 3600,
+        "d" => num * 86400,
+        "w" => num * 604800,
+        _ => anyhow::bail!("invalid duration unit (use s, m, h, d, or w)"),
+    };
+
+    Ok(seconds)
 }

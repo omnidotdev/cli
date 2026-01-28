@@ -7,6 +7,7 @@ mod compaction;
 mod export;
 mod message;
 mod part;
+mod share;
 mod titling;
 
 use std::path::PathBuf;
@@ -18,6 +19,7 @@ pub use compaction::{
     CompactionResult, DEFAULT_COMPACTION_THRESHOLD, MIN_MESSAGES_TO_KEEP, compaction_prompt,
 };
 pub use export::{ExportFormat, ExportedMessage, ExportedSession};
+pub use share::{ShareOptions, ShareToken};
 pub use message::{
     AssistantMessage, Message, MessageSummary, MessageTime, TokenUsage, UserMessage,
 };

@@ -29,7 +29,10 @@ use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
+use axum::extract::Path;
+
 use crate::config::Config;
+use crate::core::session::{ExportedSession, SessionManager, ShareOptions};
 use crate::core::{Agent, TaskResult};
 
 /// Shared application state.
@@ -138,10 +141,21 @@ pub async fn serve(host: &str, port: u16) -> anyhow::Result<()> {
     // Public routes (no auth required)
     let public_routes = Router::new()
         .route("/health", get(health))
+        .route("/api/share/:token", get(get_shared_session))
         .merge(SwaggerUi::new("/api/docs").url("/api/openapi.json", ApiDoc::openapi()));
+
+    // Share routes (some require auth)
+    let share_routes = Router::new()
+        .route("/api/share", post(create_share))
+        .route("/api/share/:token", axum::routing::delete(delete_share))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ));
 
     let app = Router::new()
         .merge(protected_routes)
+        .merge(share_routes)
         .merge(public_routes)
         .with_state(state)
         .layer(TraceLayer::new_for_http());
@@ -175,6 +189,33 @@ async fn health() -> &'static str {
 pub struct AgentRequest {
     /// The prompt or task to execute.
     pub prompt: String,
+}
+
+/// Request body for creating a share.
+#[derive(Debug, Deserialize)]
+pub struct CreateShareRequest {
+    /// Session ID to share.
+    pub session_id: String,
+    /// TTL in seconds (optional).
+    pub ttl_seconds: Option<u64>,
+}
+
+/// Response body for share creation.
+#[derive(Debug, Serialize)]
+pub struct CreateShareResponse {
+    /// Share token for the URL.
+    pub token: String,
+    /// Secret for modification/deletion.
+    pub secret: String,
+    /// Full share URL.
+    pub url: String,
+}
+
+/// Request body for deleting a share.
+#[derive(Debug, Deserialize)]
+pub struct DeleteShareRequest {
+    /// Secret for authorization.
+    pub secret: String,
 }
 
 /// Response body for agent execution.
@@ -325,6 +366,69 @@ async fn execute_agent_stream(
     });
 
     Ok(Sse::new(stream))
+}
+
+/// Create a share token for a session.
+async fn create_share(
+    headers: HeaderMap,
+    Json(req): Json<CreateShareRequest>,
+) -> Result<Json<CreateShareResponse>, (StatusCode, String)> {
+    let manager = SessionManager::for_current_project()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let options = ShareOptions {
+        ttl_seconds: req.ttl_seconds,
+    };
+
+    let share = manager
+        .create_share(&req.session_id, options)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    // Build URL from request headers
+    let host = headers
+        .get("host")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("localhost:3000");
+    let protocol = if host.starts_with("localhost") || host.starts_with("127.0.0.1") {
+        "http"
+    } else {
+        "https"
+    };
+
+    Ok(Json(CreateShareResponse {
+        token: share.token.clone(),
+        secret: share.secret,
+        url: format!("{protocol}://{host}/api/share/{}", share.token),
+    }))
+}
+
+/// Get a shared session (public, no auth required).
+async fn get_shared_session(
+    Path(token): Path<String>,
+) -> Result<Json<ExportedSession>, (StatusCode, String)> {
+    let manager = SessionManager::for_current_project()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let exported = manager
+        .get_shared_session(&token)
+        .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?;
+
+    Ok(Json(exported))
+}
+
+/// Delete a share token.
+async fn delete_share(
+    Path(token): Path<String>,
+    Json(req): Json<DeleteShareRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let manager = SessionManager::for_current_project()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    manager
+        .revoke_share(&token, &req.secret)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[cfg(test)]
