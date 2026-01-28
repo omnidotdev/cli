@@ -13,7 +13,8 @@ use crate::tui::message::{DisplayMessage, icons, tool_icon};
 
 /// Brand colors
 const BRAND_TEAL: Color = Color::Rgb(77, 201, 176);
-const PANEL_BG: Color = Color::Rgb(18, 19, 22);
+/// Lighter panel background for "previous" user messages
+const PANEL_BG: Color = Color::Rgb(28, 30, 35);
 const DIMMED: Color = Color::Rgb(100, 100, 110);
 const ERROR_COLOR: Color = Color::Red;
 const SUCCESS_COLOR: Color = Color::Rgb(77, 201, 176);
@@ -23,17 +24,71 @@ const SELECTION_FG: Color = Color::White;
 /// Continuation character for tool output
 const CONT_CHAR: &str = "⎿";
 
-/// Render a user message with teal border, panel background, and vertical padding
+/// Render a `DisplayMessage` with scroll offset for partial visibility
 ///
-/// Returns the height used.
+/// The `scroll_offset` parameter specifies how many lines to skip from the top
+/// of the message content, enabling smooth line-by-line scrolling.
+#[allow(clippy::too_many_arguments)]
+pub fn render_message_with_scroll(
+    frame: &mut Frame,
+    area: Rect,
+    message: &DisplayMessage,
+    scroll_offset: u16,
+    selection: Option<(u16, u16)>,
+    selected_text: &mut String,
+) {
+    match message {
+        DisplayMessage::User { text, .. } => {
+            render_user_message_with_scroll(
+                frame,
+                area,
+                text,
+                scroll_offset,
+                selection,
+                selected_text,
+            );
+        }
+        DisplayMessage::Assistant { text } => {
+            render_assistant_message_with_scroll(
+                frame,
+                area,
+                text,
+                scroll_offset,
+                selection,
+                selected_text,
+            );
+        }
+        DisplayMessage::Tool {
+            name,
+            invocation,
+            output,
+            is_error,
+        } => {
+            render_tool_message_with_scroll(
+                frame,
+                area,
+                name,
+                invocation,
+                output,
+                *is_error,
+                scroll_offset,
+                selection,
+                selected_text,
+            );
+        }
+    }
+}
+
+/// Render a user message with scroll offset for partial visibility
 #[allow(clippy::cast_possible_truncation)]
-fn render_user_message(
+fn render_user_message_with_scroll(
     frame: &mut Frame,
     area: Rect,
     text: &str,
+    scroll_offset: u16,
     selection: Option<(u16, u16)>,
     selected_text: &mut String,
-) -> u16 {
+) {
     // Calculate actual height needed, accounting for line wrapping
     // Subtract 1 for the left border
     let width = area.width.saturating_sub(1).max(1) as usize;
@@ -42,10 +97,11 @@ fn render_user_message(
         .map(|line| wrapped_line_height(line.chars().count(), width))
         .sum::<u16>()
         .max(1);
-    // Add 2 for top and bottom padding
-    let height = (content_height + 2).min(area.height);
+    // Add 2 for top and bottom padding, subtract scroll offset for visible portion
+    let total_height = content_height + 2;
+    let visible_height = total_height.saturating_sub(scroll_offset).min(area.height);
 
-    // Build lines with selection highlighting, adding vertical padding
+    // Build lines with selection highlighting, adding vertical and horizontal padding
     let mut lines: Vec<Line> = vec![Line::from("")]; // Top padding
     for (i, line_text) in text.lines().enumerate() {
         #[allow(clippy::cast_possible_truncation)]
@@ -58,53 +114,51 @@ fn render_user_message(
                 selected_text.push('\n');
             }
             selected_text.push_str(line_text);
-            lines.push(Line::from(Span::styled(
-                line_text,
-                Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
-            )));
+            lines.push(Line::from(vec![
+                Span::raw(" "), // Left padding
+                Span::styled(
+                    line_text,
+                    Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
+                ),
+            ]));
         } else {
-            lines.push(Line::from(line_text));
+            lines.push(Line::from(vec![
+                Span::raw(" "), // Left padding
+                Span::raw(line_text),
+            ]));
         }
     }
     lines.push(Line::from("")); // Bottom padding
+
+    // Skip lines according to scroll offset
+    let visible_lines: Vec<Line> = lines.into_iter().skip(scroll_offset as usize).collect();
 
     let block = Block::default()
         .borders(Borders::LEFT)
         .border_style(Style::default().fg(BRAND_TEAL))
         .style(Style::default().bg(PANEL_BG));
 
-    let para = Paragraph::new(lines)
+    let para = Paragraph::new(visible_lines)
         .block(block)
         .wrap(Wrap { trim: false });
 
-    let render_area = Rect::new(area.x, area.y, area.width, height);
+    // Use calculated height, not full area
+    let render_area = Rect::new(area.x, area.y, area.width, visible_height);
     frame.render_widget(para, render_area);
-
-    height
 }
 
-/// Render an assistant message without border
-///
-/// Returns the height used.
+/// Render an assistant message with scroll offset for partial visibility
 #[allow(clippy::cast_possible_truncation)]
-fn render_assistant_message(
+fn render_assistant_message_with_scroll(
     frame: &mut Frame,
     area: Rect,
     text: &str,
+    scroll_offset: u16,
     selection: Option<(u16, u16)>,
     selected_text: &mut String,
-) -> u16 {
-    // Calculate actual height needed, accounting for line wrapping
-    let width = area.width.max(1) as usize;
-    let height: u16 = text
-        .lines()
-        .map(|line| wrapped_line_height(line.chars().count(), width))
-        .sum::<u16>()
-        .max(1)
-        .min(area.height);
-
+) {
     // Build lines with selection highlighting and markdown parsing
-    let lines: Vec<Line> = text
+    let all_lines: Vec<Line> = text
         .lines()
         .enumerate()
         .map(|(i, line_text)| {
@@ -129,35 +183,26 @@ fn render_assistant_message(
         })
         .collect();
 
-    let para = Paragraph::new(lines).wrap(Wrap { trim: false });
+    // Skip lines according to scroll offset
+    let visible_lines: Vec<Line> = all_lines.into_iter().skip(scroll_offset as usize).collect();
 
-    let render_area = Rect::new(area.x, area.y, area.width, height);
-    frame.render_widget(para, render_area);
-
-    height
+    let para = Paragraph::new(visible_lines).wrap(Wrap { trim: false });
+    frame.render_widget(para, area);
 }
 
-/// Render a tool message with icon and tree-style output
-///
-/// Format:
-/// ```text
-/// ● Bash(cargo build 2>&1)
-///   ⎿  Compiling omni-cli v0.1.0
-///      Finished `dev` profile
-/// ```
-///
-/// Returns the height used.
+/// Render a tool message with scroll offset for partial visibility
 #[allow(clippy::cast_possible_truncation, clippy::too_many_arguments)]
-fn render_tool_message(
+fn render_tool_message_with_scroll(
     frame: &mut Frame,
     area: Rect,
     name: &str,
     invocation: &str,
     output: &str,
     is_error: bool,
+    scroll_offset: u16,
     selection: Option<(u16, u16)>,
     selected_text: &mut String,
-) -> u16 {
+) {
     let icon = if is_error {
         icons::ERROR
     } else {
@@ -248,59 +293,11 @@ fn render_tool_message(
         )));
     }
 
-    // Calculate wrapped height - each line may take multiple rows
-    let width = area.width.max(1) as usize;
-    let prefix_len = 5; // "  ⎿  " or "     "
-    let effective_width = width.saturating_sub(prefix_len).max(1);
+    // Skip lines according to scroll offset
+    let visible_lines: Vec<Line> = lines.into_iter().skip(scroll_offset as usize).collect();
 
-    let mut height: u16 = 1; // Header line
-    for line_text in output_lines.iter().take(show_lines) {
-        height += wrapped_line_height(line_text.chars().count(), effective_width);
-    }
-    if truncated {
-        height += 1;
-    }
-
-    let para = Paragraph::new(lines).wrap(Wrap { trim: false });
-    let render_area = Rect::new(area.x, area.y, area.width, height.min(area.height));
-    frame.render_widget(para, render_area);
-
-    height
-}
-
-/// Render a `DisplayMessage` to the frame
-///
-/// Returns the height used.
-pub fn render_message(
-    frame: &mut Frame,
-    area: Rect,
-    message: &DisplayMessage,
-    selection: Option<(u16, u16)>,
-    selected_text: &mut String,
-) -> u16 {
-    match message {
-        DisplayMessage::User { text, .. } => {
-            render_user_message(frame, area, text, selection, selected_text)
-        }
-        DisplayMessage::Assistant { text } => {
-            render_assistant_message(frame, area, text, selection, selected_text)
-        }
-        DisplayMessage::Tool {
-            name,
-            invocation,
-            output,
-            is_error,
-        } => render_tool_message(
-            frame,
-            area,
-            name,
-            invocation,
-            output,
-            *is_error,
-            selection,
-            selected_text,
-        ),
-    }
+    let para = Paragraph::new(visible_lines).wrap(Wrap { trim: false });
+    frame.render_widget(para, area);
 }
 
 /// Calculate how many rows a line of text takes when wrapped to a given width

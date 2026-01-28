@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use super::markdown::parse_markdown_line;
-use super::messages::{render_message, wrapped_line_height};
+use super::messages::{render_message_with_scroll, wrapped_line_height};
 use super::prompt::{PromptMode, render_prompt};
 use crate::core::agent::AgentMode;
 use crate::tui::app::Selection;
@@ -135,91 +135,116 @@ fn render_message_list(
         return;
     }
 
-    // Calculate total content height and render visible messages
-    let mut y_offset: u16 = 0;
-    let mut rendered_height: u16 = 0;
-    let visible_start = scroll_offset;
+    // Calculate content positions and render visible messages with smooth scrolling
+    // y_offset tracks position in virtual content space
+    // screen_y tracks where we're rendering on screen
+    let mut content_y: u16 = 0;
 
     for message in messages {
-        // Estimate message height (simplified - could be more accurate)
         let msg_height = estimate_message_height(message, padded_area.width);
+        let msg_end = content_y + msg_height;
 
-        // Skip messages above the visible area
-        if y_offset + msg_height <= visible_start {
-            y_offset += msg_height + 1; // +1 for spacing
+        // Skip messages entirely above the visible area
+        if msg_end <= scroll_offset {
+            content_y = msg_end + 1; // +1 for spacing
             continue;
         }
 
-        // Stop if we've filled the visible area
-        if rendered_height >= padded_area.height {
+        // Calculate how much of this message is visible
+        let clip_top = scroll_offset.saturating_sub(content_y);
+        let screen_y = if content_y >= scroll_offset {
+            // Message starts below scroll offset
+            padded_area.y + (content_y - scroll_offset)
+        } else {
+            // Message starts above scroll offset (partially visible)
+            padded_area.y
+        };
+
+        // Stop if we've gone past the visible area
+        if screen_y >= padded_area.y + padded_area.height {
             break;
         }
 
-        // Calculate render position
-        let render_y = padded_area.y + rendered_height;
-        let available_height = padded_area.height.saturating_sub(rendered_height);
+        let available_height = (padded_area.y + padded_area.height).saturating_sub(screen_y);
 
-        // Render the message
-        let msg_area = Rect::new(padded_area.x, render_y, padded_area.width, available_height);
+        // Render the message with scroll offset for partial visibility
+        let msg_area = Rect::new(padded_area.x, screen_y, padded_area.width, available_height);
         let sel_bounds = selection.map(Selection::bounds);
-        let height = render_message(frame, msg_area, message, sel_bounds, selected_text);
+        render_message_with_scroll(
+            frame,
+            msg_area,
+            message,
+            clip_top,
+            sel_bounds,
+            selected_text,
+        );
 
-        rendered_height += height + 1; // +1 for spacing
-        y_offset += msg_height + 1;
+        content_y = msg_end + 1; // +1 for spacing
     }
 
     // Render streaming text if present
-    if !streaming_text.is_empty() && rendered_height < padded_area.height {
-        // Add padding before streaming text
-        rendered_height += 1;
-        let render_y = padded_area.y + rendered_height;
-        let available_height = padded_area.height.saturating_sub(rendered_height);
-        let streaming_area =
-            Rect::new(padded_area.x, render_y, padded_area.width, available_height);
-
-        // Check if streaming text overlaps with selection
-        let sel_bounds = selection.map(Selection::bounds);
-        let is_selected = sel_bounds.is_some_and(|(min_y, max_y)| {
-            render_y <= max_y && render_y + available_height >= min_y
-        });
-
-        // Build styled lines with markdown parsing
-        let lines: Vec<Line> = if is_selected {
-            // Collect selected lines from streaming text
-            if let Some((min_y, max_y)) = sel_bounds {
-                for (i, line) in streaming_text.lines().enumerate() {
-                    #[allow(clippy::cast_possible_truncation)]
-                    let line_y = render_y + i as u16;
-                    if line_y >= min_y && line_y <= max_y {
-                        if !selected_text.is_empty() {
-                            selected_text.push('\n');
-                        }
-                        selected_text.push_str(line);
-                    }
-                }
-            }
-            // Selection styling overrides markdown
-            streaming_text
-                .lines()
-                .map(|line| {
-                    Line::from(Span::styled(
-                        line.to_owned(),
-                        Style::default()
-                            .bg(Color::Rgb(60, 80, 100))
-                            .fg(Color::White),
-                    ))
-                })
-                .collect()
+    if !streaming_text.is_empty() {
+        // Calculate position in content space
+        let screen_y = if content_y >= scroll_offset {
+            padded_area.y + (content_y - scroll_offset)
         } else {
-            // Parse markdown for non-selected streaming text
-            streaming_text
-                .lines()
-                .map(|line| Line::from(parse_markdown_line(line)))
-                .collect()
+            padded_area.y
         };
 
-        let para = Paragraph::new(lines).wrap(Wrap { trim: false });
-        frame.render_widget(para, streaming_area);
+        // Only render if visible
+        if screen_y < padded_area.y + padded_area.height {
+            let clip_top = scroll_offset.saturating_sub(content_y);
+            let available_height = (padded_area.y + padded_area.height).saturating_sub(screen_y);
+            let streaming_area =
+                Rect::new(padded_area.x, screen_y, padded_area.width, available_height);
+
+            // Check if streaming text overlaps with selection
+            let sel_bounds = selection.map(Selection::bounds);
+            let is_selected = sel_bounds.is_some_and(|(min_y, max_y)| {
+                screen_y <= max_y && screen_y + available_height >= min_y
+            });
+
+            // Build styled lines with markdown parsing, skipping clipped lines
+            let all_lines: Vec<Line> = if is_selected {
+                // Collect selected lines from streaming text
+                if let Some((min_y, max_y)) = sel_bounds {
+                    for (i, line) in streaming_text.lines().enumerate() {
+                        #[allow(clippy::cast_possible_truncation)]
+                        let line_y = screen_y + i as u16;
+                        if line_y >= min_y && line_y <= max_y {
+                            if !selected_text.is_empty() {
+                                selected_text.push('\n');
+                            }
+                            selected_text.push_str(line);
+                        }
+                    }
+                }
+                // Selection styling overrides markdown
+                streaming_text
+                    .lines()
+                    .map(|line| {
+                        Line::from(Span::styled(
+                            line.to_owned(),
+                            Style::default()
+                                .bg(Color::Rgb(60, 80, 100))
+                                .fg(Color::White),
+                        ))
+                    })
+                    .collect()
+            } else {
+                // Parse markdown for non-selected streaming text
+                streaming_text
+                    .lines()
+                    .map(|line| Line::from(parse_markdown_line(line)))
+                    .collect()
+            };
+
+            // Skip clipped lines at the top
+            let visible_lines: Vec<Line> = all_lines.into_iter().skip(clip_top as usize).collect();
+
+            let para = Paragraph::new(visible_lines).wrap(Wrap { trim: false });
+            frame.render_widget(para, streaming_area);
+        }
     }
 }
 

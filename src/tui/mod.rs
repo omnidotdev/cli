@@ -372,12 +372,11 @@ fn handle_key(
     permission_tx: &mpsc::UnboundedSender<PermissionMessage>,
 ) -> bool {
     // Handle Shift+Enter or Alt+Enter for newline insertion
+    // Allow even while loading so user can prepare next message
     if (modifiers.contains(KeyModifiers::SHIFT) || modifiers.contains(KeyModifiers::ALT))
         && code == KeyCode::Enter
     {
-        if !app.loading {
-            app.insert_char('\n');
-        }
+        app.insert_char('\n');
         return false;
     }
 
@@ -620,23 +619,21 @@ fn handle_key(
             }
         }
         KeyCode::Char(c) => {
-            if !app.loading {
-                app.insert_char(c);
-                // Update dropdown visibility
-                app.show_command_dropdown = should_show_dropdown(&app.input);
-                if app.show_command_dropdown {
-                    app.command_selection = 0;
-                }
+            // Allow typing while agent is responding
+            app.insert_char(c);
+            // Update dropdown visibility
+            app.show_command_dropdown = should_show_dropdown(&app.input);
+            if app.show_command_dropdown {
+                app.command_selection = 0;
             }
         }
         KeyCode::Backspace => {
-            if !app.loading {
-                app.delete_char();
-                // Update dropdown visibility
-                app.show_command_dropdown = should_show_dropdown(&app.input);
-                if app.show_command_dropdown {
-                    app.command_selection = 0;
-                }
+            // Allow backspace while agent is responding
+            app.delete_char();
+            // Update dropdown visibility
+            app.show_command_dropdown = should_show_dropdown(&app.input);
+            if app.show_command_dropdown {
+                app.command_selection = 0;
             }
         }
         KeyCode::Esc => {
