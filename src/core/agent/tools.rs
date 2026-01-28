@@ -12,6 +12,7 @@ use super::permission::{PermissionAction, PermissionClient, PermissionContext};
 use super::plan::PlanManager;
 use super::types::Tool;
 use crate::core::lsp::{LspManager, LspOperation, LspResult};
+use crate::core::mcp::{McpClient, McpConfig};
 use crate::core::memory::{MemoryCategory, MemoryItem, MemoryManager};
 use crate::core::search::{self, CodeSearchParams, WebSearchParams};
 use crate::core::secret::mask_secrets;
@@ -89,12 +90,13 @@ pub struct TodoItem {
 }
 
 /// Registry of available tools.
-#[derive(Debug)]
 pub struct ToolRegistry {
     /// In-memory todo storage for agent task tracking.
     todos: std::sync::Arc<parking_lot::RwLock<Vec<TodoItem>>>,
     /// Skill registry for loading skill instructions.
     skill_registry: SkillRegistry,
+    /// MCP client for external tool servers.
+    mcp_client: std::sync::Arc<parking_lot::RwLock<McpClient>>,
 }
 
 impl Default for ToolRegistry {
@@ -107,7 +109,17 @@ impl Default for ToolRegistry {
         Self {
             todos: std::sync::Arc::new(parking_lot::RwLock::new(Vec::new())),
             skill_registry,
+            mcp_client: std::sync::Arc::new(parking_lot::RwLock::new(McpClient::new())),
         }
+    }
+}
+
+impl std::fmt::Debug for ToolRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ToolRegistry")
+            .field("todos", &self.todos)
+            .field("skill_registry", &self.skill_registry)
+            .finish_non_exhaustive()
     }
 }
 
@@ -124,7 +136,31 @@ impl ToolRegistry {
         Self {
             todos: std::sync::Arc::new(parking_lot::RwLock::new(Vec::new())),
             skill_registry,
+            mcp_client: std::sync::Arc::new(parking_lot::RwLock::new(McpClient::new())),
         }
+    }
+
+    /// Configure MCP servers from config
+    pub fn configure_mcp(&mut self, config: &McpConfig) {
+        let mut client = self.mcp_client.write();
+        *client = McpClient::from_config(config);
+        client.connect_all();
+    }
+
+    /// Get MCP tools as agent tool definitions
+    fn mcp_tool_definitions(&self) -> Vec<Tool> {
+        let client = self.mcp_client.read();
+        client
+            .tools()
+            .into_iter()
+            .map(|(qualified_name, mcp_tool)| Tool {
+                name: format!("mcp_{qualified_name}"),
+                description: mcp_tool
+                    .description
+                    .unwrap_or_else(|| format!("MCP tool: {}", mcp_tool.name)),
+                input_schema: mcp_tool.input_schema,
+            })
+            .collect()
     }
 
     /// Get tool definitions for the given mode.
@@ -713,6 +749,9 @@ impl ToolRegistry {
             }
         }
 
+        // Add MCP tools from connected servers
+        tools.extend(self.mcp_tool_definitions());
+
         tools
     }
 
@@ -781,8 +820,22 @@ impl ToolRegistry {
             "memory_delete" => self.execute_memory_delete(input),
             "skill" => self.execute_skill(input),
             "lsp" => self.execute_lsp(input).await,
+            _ if name.starts_with("mcp_") => self.execute_mcp_tool(name, input),
             _ => Err(AgentError::ToolExecution(format!("unknown tool: {name}"))),
         }
+    }
+
+    /// Execute an MCP tool
+    fn execute_mcp_tool(&self, name: &str, input: serde_json::Value) -> Result<String> {
+        // Strip the "mcp_" prefix to get the qualified name
+        let qualified_name = name
+            .strip_prefix("mcp_")
+            .ok_or_else(|| AgentError::ToolExecution("invalid MCP tool name".to_string()))?;
+
+        let mut client = self.mcp_client.write();
+        client
+            .call_tool(qualified_name, input)
+            .map_err(|e| AgentError::ToolExecution(format!("MCP tool error: {e}")))
     }
 
     async fn execute_shell(
