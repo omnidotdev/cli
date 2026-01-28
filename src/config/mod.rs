@@ -433,16 +433,22 @@ impl AgentConfig {
 
     /// Look up the provider for a model.
     ///
-    /// First checks the models registry, then falls back to prefix detection.
+    /// First checks the models registry (case-insensitive), then falls back to prefix detection.
     #[must_use]
     pub fn provider_for_model(&self, model_id: &str) -> Option<&str> {
-        if let Some(info) = self.models.iter().find(|m| m.id == model_id) {
+        let model_lower = model_id.to_lowercase();
+        // Check models registry (case-insensitive)
+        if let Some(info) = self
+            .models
+            .iter()
+            .find(|m| m.id.to_lowercase() == model_lower)
+        {
             return Some(&info.provider);
         }
-        // Fallback: detect by prefix
-        if model_id.starts_with("claude") {
+        // Fallback: detect by prefix (case-insensitive)
+        if model_lower.starts_with("claude") {
             Some("anthropic")
-        } else if model_id.starts_with("gpt") || model_id.starts_with("o1") {
+        } else if model_lower.starts_with("gpt") || model_lower.starts_with("o1") {
             Some("openai")
         } else {
             None
