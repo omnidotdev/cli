@@ -19,11 +19,11 @@ pub use compaction::{
     CompactionResult, DEFAULT_COMPACTION_THRESHOLD, MIN_MESSAGES_TO_KEEP, compaction_prompt,
 };
 pub use export::{ExportFormat, ExportedMessage, ExportedSession};
-pub use share::{ShareOptions, ShareToken};
 pub use message::{
     AssistantMessage, Message, MessageSummary, MessageTime, TokenUsage, UserMessage,
 };
 pub use part::{Part, PartTime, ReasoningPart, TextPart, ToolPart, ToolState};
+pub use share::{ShareOptions, ShareToken};
 pub use titling::{MAX_TITLE_LENGTH, extract_title, titling_prompt};
 
 use super::project::Project;

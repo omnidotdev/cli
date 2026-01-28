@@ -209,8 +209,7 @@ impl Agent {
 
         // Keep only the most recent calls
         if self.recent_tool_calls.len() > LOOP_DETECTION_WINDOW * 2 {
-            self.recent_tool_calls
-                .drain(0..LOOP_DETECTION_WINDOW);
+            self.recent_tool_calls.drain(0..LOOP_DETECTION_WINDOW);
         }
     }
 

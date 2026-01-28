@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -17,6 +17,7 @@ use tokio::sync::oneshot;
 /// Type alias for pending request map
 type PendingRequests = Arc<Mutex<HashMap<i64, oneshot::Sender<Result<Value, String>>>>>;
 
+use super::path_to_uri;
 use super::protocol::{
     ClientCapabilities, DocumentSymbol, Hover, HoverClientCapabilities, InitializeParams,
     InitializeResult, Location, Position, ReferenceContext, ReferenceParams, SymbolInformation,
@@ -24,7 +25,6 @@ use super::protocol::{
     TextDocumentPositionParams, WorkspaceFolder,
 };
 use super::server::LspServer;
-use super::path_to_uri;
 
 /// JSON-RPC request
 #[derive(Debug, Serialize)]
@@ -115,13 +115,15 @@ impl LspClient {
             .current_dir(root)
             .spawn()?;
 
-        let stdin = process.stdin.take().ok_or_else(|| {
-            anyhow::anyhow!("failed to open stdin")
-        })?;
+        let stdin = process
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("failed to open stdin"))?;
 
-        let stdout = process.stdout.take().ok_or_else(|| {
-            anyhow::anyhow!("failed to open stdout")
-        })?;
+        let stdout = process
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("failed to open stdout"))?;
 
         let pending: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
         let pending_clone = Arc::clone(&pending);
@@ -269,9 +271,12 @@ impl LspClient {
             text,
         };
 
-        self.notify("textDocument/didOpen", Some(serde_json::json!({
-            "textDocument": params
-        })))?;
+        self.notify(
+            "textDocument/didOpen",
+            Some(serde_json::json!({
+                "textDocument": params
+            })),
+        )?;
 
         {
             let mut opened = self.opened_files.lock();
@@ -318,8 +323,9 @@ impl LspClient {
             position,
         };
 
-        let result: LocationResponse =
-            self.request("textDocument/definition", Some(params)).await?;
+        let result: LocationResponse = self
+            .request("textDocument/definition", Some(params))
+            .await?;
         Ok(result.into_locations())
     }
 
@@ -366,8 +372,9 @@ impl LspClient {
             },
         };
 
-        let result: Option<Vec<Location>> =
-            self.request("textDocument/references", Some(params)).await?;
+        let result: Option<Vec<Location>> = self
+            .request("textDocument/references", Some(params))
+            .await?;
         Ok(result.unwrap_or_default())
     }
 
@@ -383,8 +390,9 @@ impl LspClient {
             }
         });
 
-        let result: DocumentSymbolResponse =
-            self.request("textDocument/documentSymbol", Some(params)).await?;
+        let result: DocumentSymbolResponse = self
+            .request("textDocument/documentSymbol", Some(params))
+            .await?;
         Ok(result.into_document_symbols())
     }
 

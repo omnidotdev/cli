@@ -23,9 +23,15 @@ const SECRET_PATTERNS: &[(&str, &str)] = &[
     // Bearer tokens
     (r"(?i)bearer\s+[a-zA-Z0-9._-]+", "[MASKED_BEARER_TOKEN]"),
     // Private keys (match entire block including content)
-    (r"-----BEGIN[A-Z ]+PRIVATE KEY-----[\s\S]*?-----END[A-Z ]+PRIVATE KEY-----", "[MASKED_PRIVATE_KEY]"),
+    (
+        r"-----BEGIN[A-Z ]+PRIVATE KEY-----[\s\S]*?-----END[A-Z ]+PRIVATE KEY-----",
+        "[MASKED_PRIVATE_KEY]",
+    ),
     // JWT tokens
-    (r"eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+", "[MASKED_JWT]"),
+    (
+        r"eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+",
+        "[MASKED_JWT]",
+    ),
     // Generic API key patterns (simpler)
     (r"(?i)api_key\s*=\s*[a-zA-Z0-9_-]{16,}", "[MASKED_SECRET]"),
     (r"(?i)secret\s*=\s*[a-zA-Z0-9_-]{16,}", "[MASKED_SECRET]"),
@@ -73,7 +79,9 @@ impl SecretMasker {
     /// Check if text contains any secrets
     #[must_use]
     pub fn contains_secret(&self, text: &str) -> bool {
-        self.patterns.iter().any(|(pattern, _)| pattern.is_match(text))
+        self.patterns
+            .iter()
+            .any(|(pattern, _)| pattern.is_match(text))
     }
 }
 
@@ -148,7 +156,8 @@ mod tests {
 
     #[test]
     fn mask_private_key() {
-        let text = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----";
+        let text =
+            "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----";
         let masked = mask_secrets(text);
         assert!(masked.contains("[MASKED_PRIVATE_KEY]"));
         assert!(!masked.contains("MIIE")); // Content should be masked

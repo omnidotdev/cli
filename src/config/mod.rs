@@ -7,7 +7,9 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::agent::{AgentMode, AnthropicProvider, LlmProvider, OpenAiProvider, UnifiedProvider};
+use crate::core::agent::{
+    AgentMode, AnthropicProvider, LlmProvider, OpenAiProvider, UnifiedProvider,
+};
 
 pub use persona::{Persona, list_personas, load_persona, personas_dir};
 

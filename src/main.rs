@@ -195,7 +195,10 @@ fn handle_session_command(command: SessionCommands) -> anyhow::Result<()> {
             }
         }
 
-        SessionCommands::Share { session_id, expires } => {
+        SessionCommands::Share {
+            session_id,
+            expires,
+        } => {
             use omni_cli::core::session::ShareOptions;
 
             let ttl_seconds = expires.map(|e| parse_duration(&e)).transpose()?;
@@ -213,14 +216,20 @@ fn handle_session_command(command: SessionCommands) -> anyhow::Result<()> {
             println!();
             if share.expires_at.is_some() {
                 let expires = chrono::DateTime::from_timestamp_millis(share.expires_at.unwrap())
-                    .map_or_else(|| "Unknown".to_string(), |dt| dt.format("%Y-%m-%d %H:%M UTC").to_string());
+                    .map_or_else(
+                        || "Unknown".to_string(),
+                        |dt| dt.format("%Y-%m-%d %H:%M UTC").to_string(),
+                    );
                 println!("Expires: {expires}");
             } else {
                 println!("Expires: Never");
             }
             println!();
             println!("To revoke:");
-            println!("  omni session unshare {} --secret {}", share.token, share.secret);
+            println!(
+                "  omni session unshare {} --secret {}",
+                share.token, share.secret
+            );
         }
 
         SessionCommands::Unshare { token, secret } => {
@@ -240,7 +249,9 @@ fn parse_duration(s: &str) -> anyhow::Result<u64> {
     }
 
     let (num, unit) = s.split_at(s.len() - 1);
-    let num: u64 = num.parse().map_err(|_| anyhow::anyhow!("invalid duration number"))?;
+    let num: u64 = num
+        .parse()
+        .map_err(|_| anyhow::anyhow!("invalid duration number"))?;
 
     let seconds = match unit {
         "s" => num,

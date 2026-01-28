@@ -78,9 +78,7 @@ impl SessionManager {
         let session = self.get_session(session_id)?;
 
         let now = chrono::Utc::now().timestamp_millis();
-        let expires_at = options
-            .ttl_seconds
-            .map(|ttl| now + (ttl as i64 * 1000));
+        let expires_at = options.ttl_seconds.map(|ttl| now + (ttl as i64 * 1000));
 
         let token = ShareToken {
             token: generate_token(),
@@ -93,8 +91,7 @@ impl SessionManager {
         };
 
         // Store the token
-        self.storage
-            .write(&["share", &token.token], &token)?;
+        self.storage.write(&["share", &token.token], &token)?;
 
         // Also store reverse mapping (session -> token) for lookup
         self.storage
@@ -166,8 +163,7 @@ impl SessionManager {
         self.storage.remove(&["share", token])?;
 
         // Remove reverse mapping
-        self.storage
-            .remove(&["session_share", &share.session_id])?;
+        self.storage.remove(&["session_share", &share.session_id])?;
 
         Ok(())
     }

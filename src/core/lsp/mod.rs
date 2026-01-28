@@ -109,10 +109,7 @@ impl LspManager {
     /// Get servers that handle a given file extension
     #[must_use]
     pub fn servers_for_file(&self, path: &Path) -> Vec<&LspServer> {
-        let extension = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
+        let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
         self.servers
             .iter()

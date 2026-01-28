@@ -47,11 +47,7 @@ impl SkillRegistry {
         let mut skills = HashMap::new();
 
         // Project-local paths (walk up from project root)
-        let local_patterns = [
-            ".omni/skill",
-            ".opencode/skill",
-            ".claude/skills",
-        ];
+        let local_patterns = [".omni/skill", ".opencode/skill", ".claude/skills"];
 
         for pattern in local_patterns {
             let skill_dir = project_root.join(pattern);
@@ -106,9 +102,7 @@ impl SkillRegistry {
             match parse_skill_file(&skill_file) {
                 Ok(skill) => {
                     // Validate name matches directory
-                    let dir_name = path.file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("");
+                    let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
                     if skill.name != dir_name {
                         tracing::warn!(
@@ -170,7 +164,8 @@ impl SkillRegistry {
     ///
     /// Returns error if skill doesn't exist or file can't be read
     pub fn load_content(&self, name: &str) -> anyhow::Result<String> {
-        let skill = self.get(name)
+        let skill = self
+            .get(name)
             .ok_or_else(|| anyhow::anyhow!("skill not found: {name}"))?;
 
         let content = std::fs::read_to_string(&skill.location)?;

@@ -31,7 +31,8 @@ pub fn parse_skill_file(path: &Path) -> anyhow::Result<Skill> {
 
     // Find end of frontmatter
     let rest = &content[3..];
-    let end = rest.find("---")
+    let end = rest
+        .find("---")
         .ok_or_else(|| anyhow::anyhow!("unterminated frontmatter"))?;
 
     let yaml = &rest[..end];
@@ -91,7 +92,9 @@ mod tests {
     fn parse_valid_skill() {
         let dir = TempDir::new().unwrap();
         let skill_file = dir.path().join("SKILL.md");
-        fs::write(&skill_file, r#"---
+        fs::write(
+            &skill_file,
+            r#"---
 name: test-skill
 description: A test skill for testing
 metadata:
@@ -101,24 +104,33 @@ metadata:
 # Test Skill
 
 This is the skill content.
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let skill = parse_skill_file(&skill_file).unwrap();
         assert_eq!(skill.name, "test-skill");
         assert_eq!(skill.description, "A test skill for testing");
-        assert_eq!(skill.metadata.get("audience"), Some(&"developers".to_string()));
+        assert_eq!(
+            skill.metadata.get("audience"),
+            Some(&"developers".to_string())
+        );
     }
 
     #[test]
     fn parse_minimal_skill() {
         let dir = TempDir::new().unwrap();
         let skill_file = dir.path().join("SKILL.md");
-        fs::write(&skill_file, r#"---
+        fs::write(
+            &skill_file,
+            r#"---
 name: minimal
 description: Minimal skill
 ---
 Content here.
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let skill = parse_skill_file(&skill_file).unwrap();
         assert_eq!(skill.name, "minimal");

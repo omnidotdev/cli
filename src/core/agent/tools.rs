@@ -162,7 +162,11 @@ impl ToolRegistry {
     }
 
     /// Register a plugin with the tool registry.
-    pub fn register_plugin(&self, name: impl Into<String>, plugin: Box<dyn crate::core::plugin::PluginHooks>) {
+    pub fn register_plugin(
+        &self,
+        name: impl Into<String>,
+        plugin: Box<dyn crate::core::plugin::PluginHooks>,
+    ) {
         let mut registry = self.plugin_registry.blocking_write();
         registry.register(name, plugin);
     }
@@ -2719,10 +2723,7 @@ impl ToolRegistry {
                 .iter()
                 .map(|s| format!("  - {}: {}", s.name, s.description))
                 .collect();
-            format!(
-                "Available skills:\n{}",
-                list.join("\n")
-            )
+            format!("Available skills:\n{}", list.join("\n"))
         };
 
         Tool {
@@ -2750,18 +2751,20 @@ impl ToolRegistry {
             .as_str()
             .ok_or_else(|| AgentError::ToolExecution("missing skill name".to_string()))?;
 
-        let skill = self.skill_registry.get(name)
+        let skill = self
+            .skill_registry
+            .get(name)
             .ok_or_else(|| AgentError::ToolExecution(format!("skill not found: {name}")))?;
 
-        let content = self.skill_registry.load_content(name)
+        let content = self
+            .skill_registry
+            .load_content(name)
             .map_err(|e| AgentError::ToolExecution(format!("failed to load skill: {e}")))?;
 
         // Return formatted skill content
         Ok(format!(
             "# Skill: {}\n\n{}\n\n---\n\n{}",
-            skill.name,
-            skill.description,
-            content
+            skill.name, skill.description, content
         ))
     }
 
@@ -2802,9 +2805,7 @@ impl ToolRegistry {
 
         // Format result
         let output = match result {
-            LspResult::Hover(Some(hover)) => {
-                format_hover(&hover)
-            }
+            LspResult::Hover(Some(hover)) => format_hover(&hover),
             LspResult::Hover(None) => "No hover information available.".to_string(),
             LspResult::Locations(locations) => {
                 if locations.is_empty() {
