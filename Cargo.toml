@@ -2,7 +2,7 @@
 name = "omnidotdev-cli"
 version = "0.2.1"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.86"
 authors = ["Omni <team@omni.dev>"]
 description = "Agentic CLI for the Omni ecosystem"
 license = "MIT"
@@ -29,8 +29,8 @@ clipboard = ["dep:arboard"]
 clap = { version = "4", features = ["derive", "env"] }
 
 # TUI
-ratatui = "0.29"
-crossterm = "0.28"
+ratatui = "0.30"
+crossterm = "0.29"
 arboard = { version = "3", optional = true }
 pulldown-cmark = "0.13"
 
@@ -56,14 +56,14 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Config
 directories = "6"
-toml = "0.8"
+toml = "0.9"
 
 # Async utilities
 futures = "0.3"
 async-trait = "0.1"
 
 # HTTP client
-reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls"] }
 
 # Async streams
 async-stream = "0.3"
@@ -71,7 +71,7 @@ pin-project-lite = "0.2"
 tokio-stream = "0.1"
 
 # File watching
-notify = "7"
+notify = "8"
 ignore = "0.4"
 
 # Diff
