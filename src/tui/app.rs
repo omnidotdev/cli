@@ -5,7 +5,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use super::components::SessionListDialog;
-use super::message::DisplayMessage;
+use super::message::{DisplayMessage, format_tool_invocation};
 use super::state::ViewState;
 
 /// ASCII art logo lines (main text).
@@ -697,5 +697,94 @@ impl App {
         if self.auto_scroll {
             self.message_scroll = self.max_message_scroll;
         }
+    }
+
+    /// Load messages from a session into display format.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if session loading fails.
+    pub fn load_session_messages(manager: &SessionManager, session_id: &str) -> anyhow::Result<Vec<DisplayMessage>> {
+        use crate::core::session::{Message as SessionMessage, Part, ToolState};
+
+        let mut display_messages = Vec::new();
+        let messages = manager.list_messages(session_id)?;
+
+        for msg in messages {
+            let parts = manager.list_parts(msg.id())?;
+
+            match msg {
+                SessionMessage::User(_) => {
+                    // Collect text parts into user message
+                    let text: String = parts
+                        .iter()
+                        .filter_map(|p| match p {
+                            Part::Text(t) => Some(t.text.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+
+                    if !text.is_empty() {
+                        display_messages.push(DisplayMessage::User {
+                            text,
+                            timestamp: None,
+                        });
+                    }
+                }
+                SessionMessage::Assistant(_) => {
+                    // Process parts in order
+                    let mut assistant_text = String::new();
+
+                    for part in parts {
+                        match part {
+                            Part::Text(t) => {
+                                assistant_text.push_str(&t.text);
+                            }
+                            Part::Tool(t) => {
+                                // Flush accumulated assistant text first
+                                if !assistant_text.is_empty() {
+                                    display_messages.push(DisplayMessage::assistant(std::mem::take(&mut assistant_text)));
+                                }
+
+                                // Add tool message
+                                let invocation = format_tool_invocation(&t.tool, match &t.state {
+                                    ToolState::Pending { input, .. }
+                                    | ToolState::Running { input, .. }
+                                    | ToolState::Completed { input, .. }
+                                    | ToolState::Error { input, .. } => input,
+                                });
+
+                                let (output, is_error) = match &t.state {
+                                    ToolState::Completed { output, compacted, .. } => {
+                                        if compacted.is_some() {
+                                            ("[content cleared]".to_string(), false)
+                                        } else {
+                                            (output.clone(), false)
+                                        }
+                                    }
+                                    ToolState::Error { error, .. } => (error.clone(), true),
+                                    ToolState::Pending { .. } | ToolState::Running { .. } => {
+                                        ("...".to_string(), false)
+                                    }
+                                };
+
+                                display_messages.push(DisplayMessage::tool(&t.tool, invocation, output, is_error));
+                            }
+                            Part::Reasoning(_) => {
+                                // Skip reasoning parts in display for now
+                            }
+                        }
+                    }
+
+                    // Flush remaining assistant text
+                    if !assistant_text.is_empty() {
+                        display_messages.push(DisplayMessage::assistant(assistant_text));
+                    }
+                }
+            }
+        }
+
+        Ok(display_messages)
     }
 }
