@@ -574,7 +574,14 @@ impl App {
     }
 
     /// Show the session list dialog.
+    ///
+    /// Does nothing if a chat is in progress (agent is taken during streaming).
     pub fn show_session_list(&mut self) {
+        // Don't allow session switching while streaming
+        if self.agent.is_none() {
+            return;
+        }
+
         match SessionManager::for_current_project() {
             Ok(manager) => match SessionListDialog::from_manager(&manager) {
                 Ok(dialog) => {
@@ -704,7 +711,10 @@ impl App {
     /// # Errors
     ///
     /// Returns error if session loading fails.
-    pub fn load_session_messages(manager: &SessionManager, session_id: &str) -> anyhow::Result<Vec<DisplayMessage>> {
+    pub fn load_session_messages(
+        manager: &SessionManager,
+        session_id: &str,
+    ) -> anyhow::Result<Vec<DisplayMessage>> {
         use crate::core::session::{Message as SessionMessage, Part, ToolState};
 
         let mut display_messages = Vec::new();
@@ -744,19 +754,26 @@ impl App {
                             Part::Tool(t) => {
                                 // Flush accumulated assistant text first
                                 if !assistant_text.is_empty() {
-                                    display_messages.push(DisplayMessage::assistant(std::mem::take(&mut assistant_text)));
+                                    display_messages.push(DisplayMessage::assistant(
+                                        std::mem::take(&mut assistant_text),
+                                    ));
                                 }
 
                                 // Add tool message
-                                let invocation = format_tool_invocation(&t.tool, match &t.state {
-                                    ToolState::Pending { input, .. }
-                                    | ToolState::Running { input, .. }
-                                    | ToolState::Completed { input, .. }
-                                    | ToolState::Error { input, .. } => input,
-                                });
+                                let invocation = format_tool_invocation(
+                                    &t.tool,
+                                    match &t.state {
+                                        ToolState::Pending { input, .. }
+                                        | ToolState::Running { input, .. }
+                                        | ToolState::Completed { input, .. }
+                                        | ToolState::Error { input, .. } => input,
+                                    },
+                                );
 
                                 let (output, is_error) = match &t.state {
-                                    ToolState::Completed { output, compacted, .. } => {
+                                    ToolState::Completed {
+                                        output, compacted, ..
+                                    } => {
                                         if compacted.is_some() {
                                             ("[content cleared]".to_string(), false)
                                         } else {
@@ -769,7 +786,9 @@ impl App {
                                     }
                                 };
 
-                                display_messages.push(DisplayMessage::tool(&t.tool, invocation, output, is_error));
+                                display_messages.push(DisplayMessage::tool(
+                                    &t.tool, invocation, output, is_error,
+                                ));
                             }
                             Part::Reasoning(_) => {
                                 // Skip reasoning parts in display for now
