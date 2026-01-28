@@ -93,6 +93,9 @@ chrono = { version = "0.4.43", features = ["serde"] }
 parking_lot = "0.12.5"
 ulid = "1"
 
+# LSP integration
+which = "7"
+
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3"

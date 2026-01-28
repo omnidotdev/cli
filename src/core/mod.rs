@@ -3,6 +3,7 @@
 pub mod agent;
 pub mod context;
 mod error;
+pub mod lsp;
 pub mod mcp;
 pub mod memory;
 pub mod plugin;

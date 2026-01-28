@@ -11,6 +11,7 @@ use super::error::{AgentError, Result};
 use super::permission::{PermissionAction, PermissionClient, PermissionContext};
 use super::plan::PlanManager;
 use super::types::Tool;
+use crate::core::lsp::{LspManager, LspOperation, LspResult};
 use crate::core::memory::{MemoryCategory, MemoryItem, MemoryManager};
 use crate::core::search::{self, CodeSearchParams, WebSearchParams};
 use crate::core::skill::SkillRegistry;
@@ -647,6 +648,37 @@ impl ToolRegistry {
                 }),
             },
             self.skill_tool_definition(),
+            Tool {
+                name: "lsp".to_string(),
+                description: "Query language servers for code intelligence. Operations: hover (get docs/type info), goToDefinition, goToImplementation, findReferences, documentSymbol (symbols in file), workspaceSymbol (search symbols). Line and character are 1-indexed.".to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "operation": {
+                            "type": "string",
+                            "enum": ["hover", "goToDefinition", "goToImplementation", "findReferences", "documentSymbol", "workspaceSymbol"],
+                            "description": "The LSP operation to perform"
+                        },
+                        "file_path": {
+                            "type": "string",
+                            "description": "Path to the file"
+                        },
+                        "line": {
+                            "type": "integer",
+                            "description": "Line number (1-indexed)"
+                        },
+                        "character": {
+                            "type": "integer",
+                            "description": "Character offset (1-indexed)"
+                        },
+                        "query": {
+                            "type": "string",
+                            "description": "Search query (for workspaceSymbol)"
+                        }
+                    },
+                    "required": ["operation", "file_path"]
+                }),
+            },
         ];
 
         // Add mode-specific tools
@@ -728,6 +760,7 @@ impl ToolRegistry {
             "memory_search" => self.execute_memory_search(input),
             "memory_delete" => self.execute_memory_delete(input),
             "skill" => self.execute_skill(input),
+            "lsp" => self.execute_lsp(input).await,
             _ => Err(AgentError::ToolExecution(format!("unknown tool: {name}"))),
         }
     }
@@ -2593,6 +2626,149 @@ impl ToolRegistry {
             content
         ))
     }
+
+    /// Execute the lsp tool
+    async fn execute_lsp(&self, input: serde_json::Value) -> Result<String> {
+        let operation_str = input["operation"]
+            .as_str()
+            .ok_or_else(|| AgentError::ToolExecution("missing operation".to_string()))?;
+
+        let operation: LspOperation = operation_str
+            .parse()
+            .map_err(|e| AgentError::ToolExecution(format!("{e}")))?;
+
+        let file_path = input["file_path"]
+            .as_str()
+            .ok_or_else(|| AgentError::ToolExecution("missing file_path".to_string()))?;
+
+        let path = PathBuf::from(file_path);
+        if !path.exists() {
+            return Err(AgentError::ToolExecution(format!(
+                "file not found: {file_path}"
+            )));
+        }
+
+        // Convert 1-indexed to 0-indexed for LSP
+        #[allow(clippy::cast_possible_truncation)]
+        let line = input["line"].as_u64().unwrap_or(1).saturating_sub(1) as u32;
+        #[allow(clippy::cast_possible_truncation)]
+        let character = input["character"].as_u64().unwrap_or(1).saturating_sub(1) as u32;
+        let query = input["query"].as_str();
+
+        let manager = LspManager::new();
+
+        let result = manager
+            .execute(operation, &path, line, character, query)
+            .await
+            .map_err(|e| AgentError::ToolExecution(format!("LSP error: {e}")))?;
+
+        // Format result
+        let output = match result {
+            LspResult::Hover(Some(hover)) => {
+                format_hover(&hover)
+            }
+            LspResult::Hover(None) => "No hover information available.".to_string(),
+            LspResult::Locations(locations) => {
+                if locations.is_empty() {
+                    "No locations found.".to_string()
+                } else {
+                    locations
+                        .iter()
+                        .map(format_location)
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                }
+            }
+            LspResult::DocumentSymbols(symbols) => {
+                if symbols.is_empty() {
+                    "No symbols found.".to_string()
+                } else {
+                    format_document_symbols(&symbols, 0)
+                }
+            }
+            LspResult::WorkspaceSymbols(symbols) => {
+                if symbols.is_empty() {
+                    "No symbols found.".to_string()
+                } else {
+                    symbols
+                        .iter()
+                        .map(|(name, kind, loc)| {
+                            format!("{} ({}) - {}", name, kind, format_location(loc))
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                }
+            }
+        };
+
+        Ok(output)
+    }
+}
+
+/// Format hover contents
+fn format_hover(hover: &crate::core::lsp::Hover) -> String {
+    use crate::core::lsp::{HoverContents, MarkedString};
+
+    match &hover.contents {
+        HoverContents::String(s) => s.clone(),
+        HoverContents::Markup(m) => m.value.clone(),
+        HoverContents::MarkedString(ms) => match ms {
+            MarkedString::String(s) => s.clone(),
+            MarkedString::LanguageString { language, value } => {
+                format!("```{language}\n{value}\n```")
+            }
+        },
+        HoverContents::Array(arr) => arr
+            .iter()
+            .map(|ms| match ms {
+                MarkedString::String(s) => s.clone(),
+                MarkedString::LanguageString { language, value } => {
+                    format!("```{language}\n{value}\n```")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n"),
+    }
+}
+
+/// Format a location
+fn format_location(loc: &crate::core::lsp::Location) -> String {
+    let path = crate::core::lsp::uri_to_path(&loc.uri)
+        .map_or_else(|| loc.uri.clone(), |p| p.display().to_string());
+
+    format!(
+        "{}:{}:{}",
+        path,
+        loc.range.start.line + 1,
+        loc.range.start.character + 1
+    )
+}
+
+/// Format document symbols with indentation
+fn format_document_symbols(symbols: &[crate::core::lsp::DocumentSymbol], indent: usize) -> String {
+    let prefix = "  ".repeat(indent);
+    symbols
+        .iter()
+        .map(|s| {
+            let line = format!(
+                "{}{} ({}) - line {}",
+                prefix,
+                s.name,
+                s.kind,
+                s.range.start.line + 1
+            );
+            if s.children.is_empty() {
+                line
+            } else {
+                format!(
+                    "{}\n{}",
+                    line,
+                    format_document_symbols(&s.children, indent + 1)
+                )
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Generate a unified diff between old and new content
