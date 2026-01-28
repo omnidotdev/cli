@@ -419,6 +419,8 @@ fn handle_key(
             }
             KeyCode::Char('a') => app.cursor = 0,
             KeyCode::Char('e') => app.cursor = app.input.len(),
+            KeyCode::Left => app.move_word_left(),
+            KeyCode::Right => app.move_word_right(),
             KeyCode::Char('u') => {
                 app.delete_to_start();
                 app.show_command_dropdown = should_show_dropdown(&app.input);

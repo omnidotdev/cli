@@ -425,6 +425,66 @@ impl App {
         }
     }
 
+    /// Move cursor left by one word.
+    pub fn move_word_left(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+
+        let before = &self.input[..self.cursor];
+        let mut chars: Vec<(usize, char)> = before.char_indices().collect();
+        chars.reverse();
+
+        // Skip whitespace
+        while let Some(&(_, c)) = chars.first() {
+            if !c.is_whitespace() {
+                break;
+            }
+            chars.remove(0);
+        }
+
+        // Skip word characters
+        while let Some(&(i, c)) = chars.first() {
+            if c.is_whitespace() {
+                self.cursor = i + c.len_utf8();
+                return;
+            }
+            chars.remove(0);
+        }
+
+        self.cursor = 0;
+    }
+
+    /// Move cursor right by one word.
+    pub fn move_word_right(&mut self) {
+        if self.cursor >= self.input.len() {
+            return;
+        }
+
+        let after = &self.input[self.cursor..];
+        let mut chars = after.char_indices().peekable();
+
+        // Skip current word characters
+        while let Some(&(_, c)) = chars.peek() {
+            if c.is_whitespace() {
+                break;
+            }
+            chars.next();
+        }
+
+        // Skip whitespace
+        while let Some(&(_, c)) = chars.peek() {
+            if !c.is_whitespace() {
+                break;
+            }
+            chars.next();
+        }
+
+        self.cursor = chars
+            .peek()
+            .map_or(self.input.len(), |&(i, _)| self.cursor + i);
+    }
+
     /// Get the current cursor position as (`line_index`, `column`)
     ///
     /// Line index is 0-based, column is the character count from line start
