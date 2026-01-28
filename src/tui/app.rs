@@ -290,13 +290,17 @@ impl App {
         } else {
             ""
         };
-        let placeholder = super::components::PLACEHOLDERS
-            .choose(&mut rand::rng())
-            .copied()
-            .unwrap_or("ask anything...");
+        let placeholder = if agent.is_none() {
+            "configure a provider to get started..."
+        } else {
+            super::components::PLACEHOLDERS
+                .choose(&mut rand::rng())
+                .copied()
+                .unwrap_or("ask anything...")
+        };
 
         let output = if agent.is_none() {
-            "Warning: No API key configured. Set ANTHROPIC_API_KEY or add to config.".to_string()
+            "No provider configured. Set an API key or add credentials to ~/.config/omni/config.toml".to_string()
         } else if history_loaded {
             "Welcome back! Conversation history loaded.".to_string()
         } else {

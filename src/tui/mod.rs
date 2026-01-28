@@ -246,7 +246,9 @@ async fn run_app(
             () = tokio::time::sleep(Duration::from_millis(10)) => {
                 while event::poll(Duration::from_millis(0))? {
                     if let Event::Key(key) = event::read()? {
-                        if key.kind == KeyEventKind::Press {
+                        // Accept Press and Repeat, but not Release
+                        // Some terminals (e.g. Termux) may not report KeyEventKind correctly
+                        if key.kind != KeyEventKind::Release {
                             if app.has_dialog() {
                                 // Handle dialog input
                                 if handle_dialog_key(app, key.code, key.modifiers) {
@@ -594,6 +596,9 @@ fn handle_key(
                     };
                     agent.switch_mode(new_mode, None);
                     app.sync_agent_mode();
+                } else {
+                    // No provider configured
+                    app.output = "Configure a provider to switch modes".to_string();
                 }
             }
         }
@@ -1281,7 +1286,7 @@ fn handle_dialog_key(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> 
 /// Start a chat request in the background.
 fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMessage>) {
     let Some(mut agent) = app.agent.take() else {
-        app.output = "No API key configured.".to_string();
+        app.output = "No provider configured".to_string();
         return;
     };
 
