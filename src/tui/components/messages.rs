@@ -21,8 +21,27 @@ const SUCCESS_COLOR: Color = Color::Rgb(77, 201, 176);
 const SELECTION_BG: Color = Color::Rgb(60, 80, 100);
 const SELECTION_FG: Color = Color::White;
 
+/// Diff colors (muted for readability)
+const DIFF_ADD: Color = Color::Rgb(80, 160, 80);
+const DIFF_DEL: Color = Color::Rgb(180, 80, 80);
+const DIFF_HUNK: Color = Color::Rgb(80, 140, 180);
+
 /// Continuation character for tool output
 const CONT_CHAR: &str = "⎿";
+
+/// Get the appropriate color for a line, applying diff colors if it looks like a diff
+fn line_color(line: &str) -> Color {
+    // Check for diff patterns - apply to any output that looks like a diff
+    if (line.starts_with('+') || line.starts_with('>')) && !line.starts_with("+++") {
+        DIFF_ADD
+    } else if (line.starts_with('-') || line.starts_with('<')) && !line.starts_with("---") {
+        DIFF_DEL
+    } else if line.starts_with("@@") || line.starts_with("diff ") {
+        DIFF_HUNK
+    } else {
+        DIMMED
+    }
+}
 
 /// Render a `DisplayMessage` with scroll offset for partial visibility
 ///
@@ -276,7 +295,12 @@ fn render_tool_message_with_scroll(
                 Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
             )));
         } else {
-            let text_color = if is_error { ERROR_COLOR } else { DIMMED };
+            // Determine text color - apply diff colors if line looks like a diff
+            let text_color = if is_error {
+                ERROR_COLOR
+            } else {
+                line_color(line_text)
+            };
             lines.push(Line::from(vec![
                 Span::styled(prefix, Style::default().fg(DIMMED)),
                 Span::styled((*line_text).to_string(), Style::default().fg(text_color)),
