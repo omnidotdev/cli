@@ -108,6 +108,7 @@ impl Agent {
     /// - Git status (branch, modified files, recent commits)
     /// - Project type detection (Rust, Node, Python, Go)
     /// - Instruction files (CLAUDE.md from project and ~/.claude/)
+    /// - Current model name
     pub fn with_context(
         provider: Box<dyn LlmProvider>,
         model: impl Into<String>,
@@ -116,15 +117,27 @@ impl Agent {
     ) -> Self {
         use crate::core::context::ProjectContext;
 
+        let model_str: String = model.into();
         let context = ProjectContext::gather();
         let context_str = context.to_prompt_context();
 
-        let system_prompt = match persona_prompt {
-            Some(persona) => format!("{persona}\n\n{context_str}"),
-            None => context_str,
+        // Add model tag after environment section
+        let context_with_model = if context_str.contains("</environment>") {
+            context_str.replacen(
+                "</environment>",
+                &format!("</environment>\n<model>{model_str}</model>"),
+                1,
+            )
+        } else {
+            format!("{context_str}\n\n<model>{model_str}</model>")
         };
 
-        Self::with_system(provider, model, max_tokens, system_prompt)
+        let system_prompt = match persona_prompt {
+            Some(persona) => format!("{persona}\n\n{context_with_model}"),
+            None => context_with_model,
+        };
+
+        Self::with_system(provider, model_str, max_tokens, system_prompt)
     }
 
     /// Set the permission client for tool execution.
@@ -829,9 +842,41 @@ impl Agent {
     }
 
     /// Set the model name.
+    ///
+    /// Also updates the system prompt to reflect the new model.
     pub fn set_model(&mut self, model: impl Into<String>) {
         self.model = model.into();
+        self.update_model_in_system_prompt();
         tracing::info!(model = %self.model, "switched model");
+    }
+
+    /// Update the model info in the system prompt.
+    fn update_model_in_system_prompt(&mut self) {
+        let model_tag = format!("<model>{}</model>", self.model);
+
+        if let Some(existing) = self.conversation.system() {
+            // Replace existing model tag or append
+            if let (Some(start), Some(end)) = (existing.find("<model>"), existing.find("</model>"))
+            {
+                if start < end {
+                    let mut updated = existing.to_string();
+                    updated.replace_range(start..end + "</model>".len(), &model_tag);
+                    self.conversation.set_system(updated);
+                    return;
+                }
+            }
+
+            // No existing model tag - insert after </environment> or append
+            if let Some(pos) = existing.find("</environment>") {
+                let insert_pos = pos + "</environment>".len();
+                let mut updated = existing.to_string();
+                updated.insert_str(insert_pos, &format!("\n{model_tag}"));
+                self.conversation.set_system(updated);
+            } else {
+                self.conversation
+                    .set_system(format!("{existing}\n\n{model_tag}"));
+            }
+        }
     }
 
     /// Set the LLM provider.
