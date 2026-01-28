@@ -212,7 +212,7 @@ impl PermissionClient {
         action: PermissionAction,
         context: PermissionContext,
     ) -> Result<bool, PermissionError> {
-        // Check preset first - may short-circuit without user prompt.
+        // Check preset first - may short-circuit without user prompt
         match self.get_preset(&action) {
             PermissionPreset::Allow => return Ok(true),
             PermissionPreset::Deny => return Ok(false),
@@ -319,14 +319,14 @@ impl PermissionActor {
                 context,
                 response_tx,
             } => {
-                // Check cache first.
+                // Check cache first
                 let cache_key = (session_id, tool_name.clone(), action.clone());
                 if self.session_cache.contains(&cache_key) {
                     let _ = response_tx.send(PermissionResponse::AllowForSession);
                     return;
                 }
 
-                // Forward to interface.
+                // Forward to interface
                 if let Some(ref interface_tx) = self.interface_tx {
                     let request_id = Uuid::new_v4();
                     self.pending_requests.insert(request_id, response_tx);
@@ -338,7 +338,7 @@ impl PermissionActor {
                         context,
                     });
                 } else {
-                    // No interface registered - deny by default.
+                    // No interface registered - deny by default
                     let _ = response_tx.send(PermissionResponse::Deny);
                 }
             }
@@ -370,7 +370,7 @@ impl PermissionActor {
 
             PermissionMessage::UnregisterInterface => {
                 self.interface_tx = None;
-                // Cancel all pending requests.
+                // Cancel all pending requests
                 for (_, tx) in self.pending_requests.drain() {
                     let _ = tx.send(PermissionResponse::Deny);
                 }
@@ -395,7 +395,7 @@ impl PermissionActor {
         action: &PermissionAction,
     ) {
         if let Some(tx) = self.pending_requests.remove(&request_id) {
-            // Cache if `AllowForSession`.
+            // Cache if `AllowForSession`
             if response == PermissionResponse::AllowForSession {
                 self.session_cache.insert((
                     session_id.to_string(),
@@ -457,7 +457,7 @@ mod tests {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let client = PermissionClient::new("test-session".to_string(), tx);
 
-        // Spawn a task to approve the request.
+        // Spawn a task to approve the request
         let handle = tokio::spawn(async move {
             if let Some(PermissionMessage::Request { response_tx, .. }) = rx.recv().await {
                 response_tx.send(PermissionResponse::Allow).unwrap();
@@ -544,7 +544,7 @@ mod tests {
         let (tx, rx) = mpsc::unbounded_channel::<PermissionMessage>();
         let client = PermissionClient::new("test-session".to_string(), tx);
 
-        // Drop receiver to close channel.
+        // Drop receiver to close channel
         drop(rx);
 
         let result = client
@@ -566,11 +566,11 @@ mod tests {
         let (actor, tx) = PermissionActor::new();
         let (interface_tx, mut interface_rx) = mpsc::unbounded_channel();
 
-        // Register interface.
+        // Register interface
         tx.send(PermissionMessage::RegisterInterface { interface_tx })
             .unwrap();
 
-        // Spawn actor.
+        // Spawn actor
         let actor_handle = tokio::spawn(async move {
             tokio::select! {
                 () = actor.run() => {}
@@ -578,7 +578,7 @@ mod tests {
             }
         });
 
-        // First request - should show dialog.
+        // First request - should show dialog
         let client = PermissionClient::new("test-session".to_string(), tx.clone());
 
         let request_handle = tokio::spawn({
@@ -597,7 +597,7 @@ mod tests {
             }
         });
 
-        // Wait for interface message.
+        // Wait for interface message
         let msg = interface_rx.recv().await.unwrap();
         if let InterfaceMessage::ShowPermissionDialog { request_id: _, .. } = msg {
             drop(request_handle);
@@ -615,7 +615,7 @@ mod tests {
         };
         let client = PermissionClient::with_presets("test-session".to_string(), tx, presets);
 
-        // Spawn a task that would fail if it receives a message.
+        // Spawn a task that would fail if it receives a message
         let checker = tokio::spawn(async move {
             tokio::select! {
                 msg = rx.recv() => panic!("should not receive message, got: {msg:?}"),
@@ -647,7 +647,7 @@ mod tests {
         };
         let client = PermissionClient::with_presets("test-session".to_string(), tx, presets);
 
-        // Spawn a task that would fail if it receives a message.
+        // Spawn a task that would fail if it receives a message
         let checker = tokio::spawn(async move {
             tokio::select! {
                 msg = rx.recv() => panic!("should not receive message, got: {msg:?}"),
@@ -692,7 +692,7 @@ mod tests {
                 .await
         });
 
-        // Should receive a request message.
+        // Should receive a request message
         let msg = tokio::time::timeout(Duration::from_millis(100), rx.recv()).await;
         assert!(msg.is_ok());
         assert!(matches!(
@@ -708,13 +708,13 @@ mod tests {
         let (tx, _rx) = mpsc::unbounded_channel();
         let client = PermissionClient::new("test-session".to_string(), tx);
 
-        // Default should be Ask.
+        // Default should be Ask
         assert_eq!(
             client.get_preset(&PermissionAction::Execute),
             PermissionPreset::Ask
         );
 
-        // Update to Allow.
+        // Update to Allow
         client.set_presets(AgentPermissions {
             bash_write: PermissionPreset::Allow,
             ..Default::default()

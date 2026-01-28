@@ -222,14 +222,14 @@ mod tests {
         assert_eq!(cli.verbose, 1);
         assert!(matches!(cli.command, Some(Commands::Tui)));
 
-        // Also works after subcommand.
+        // Also works after subcommand
         let cli = Cli::parse_from(["omni", "tui", "-v"]);
         assert_eq!(cli.verbose, 1);
     }
 
     #[test]
     fn cli_debug_assert() {
-        // Verify the CLI is correctly configured.
+        // Verify the CLI is correctly configured
         Cli::command().debug_assert();
     }
 

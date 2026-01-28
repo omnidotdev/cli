@@ -171,7 +171,7 @@ fn format_relative_time(timestamp: i64) -> String {
 pub fn render_session_list(frame: &mut Frame, dialog: &mut SessionListDialog) {
     let area = frame.area();
 
-    // Center the dialog.
+    // Center the dialog
     let dialog_width = (area.width * 3 / 4).min(80);
     let dialog_height = (area.height * 3 / 4).min(30);
     let dialog_x = (area.width - dialog_width) / 2;
@@ -179,10 +179,10 @@ pub fn render_session_list(frame: &mut Frame, dialog: &mut SessionListDialog) {
 
     let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
 
-    // Clear background.
+    // Clear background
     frame.render_widget(Clear, dialog_area);
 
-    // Main block.
+    // Main block
     let block = Block::default()
         .title(" Sessions ")
         .title_alignment(Alignment::Center)
@@ -193,7 +193,7 @@ pub fn render_session_list(frame: &mut Frame, dialog: &mut SessionListDialog) {
     let inner = block.inner(dialog_area);
     frame.render_widget(block, dialog_area);
 
-    // Layout: search box + list + help text.
+    // Layout: search box + list + help text
     let chunks = Layout::vertical([
         Constraint::Length(3), // Search
         Constraint::Min(3),    // List
@@ -201,7 +201,7 @@ pub fn render_session_list(frame: &mut Frame, dialog: &mut SessionListDialog) {
     ])
     .split(inner);
 
-    // Search box.
+    // Search box
     let search_text = if dialog.filter.is_empty() {
         Line::from(Span::styled(
             "Type to filter...",
@@ -222,7 +222,7 @@ pub fn render_session_list(frame: &mut Frame, dialog: &mut SessionListDialog) {
     let search = Paragraph::new(search_text).block(search_block);
     frame.render_widget(search, chunks[0]);
 
-    // Session list - build items from owned data to avoid borrow conflicts.
+    // Session list - build items from owned data to avoid borrow conflicts
     let selected_idx = dialog.selected;
     let items: Vec<ListItem> = dialog
         .sessions
@@ -276,7 +276,7 @@ pub fn render_session_list(frame: &mut Frame, dialog: &mut SessionListDialog) {
 
     frame.render_stateful_widget(list, chunks[1], dialog.list_state_mut());
 
-    // Help text.
+    // Help text
     let help = Paragraph::new(Line::from(vec![
         Span::styled("↑↓", Style::default().fg(BRAND_TEAL)),
         Span::styled(" navigate  ", Style::default().fg(DIMMED)),

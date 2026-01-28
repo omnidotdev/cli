@@ -95,7 +95,7 @@ impl Storage {
     {
         let path = self.path(key);
 
-        // Ensure parent directory exists.
+        // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -169,15 +169,15 @@ impl Storage {
             let path = entry.path();
 
             if path.is_dir() {
-                // Recursively list subdirectories.
+                // Recursively list subdirectories
                 let name = path.file_name().unwrap().to_string_lossy().to_string();
                 let mut new_prefix: Vec<&str> = prefix.to_vec();
-                // Use leaked string to maintain lifetime (acceptable for path traversal).
+                // Use leaked string to maintain lifetime (acceptable for path traversal)
                 let leaked: &'static str = Box::leak(name.clone().into_boxed_str());
                 new_prefix.push(leaked);
                 self.list_recursive(&path, &new_prefix, results)?;
             } else if path.extension().is_some_and(|e| e == "json") {
-                // Add file key (without .json extension).
+                // Add file key (without .json extension)
                 let stem = path.file_stem().unwrap().to_string_lossy().to_string();
                 let mut key: Vec<String> = prefix.iter().map(|s| (*s).to_string()).collect();
                 key.push(stem);

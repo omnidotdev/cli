@@ -388,7 +388,7 @@ impl App {
             return;
         }
 
-        // Find start of word (skip trailing spaces, then skip word chars).
+        // Find start of word (skip trailing spaces, then skip word chars)
         let before = &self.input[..self.cursor];
         let trimmed = before.trim_end();
 
@@ -403,7 +403,7 @@ impl App {
     /// Move cursor left by one character.
     pub fn move_left(&mut self) {
         if self.cursor > 0 {
-            // Find previous char boundary.
+            // Find previous char boundary
             self.cursor = self.input[..self.cursor]
                 .char_indices()
                 .next_back()
@@ -414,7 +414,7 @@ impl App {
     /// Move cursor right by one character.
     pub fn move_right(&mut self) {
         if self.cursor < self.input.len() {
-            // Find next char boundary.
+            // Find next char boundary
             self.cursor = self.input[self.cursor..]
                 .char_indices()
                 .nth(1)
@@ -447,10 +447,10 @@ impl App {
             return;
         }
 
-        // Find start of current line.
+        // Find start of current line
         let current_line_start = self.input[..self.cursor].rfind('\n').map_or(0, |i| i + 1);
 
-        // Find start of previous line.
+        // Find start of previous line
         let prev_line_start = if current_line_start > 0 {
             self.input[..current_line_start - 1]
                 .rfind('\n')
@@ -459,12 +459,12 @@ impl App {
             0
         };
 
-        // Previous line content (without newline).
+        // Previous line content (without newline)
         let prev_line_end = current_line_start - 1;
         let prev_line = &self.input[prev_line_start..prev_line_end];
         let prev_line_len = prev_line.chars().count();
 
-        // Move to same column or end of previous line.
+        // Move to same column or end of previous line
         let target_col = col.min(prev_line_len);
         self.cursor = prev_line_start
             + prev_line
@@ -481,7 +481,7 @@ impl App {
             return;
         }
 
-        // Find end of current line (position of newline).
+        // Find end of current line (position of newline)
         let next_newline = self.input[self.cursor..]
             .find('\n')
             .map(|i| self.cursor + i);
@@ -490,10 +490,10 @@ impl App {
             return;
         };
 
-        // Next line starts after the newline.
+        // Next line starts after the newline
         let next_line_start = newline_pos + 1;
 
-        // Find end of next line.
+        // Find end of next line
         let next_line_end = self.input[next_line_start..]
             .find('\n')
             .map_or(self.input.len(), |i| next_line_start + i);
@@ -501,7 +501,7 @@ impl App {
         let next_line = &self.input[next_line_start..next_line_end];
         let next_line_len = next_line.chars().count();
 
-        // Move to same column or end of next line.
+        // Move to same column or end of next line
         let target_col = col.min(next_line_len);
         self.cursor = next_line_start
             + next_line
@@ -605,7 +605,7 @@ impl App {
     /// Scroll down by the given number of lines.
     pub fn scroll_down(&mut self, lines: u16, max_scroll: u16) {
         self.scroll_offset = self.scroll_offset.saturating_add(lines).min(max_scroll);
-        // Re-enable auto-scroll if we're at the bottom.
+        // Re-enable auto-scroll if we're at the bottom
         if self.scroll_offset >= max_scroll {
             self.auto_scroll = true;
         }
@@ -693,7 +693,7 @@ impl App {
         let visible_height = height.saturating_sub(prompt_height);
         self.max_message_scroll = content_height.saturating_sub(visible_height);
 
-        // Auto-scroll to bottom when enabled.
+        // Auto-scroll to bottom when enabled
         if self.auto_scroll {
             self.message_scroll = self.max_message_scroll;
         }

@@ -3,7 +3,7 @@
 //! TODO: Replace utoipa-generated spec with ODK-generated spec from `~/projects/omni/odk`
 //! once CLI API schema is defined in ODK. See: <https://github.com/omnidotdev/odk>
 
-// Allow clippy lint triggered by utoipa's OpenApi derive macro.
+// Allow clippy lint triggered by utoipa's OpenApi derive macro
 #![allow(clippy::needless_for_each)]
 
 use std::convert::Infallible;
@@ -86,13 +86,13 @@ async fn auth_middleware(
 ) -> Response {
     let state = state.read().await;
 
-    // If no token configured, allow all requests (localhost-only mode).
+    // If no token configured, allow all requests (localhost-only mode)
     let Some(ref expected_token) = state.token else {
         drop(state);
         return next.run(request).await;
     };
 
-    // Check Authorization header.
+    // Check Authorization header
     let auth_header = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -122,10 +122,10 @@ async fn auth_middleware(
 pub async fn serve(host: &str, port: u16) -> anyhow::Result<()> {
     let state: SharedState = Arc::new(RwLock::new(AppState::new()));
 
-    // Check if auth is enabled.
+    // Check if auth is enabled
     let auth_enabled = state.read().await.token.is_some();
 
-    // Protected routes (require auth if token configured).
+    // Protected routes (require auth if token configured)
     let protected_routes = Router::new()
         .route("/api/agent", post(execute_agent))
         .route("/api/agent/stream", post(execute_agent_stream))
@@ -135,7 +135,7 @@ pub async fn serve(host: &str, port: u16) -> anyhow::Result<()> {
             auth_middleware,
         ));
 
-    // Public routes (no auth required).
+    // Public routes (no auth required)
     let public_routes = Router::new()
         .route("/health", get(health))
         .merge(SwaggerUi::new("/api/docs").url("/api/openapi.json", ApiDoc::openapi()));
@@ -314,7 +314,7 @@ async fn execute_agent_stream(
             }
         }
 
-        // Return agent to state.
+        // Return agent to state
         let mut state_guard = state_clone.write().await;
         state_guard.agent = Some(agent);
     });

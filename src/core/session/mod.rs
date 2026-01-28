@@ -48,7 +48,7 @@ pub fn new_part_id() -> String {
 /// Generate a human-readable slug.
 #[must_use]
 pub fn new_slug() -> String {
-    // Simple slug: adjective-noun format.
+    // Simple slug: adjective-noun format
     let adjectives = [
         "quick", "bright", "calm", "bold", "keen", "swift", "wise", "warm",
     ];
@@ -234,13 +234,13 @@ impl SessionManager {
     ///
     /// Returns error if deletion fails.
     pub fn delete_session(&self, session_id: &str) -> anyhow::Result<()> {
-        // Delete all messages and their parts.
+        // Delete all messages and their parts
         let messages = self.list_messages(session_id)?;
         for msg in messages {
             self.delete_message(session_id, msg.id())?;
         }
 
-        // Delete session.
+        // Delete session
         self.storage
             .remove(&["session", &self.project.id, session_id])?;
         Ok(())
@@ -268,7 +268,7 @@ impl SessionManager {
             }
         }
 
-        // Sort by updated time, newest first.
+        // Sort by updated time, newest first
         sessions.sort_by(|a, b| b.time.updated.cmp(&a.time.updated));
         Ok(sessions)
     }
@@ -315,13 +315,13 @@ impl SessionManager {
     ///
     /// Returns error if deletion fails.
     pub fn delete_message(&self, session_id: &str, message_id: &str) -> anyhow::Result<()> {
-        // Delete all parts.
+        // Delete all parts
         let parts = self.list_parts(message_id)?;
         for part in parts {
             self.delete_part(message_id, part.id())?;
         }
 
-        // Delete message.
+        // Delete message
         self.storage.remove(&["message", session_id, message_id])?;
         Ok(())
     }
@@ -348,7 +348,7 @@ impl SessionManager {
             }
         }
 
-        // Sort by ID (ULID ensures chronological order).
+        // Sort by ID (ULID ensures chronological order)
         messages.sort_by(|a, b| a.id().cmp(b.id()));
         Ok(messages)
     }
@@ -415,7 +415,7 @@ impl SessionManager {
             }
         }
 
-        // Sort by ID (ULID ensures chronological order).
+        // Sort by ID (ULID ensures chronological order)
         parts.sort_by(|a, b| a.id().cmp(b.id()));
         Ok(parts)
     }
@@ -462,7 +462,7 @@ mod tests {
 
         let session = manager.create_session().unwrap();
 
-        // Add a message with a part.
+        // Add a message with a part
         let msg = Message::User(UserMessage::new(
             &session.id,
             "build",
@@ -474,10 +474,10 @@ mod tests {
         let part = Part::Text(TextPart::new(msg.id(), &session.id, "Hello"));
         manager.save_part(msg.id(), &part).unwrap();
 
-        // Delete session.
+        // Delete session
         manager.delete_session(&session.id).unwrap();
 
-        // Everything should be gone.
+        // Everything should be gone
         assert!(manager.get_session(&session.id).is_err());
         assert!(manager.get_message(&session.id, msg.id()).is_err());
         assert!(manager.get_part(msg.id(), part.id()).is_err());

@@ -53,7 +53,7 @@ impl PlanManager {
     pub fn is_plan_path(&self, path: &Path) -> bool {
         let path_str = path.to_string_lossy();
 
-        // Check project-local plans directory.
+        // Check project-local plans directory
         if let Some(root) = &self.project_root {
             let plans_dir = root.join(".omni").join("plans");
             if path.starts_with(&plans_dir) && path_str.ends_with(".md") {
@@ -61,7 +61,7 @@ impl PlanManager {
             }
         }
 
-        // Check global plans directory.
+        // Check global plans directory
         if path.starts_with(&self.global_dir) && path_str.ends_with(".md") {
             return true;
         }

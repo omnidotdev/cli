@@ -46,14 +46,14 @@ use state::ViewState;
 ///
 /// Returns an error if terminal initialization fails or the event loop encounters an error.
 pub async fn run() -> anyhow::Result<()> {
-    // Set up terminal.
-    // Note: Mouse capture is disabled to allow native terminal copy/paste.
+    // Set up terminal
+    // Note: Mouse capture is disabled to allow native terminal copy/paste
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
 
-    // Enable enhanced keyboard support for terminals like Kitty.
-    // DISAMBIGUATE_ESCAPE_CODES allows Shift+Enter detection without breaking shifted chars.
+    // Enable enhanced keyboard support for terminals like Kitty
+    // DISAMBIGUATE_ESCAPE_CODES allows Shift+Enter detection without breaking shifted chars
     let supports_keyboard_enhancement =
         crossterm::terminal::supports_keyboard_enhancement().unwrap_or(false);
     if supports_keyboard_enhancement {
@@ -66,7 +66,7 @@ pub async fn run() -> anyhow::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Set up permission system.
+    // Set up permission system
     let (permission_actor, permission_tx) = PermissionActor::new();
     let (interface_tx, interface_rx) = mpsc::unbounded_channel();
     let (perm_response_tx, mut perm_response_rx) = mpsc::unbounded_channel::<(
@@ -79,18 +79,18 @@ pub async fn run() -> anyhow::Result<()> {
     let (ask_response_tx, mut ask_response_rx) =
         mpsc::unbounded_channel::<(uuid::Uuid, AskUserResponse)>();
 
-    // Register interface with permission actor.
+    // Register interface with permission actor
     permission_tx
         .send(PermissionMessage::RegisterInterface { interface_tx })
         .ok();
 
-    // Spawn permission actor with response handling.
+    // Spawn permission actor with response handling
     tokio::spawn(async move {
         let mut actor = permission_actor;
 
         loop {
             tokio::select! {
-                // Process actor inbox.
+                // Process actor inbox
                 msg = actor.inbox.recv() => {
                     match msg {
                         Some(m) => actor.handle_message(m),
@@ -98,12 +98,12 @@ pub async fn run() -> anyhow::Result<()> {
                     }
                 }
 
-                // Process permission responses from TUI.
+                // Process permission responses from TUI
                 Some((request_id, session_id, tool_name, action, response)) = perm_response_rx.recv() => {
                     actor.respond(request_id, response, &session_id, &tool_name, &action);
                 }
 
-                // Process ask_user responses from TUI.
+                // Process ask_user responses from TUI
                 Some((request_id, response)) = ask_response_rx.recv() => {
                     actor.respond_ask_user(request_id, response);
                 }
@@ -111,13 +111,13 @@ pub async fn run() -> anyhow::Result<()> {
         }
     });
 
-    // Create app state with permission channels.
+    // Create app state with permission channels
     let mut app = App::new();
     app.interface_rx = Some(interface_rx);
     app.permission_response_tx = Some(perm_response_tx);
     app.ask_user_response_tx = Some(ask_response_tx);
 
-    // Set up permission client for agent with current permission presets.
+    // Set up permission client for agent with current permission presets
     let presets = app.current_permissions();
     if let Some(ref mut agent) = app.agent {
         let client = PermissionClient::with_presets(
@@ -128,10 +128,10 @@ pub async fn run() -> anyhow::Result<()> {
         agent.set_permission_client(client);
     }
 
-    // Store permission_tx for new agents.
+    // Store permission_tx for new agents
     let result = run_app(&mut terminal, &mut app, permission_tx).await;
 
-    // Restore terminal.
+    // Restore terminal
     if supports_keyboard_enhancement {
         execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags)?;
     }
@@ -149,10 +149,10 @@ async fn run_app(
     permission_tx: mpsc::UnboundedSender<PermissionMessage>,
 ) -> anyhow::Result<()> {
     loop {
-        // Clear selected text before render (will be populated if selection is active).
+        // Clear selected text before render (will be populated if selection is active)
         app.selected_text.clear();
 
-        // Calculate content height for scroll calculations (account for horizontal padding).
+        // Calculate content height for scroll calculations (account for horizontal padding)
         let padded_width = app.term_width.saturating_sub(MESSAGE_PADDING_X * 2);
         let content_height =
             calculate_content_height(&app.messages, &app.streaming_text, padded_width);
@@ -160,7 +160,7 @@ async fn run_app(
         terminal.draw(|f| {
             let full_area = f.area();
 
-            // Apply horizontal padding to main content area.
+            // Apply horizontal padding to main content area
             let area = Rect::new(
                 full_area.x + 1,
                 full_area.y,
@@ -168,13 +168,13 @@ async fn run_app(
                 full_area.height,
             );
 
-            // Update dimensions for scroll calculations.
+            // Update dimensions for scroll calculations
             app.update_dimensions(area.width, area.height, content_height);
 
-            // Dispatch rendering based on view state.
+            // Dispatch rendering based on view state
             let (cursor_pos, prompt_area) = match app.view_state {
                 ViewState::Welcome => {
-                    // Full-screen welcome with centered logo and prompt.
+                    // Full-screen welcome with centered logo and prompt
                     render_welcome(
                         f,
                         area,
@@ -188,7 +188,7 @@ async fn run_app(
                     )
                 }
                 ViewState::Session => {
-                    // Session view with messages and bottom prompt.
+                    // Session view with messages and bottom prompt
                     render_session(
                         f,
                         area,
@@ -207,7 +207,7 @@ async fn run_app(
                 }
             };
 
-            // Set cursor position.
+            // Set cursor position
             f.set_cursor_position(Position::new(cursor_pos.0, cursor_pos.1));
 
             // Render command dropdown if visible - use the exact prompt area returned
@@ -215,7 +215,7 @@ async fn run_app(
                 render_command_dropdown(f, prompt_area, &app.input, app.command_selection);
             }
 
-            // Render dialog overlay if active.
+            // Render dialog overlay if active
             if let Some(ref mut dialog) = app.active_dialog {
                 match dialog {
                     ActiveDialog::Permission(d) => render_permission_dialog(f, d),
@@ -225,15 +225,15 @@ async fn run_app(
             }
         })?;
 
-        // Poll for events and messages concurrently.
+        // Poll for events and messages concurrently
         tokio::select! {
-            // Check for input events.
+            // Check for input events
             () = tokio::time::sleep(Duration::from_millis(10)) => {
                 while event::poll(Duration::from_millis(0))? {
                     if let Event::Key(key) = event::read()? {
                         if key.kind == KeyEventKind::Press {
                             if app.has_dialog() {
-                                // Handle dialog input.
+                                // Handle dialog input
                                 if handle_dialog_key(app, key.code, key.modifiers) {
                                     return Ok(());
                                 }
@@ -245,7 +245,7 @@ async fn run_app(
                 }
             }
 
-            // Check for chat messages.
+            // Check for chat messages
             msg = async {
                 if let Some(ref mut rx) = app.chat_rx {
                     rx.recv().await
@@ -272,10 +272,10 @@ async fn run_app(
                         app.session_cost += cost_usd;
                     }
                     Some(ChatMessage::Done(agent)) => {
-                        // Finalize streaming text into an assistant message.
+                        // Finalize streaming text into an assistant message
                         app.finalize_streaming();
 
-                        // Save conversation history.
+                        // Save conversation history
                         if let Err(e) = agent.save_history() {
                             tracing::warn!("failed to save history: {e}");
                         }
@@ -284,10 +284,10 @@ async fn run_app(
                         app.chat_rx = None;
                     }
                     Some(ChatMessage::Error(e, agent)) => {
-                        // Finalize any partial streaming text.
+                        // Finalize any partial streaming text
                         app.finalize_streaming();
 
-                        // Add error message.
+                        // Add error message
                         app.messages.push(DisplayMessage::tool_error("Error", &e));
 
                         app.agent = Some(agent);
@@ -303,7 +303,7 @@ async fn run_app(
                 }
             }
 
-            // Check for interface messages (permission dialogs).
+            // Check for interface messages (permission dialogs)
             msg = async {
                 if let Some(ref mut rx) = app.interface_rx {
                     rx.recv().await
@@ -337,7 +337,7 @@ fn handle_key(
     modifiers: KeyModifiers,
     permission_tx: &mpsc::UnboundedSender<PermissionMessage>,
 ) -> bool {
-    // Handle Shift+Enter or Alt+Enter for newline insertion.
+    // Handle Shift+Enter or Alt+Enter for newline insertion
     if (modifiers.contains(KeyModifiers::SHIFT) || modifiers.contains(KeyModifiers::ALT))
         && code == KeyCode::Enter
     {
@@ -347,12 +347,12 @@ fn handle_key(
         return false;
     }
 
-    // Handle Ctrl combinations.
+    // Handle Ctrl combinations
     if modifiers.contains(KeyModifiers::CONTROL) {
         match code {
             KeyCode::Char('c') => {
                 if app.loading {
-                    // Cancel streaming.
+                    // Cancel streaming
                     app.chat_rx = None;
                     app.finalize_streaming();
                     app.loading = false;
@@ -381,7 +381,7 @@ fn handle_key(
                 app.command_selection = 0;
             }
             KeyCode::Char('l') => {
-                // Clear output and conversation history.
+                // Clear output and conversation history
                 app.output.clear();
                 app.scroll_offset = 0;
                 app.clear_conversation();
@@ -397,7 +397,7 @@ fn handle_key(
                 app.output = "Conversation cleared.".to_string();
             }
             KeyCode::Char('s') => {
-                // Open session list dialog.
+                // Open session list dialog
                 app.show_session_list();
             }
             _ => {}
@@ -405,13 +405,13 @@ fn handle_key(
         return false;
     }
 
-    // Use stored max scroll values from app state.
+    // Use stored max scroll values from app state
 
-    // Handle regular keys.
+    // Handle regular keys
     match code {
         KeyCode::Enter => {
             if !app.input.is_empty() && !app.loading {
-                // If dropdown is visible, execute selected command.
+                // If dropdown is visible, execute selected command
                 if app.show_command_dropdown {
                     let filtered = filter_commands(&app.input);
                     if let Some(cmd) = filtered.get(app.command_selection) {
@@ -422,12 +422,12 @@ fn handle_key(
 
                 let trimmed = app.input.trim();
 
-                // Handle exit commands.
+                // Handle exit commands
                 if trimmed == "/exit" || trimmed == "/quit" || trimmed == "exit" {
                     return true;
                 }
 
-                // Handle clear command.
+                // Handle clear command
                 if trimmed == "/clear" {
                     app.clear_input();
                     app.output.clear();
@@ -494,7 +494,7 @@ fn handle_key(
                     return false;
                 }
 
-                // Handle sessions command.
+                // Handle sessions command
                 if trimmed == "/sessions" {
                     app.clear_input();
                     app.show_session_list();
@@ -506,7 +506,7 @@ fn handle_key(
         }
         KeyCode::Tab => {
             if !app.loading {
-                // Autocomplete if dropdown visible, otherwise toggle mode.
+                // Autocomplete if dropdown visible, otherwise toggle mode
                 if app.show_command_dropdown {
                     let filtered = filter_commands(&app.input);
                     if let Some(cmd) = filtered.get(app.command_selection) {
@@ -526,7 +526,7 @@ fn handle_key(
         KeyCode::Char(c) => {
             if !app.loading {
                 app.insert_char(c);
-                // Update dropdown visibility.
+                // Update dropdown visibility
                 app.show_command_dropdown = should_show_dropdown(&app.input);
                 if app.show_command_dropdown {
                     app.command_selection = 0;
@@ -536,7 +536,7 @@ fn handle_key(
         KeyCode::Backspace => {
             if !app.loading {
                 app.delete_char();
-                // Update dropdown visibility.
+                // Update dropdown visibility
                 app.show_command_dropdown = should_show_dropdown(&app.input);
                 if app.show_command_dropdown {
                     app.command_selection = 0;
@@ -544,7 +544,7 @@ fn handle_key(
             }
         }
         KeyCode::Esc => {
-            // Dismiss dropdown and clear input.
+            // Dismiss dropdown and clear input
             if app.show_command_dropdown {
                 app.show_command_dropdown = false;
                 app.clear_input();
@@ -554,7 +554,7 @@ fn handle_key(
         KeyCode::Right => app.move_right(),
         KeyCode::Home => app.cursor = 0,
         KeyCode::End => app.cursor = app.input.len(),
-        // Scrolling - use message scroll in session view.
+        // Scrolling - use message scroll in session view
         KeyCode::PageUp => {
             if app.view_state == ViewState::Session {
                 app.scroll_messages_up(10);
@@ -571,7 +571,7 @@ fn handle_key(
         }
         KeyCode::Up => {
             if app.show_command_dropdown {
-                // Navigate dropdown selection up.
+                // Navigate dropdown selection up
                 app.command_selection = app.command_selection.saturating_sub(1);
             } else if app.is_multiline() {
                 app.move_up();
@@ -583,7 +583,7 @@ fn handle_key(
         }
         KeyCode::Down => {
             if app.show_command_dropdown {
-                // Navigate dropdown selection down.
+                // Navigate dropdown selection down
                 let filtered = filter_commands(&app.input);
                 let max_idx = filtered.len().saturating_sub(1);
                 app.command_selection = (app.command_selection + 1).min(max_idx);
@@ -622,19 +622,19 @@ fn render_dialog(
 
     let area = frame.area();
 
-    // Calculate dialog size.
+    // Calculate dialog size
     let dialog_width = area.width * width_percent / 100;
     let dialog_height = height.min(area.height - 4);
 
-    // Center the dialog.
+    // Center the dialog
     let x = (area.width.saturating_sub(dialog_width)) / 2;
     let y = (area.height.saturating_sub(dialog_height)) / 2;
     let dialog_area = Rect::new(x, y, dialog_width, dialog_height);
 
-    // Clear the area behind the dialog.
+    // Clear the area behind the dialog
     frame.render_widget(Clear, dialog_area);
 
-    // Render dialog box.
+    // Render dialog box
     let color = border_color.unwrap_or(Color::Yellow);
     let block = Block::default()
         .title(format!(" {title} "))
@@ -645,17 +645,17 @@ fn render_dialog(
     let inner = block.inner(dialog_area);
     frame.render_widget(block, dialog_area);
 
-    // Split inner area for content and buttons.
+    // Split inner area for content and buttons
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(3)])
         .split(inner);
 
-    // Render content.
+    // Render content
     let content_para = Paragraph::new(content).wrap(Wrap { trim: false });
     frame.render_widget(content_para, chunks[0]);
 
-    // Render buttons.
+    // Render buttons
     let button_text: Vec<ratatui::text::Span> = buttons
         .iter()
         .enumerate()
@@ -682,7 +682,7 @@ fn render_dialog(
 fn render_permission_dialog(frame: &mut ratatui::Frame, dialog: &ActivePermissionDialog) {
     use ratatui::text::{Line, Span};
 
-    // Determine icon and title based on operation type.
+    // Determine icon and title based on operation type
     let (icon, title) = match &dialog.context {
         PermissionContext::Bash { .. } => ("$", "Run Command"),
         PermissionContext::WriteFile { .. } => ("+", "Create File"),
@@ -715,7 +715,7 @@ fn render_permission_dialog(frame: &mut ratatui::Frame, dialog: &ActivePermissio
             working_dir,
         } => {
             content.push(Line::from(Span::styled("Command:", dim_style)));
-            // Truncate long commands for display.
+            // Truncate long commands for display
             let display_cmd = if command.len() > 80 {
                 format!("{}...", &command[..77])
             } else {
@@ -756,7 +756,7 @@ fn render_permission_dialog(frame: &mut ratatui::Frame, dialog: &ActivePermissio
             content.push(Line::from(""));
             content.push(Line::from(Span::styled("Changes:", dim_style)));
             for line in diff.lines().take(12) {
-                // Color diff lines appropriately.
+                // Color diff lines appropriately
                 let line_style = if line.starts_with('+') && !line.starts_with("+++") {
                     Style::default().fg(Color::Green)
                 } else if line.starts_with('-') && !line.starts_with("---") {
@@ -883,7 +883,7 @@ fn render_ask_user_dialog(frame: &mut ratatui::Frame, dialog: &ActiveAskUserDial
     content.push(Line::from(""));
 
     let buttons: Vec<(&str, bool)> = if let Some(ref options) = dialog.options {
-        // Render options as vertical list in content area.
+        // Render options as vertical list in content area
         for (i, opt) in options.iter().enumerate() {
             let is_selected = i == dialog.selected;
             let prefix = if is_selected { "▸ " } else { "  " };
@@ -1073,10 +1073,10 @@ fn handle_dialog_key(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> 
         }
         ActiveDialog::SessionList(mut d) => match code {
             KeyCode::Esc => {
-                // Close dialog without selecting.
+                // Close dialog without selecting
             }
             KeyCode::Enter => {
-                // Select the current session.
+                // Select the current session
                 if let Some(session) = d.selected_session() {
                     tracing::info!(session_id = %session.id, "selected session: {}", session.title);
                     // TODO: actually switch to the selected session
@@ -1118,7 +1118,7 @@ fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMess
         return;
     };
 
-    // Ensure agent has permission client with current permission presets.
+    // Ensure agent has permission client with current permission presets
     let client = PermissionClient::with_presets(
         "tui-session".to_string(),
         permission_tx,
@@ -1129,13 +1129,13 @@ fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMess
     let prompt = std::mem::take(&mut app.input);
     app.cursor = 0;
 
-    // Transition to session view on first message.
+    // Transition to session view on first message
     app.enter_session();
 
-    // Add user message to the conversation.
+    // Add user message to the conversation
     app.add_user_message(&prompt);
 
-    // Clear streaming state for new response.
+    // Clear streaming state for new response
     app.streaming_text.clear();
     app.output.clear();
     app.loading = true;

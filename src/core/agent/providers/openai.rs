@@ -59,7 +59,7 @@ impl OpenAiProvider {
     }
 }
 
-// OpenAI request types.
+// OpenAI request types
 
 #[derive(Debug, Serialize)]
 struct OpenAiRequest {
@@ -123,7 +123,7 @@ struct OpenAiFunction {
     parameters: serde_json::Value,
 }
 
-// OpenAI response types for SSE parsing.
+// OpenAI response types for SSE parsing
 
 #[derive(Debug, Deserialize)]
 struct OpenAiChunk {
@@ -165,7 +165,7 @@ struct OpenAiFunctionDelta {
 fn convert_messages(messages: &[Message], system: Option<&str>) -> Vec<OpenAiMessage> {
     let mut result = Vec::new();
 
-    // Add system message if present.
+    // Add system message if present
     if let Some(sys) = system {
         result.push(OpenAiMessage {
             role: "system",
@@ -190,7 +190,7 @@ fn convert_messages(messages: &[Message], system: Option<&str>) -> Vec<OpenAiMes
                 });
             }
             Content::Blocks(blocks) => {
-                // Handle mixed content blocks.
+                // Handle mixed content blocks
                 let mut text_parts = Vec::new();
                 let mut tool_calls = Vec::new();
                 let mut tool_results = Vec::new();
@@ -220,7 +220,7 @@ fn convert_messages(messages: &[Message], system: Option<&str>) -> Vec<OpenAiMes
                     }
                 }
 
-                // Emit assistant message with tool calls if any.
+                // Emit assistant message with tool calls if any
                 if !tool_calls.is_empty() {
                     let content = if text_parts.is_empty() {
                         None
@@ -246,7 +246,7 @@ fn convert_messages(messages: &[Message], system: Option<&str>) -> Vec<OpenAiMes
                     });
                 }
 
-                // Emit tool result messages.
+                // Emit tool result messages
                 for (tool_use_id, content) in tool_results {
                     result.push(OpenAiMessage {
                         role: "tool",
@@ -281,12 +281,12 @@ fn convert_tools(tools: &[Tool]) -> Vec<OpenAiTool> {
 ///
 /// Returns the parsed chunk (if any) and the remaining buffer content.
 fn parse_sse_event(buffer: &str) -> Option<(Option<OpenAiChunk>, String)> {
-    // Find double newline (end of event).
+    // Find double newline (end of event)
     let end = buffer.find("\n\n")?;
     let event_str = &buffer[..end];
     let remainder = buffer[end + 2..].to_string();
 
-    // Parse event.
+    // Parse event
     let mut data = None;
 
     for line in event_str.lines() {
@@ -295,17 +295,17 @@ fn parse_sse_event(buffer: &str) -> Option<(Option<OpenAiChunk>, String)> {
         }
     }
 
-    // Skip non-data events.
+    // Skip non-data events
     let Some(data) = data else {
         return Some((None, remainder));
     };
 
-    // Handle [DONE] marker.
+    // Handle [DONE] marker
     if data.trim() == "[DONE]" {
         return Some((None, remainder));
     }
 
-    // Parse JSON.
+    // Parse JSON
     match serde_json::from_str::<OpenAiChunk>(&data) {
         Ok(chunk) => Some((Some(chunk), remainder)),
         Err(e) => {
@@ -336,7 +336,7 @@ impl LlmProvider for OpenAiProvider {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
-        // Add authorization header if API key is present.
+        // Add authorization header if API key is present
         if let Some(api_key) = &self.api_key {
             headers.insert(
                 AUTHORIZATION,
@@ -380,7 +380,7 @@ impl LlmProvider for OpenAiProvider {
 
         let stream = async_stream::stream! {
             let mut buffer = String::new();
-            // Track tool calls being built: index -> (id, name, arguments).
+            // Track tool calls being built: index -> (id, name, arguments)
             let mut pending_tool_calls: std::collections::HashMap<usize, (String, String, String)> =
                 std::collections::HashMap::new();
             let text_block_index = 0_usize;
@@ -392,7 +392,7 @@ impl LlmProvider for OpenAiProvider {
                 let chunk = chunk?;
                 buffer.push_str(&String::from_utf8_lossy(&chunk));
 
-                // Process complete SSE events.
+                // Process complete SSE events
                 while let Some((chunk_opt, remainder)) = parse_sse_event(&buffer) {
                     buffer = remainder;
 
@@ -401,7 +401,7 @@ impl LlmProvider for OpenAiProvider {
                     };
 
                     for choice in chunk.choices {
-                        // Handle text content.
+                        // Handle text content
                         if let Some(text) = choice.delta.content {
                             if !text.is_empty() {
                                 current_text.push_str(&text);
@@ -409,23 +409,23 @@ impl LlmProvider for OpenAiProvider {
                             }
                         }
 
-                        // Handle tool calls.
+                        // Handle tool calls
                         if let Some(tool_calls) = choice.delta.tool_calls {
                             for tc in tool_calls {
                                 let entry = pending_tool_calls.entry(tc.index).or_insert_with(|| {
                                     (String::new(), String::new(), String::new())
                                 });
 
-                                // Update id if present.
+                                // Update id if present
                                 if let Some(id) = tc.id {
                                     entry.0 = id;
                                 }
 
-                                // Update function info if present.
+                                // Update function info if present
                                 if let Some(func) = tc.function {
                                     if let Some(name) = func.name {
                                         entry.1.clone_from(&name);
-                                        // Emit tool use start when we get the name.
+                                        // Emit tool use start when we get the name
                                         let tool_index = text_block_index + 1 + tc.index;
                                         yield Ok(CompletionEvent::ToolUseStart {
                                             index: tool_index,
@@ -445,9 +445,9 @@ impl LlmProvider for OpenAiProvider {
                             }
                         }
 
-                        // Handle finish reason.
+                        // Handle finish reason
                         if let Some(reason) = choice.finish_reason {
-                            // Emit text block done if we have text.
+                            // Emit text block done if we have text
                             if !current_text.is_empty() {
                                 yield Ok(CompletionEvent::ContentBlockDone {
                                     index: text_block_index,
@@ -455,7 +455,7 @@ impl LlmProvider for OpenAiProvider {
                                 });
                             }
 
-                            // Emit tool blocks done.
+                            // Emit tool blocks done
                             for (idx, (id, name, args)) in &pending_tool_calls {
                                 let tool_index = text_block_index + 1 + idx;
                                 let input = serde_json::from_str(args).unwrap_or(serde_json::Value::Null);
