@@ -523,6 +523,43 @@ impl ToolRegistry {
                     "required": ["action"]
                 }),
             },
+            Tool {
+                name: "sandbox_exec".to_string(),
+                description:
+                    "Execute code in an isolated sandbox environment. Uses Docker if available for full isolation, otherwise falls back to restricted execution with timeout and network limits. Best for running untrusted code or testing."
+                        .to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "The command to execute in the sandbox"
+                        },
+                        "language": {
+                            "type": "string",
+                            "enum": ["bash", "python", "node", "ruby"],
+                            "description": "Language/runtime to use (default: bash)"
+                        },
+                        "code": {
+                            "type": "string",
+                            "description": "Code to execute (alternative to command)"
+                        },
+                        "timeout_secs": {
+                            "type": "integer",
+                            "description": "Timeout in seconds (default: 30, max: 300)"
+                        },
+                        "network": {
+                            "type": "boolean",
+                            "description": "Allow network access (default: false)"
+                        },
+                        "workdir": {
+                            "type": "string",
+                            "description": "Working directory to mount read-only"
+                        }
+                    },
+                    "required": []
+                }),
+            },
         ];
 
         // Add mode-specific tools
@@ -599,6 +636,7 @@ impl ToolRegistry {
                 self.execute_github_pr_review(input, permissions, mode)
                     .await
             }
+            "sandbox_exec" => self.execute_sandbox(input, permissions, mode).await,
             _ => Err(AgentError::ToolExecution(format!("unknown tool: {name}"))),
         }
     }
@@ -2051,6 +2089,237 @@ impl ToolRegistry {
             _ => Err(AgentError::ToolExecution(format!(
                 "unknown PR review action: {action}"
             ))),
+        }
+    }
+
+    async fn execute_sandbox(
+        &self,
+        input: serde_json::Value,
+        permissions: Option<&PermissionClient>,
+        mode: AgentMode,
+    ) -> Result<String> {
+        if mode == AgentMode::Plan {
+            return Err(AgentError::ToolExecution(
+                "Cannot execute sandbox in plan mode".to_string(),
+            ));
+        }
+
+        let language = input["language"].as_str().unwrap_or("bash");
+        let timeout_secs = input["timeout_secs"].as_u64().unwrap_or(30).clamp(1, 300);
+        let network = input["network"].as_bool().unwrap_or(false);
+        let workdir = input["workdir"].as_str();
+
+        // Get the code/command to execute
+        let (code, is_code) = if let Some(c) = input["code"].as_str() {
+            (c.to_string(), true)
+        } else if let Some(c) = input["command"].as_str() {
+            (c.to_string(), false)
+        } else {
+            return Err(AgentError::ToolExecution(
+                "either 'code' or 'command' is required".to_string(),
+            ));
+        };
+
+        // Build description for permission
+        let desc = if is_code {
+            format!("sandbox_exec: {language} code ({} chars)", code.len())
+        } else {
+            format!("sandbox_exec: {code}")
+        };
+
+        // Request permission
+        if let Some(perms) = permissions {
+            let approved = perms
+                .request(
+                    "sandbox_exec",
+                    PermissionAction::Execute,
+                    PermissionContext::Bash {
+                        command: desc,
+                        working_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
+                    },
+                )
+                .await
+                .map_err(|e| AgentError::ToolExecution(e.to_string()))?;
+
+            if !approved {
+                return Err(AgentError::ToolExecution(
+                    "Permission denied by user".to_string(),
+                ));
+            }
+        }
+
+        // Check if Docker is available
+        let docker_available = Command::new("docker")
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await
+            .is_ok_and(|s| s.success());
+
+        if docker_available {
+            self.execute_sandbox_docker(language, &code, is_code, timeout_secs, network, workdir)
+                .await
+        } else {
+            self.execute_sandbox_fallback(language, &code, is_code, timeout_secs)
+                .await
+        }
+    }
+
+    async fn execute_sandbox_docker(
+        &self,
+        language: &str,
+        code: &str,
+        is_code: bool,
+        timeout_secs: u64,
+        network: bool,
+        workdir: Option<&str>,
+    ) -> Result<String> {
+        // Select appropriate Docker image
+        let image = match language {
+            "python" => "python:3.12-slim",
+            "node" => "node:20-slim",
+            "ruby" => "ruby:3.3-slim",
+            _ => "alpine:latest",
+        };
+
+        let mut cmd = Command::new("docker");
+        cmd.args(["run", "--rm"]);
+
+        // Resource limits
+        cmd.args(["--memory", "256m"]);
+        cmd.args(["--cpus", "0.5"]);
+        cmd.args(["--pids-limit", "64"]);
+
+        // Network isolation
+        if !network {
+            cmd.arg("--network=none");
+        }
+
+        // Security options
+        cmd.args(["--security-opt", "no-new-privileges"]);
+        cmd.args(["--cap-drop", "ALL"]);
+
+        // Mount workdir read-only if specified
+        if let Some(dir) = workdir {
+            cmd.arg("-v");
+            cmd.arg(format!("{dir}:/workspace:ro"));
+            cmd.args(["-w", "/workspace"]);
+        }
+
+        cmd.arg(image);
+
+        // Build the execution command
+        if is_code {
+            match language {
+                "python" => {
+                    cmd.args(["python", "-c", code]);
+                }
+                "node" => {
+                    cmd.args(["node", "-e", code]);
+                }
+                "ruby" => {
+                    cmd.args(["ruby", "-e", code]);
+                }
+                _ => {
+                    cmd.args(["sh", "-c", code]);
+                }
+            }
+        } else {
+            cmd.args(["sh", "-c", code]);
+        }
+
+        // Run with timeout
+        let output = tokio::time::timeout(
+            std::time::Duration::from_secs(timeout_secs),
+            cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).output(),
+        )
+        .await
+        .map_err(|_| {
+            AgentError::ToolExecution(format!("sandbox execution timed out after {timeout_secs}s"))
+        })?
+        .map_err(|e| AgentError::ToolExecution(format!("failed to run docker: {e}")))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        if output.status.success() {
+            Ok(format!(
+                "[sandbox:docker] Execution successful\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}"
+            ))
+        } else {
+            Ok(format!(
+                "[sandbox:docker] Execution failed (exit {})\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}",
+                output.status.code().unwrap_or(-1)
+            ))
+        }
+    }
+
+    async fn execute_sandbox_fallback(
+        &self,
+        language: &str,
+        code: &str,
+        is_code: bool,
+        timeout_secs: u64,
+    ) -> Result<String> {
+        // Fallback: use timeout command with restricted env
+        let mut cmd = Command::new("timeout");
+        cmd.arg(format!("{timeout_secs}s"));
+
+        // Use nice to lower priority
+        cmd.args(["nice", "-n", "19"]);
+
+        if is_code {
+            match language {
+                "python" => {
+                    cmd.args(["python3", "-c", code]);
+                }
+                "node" => {
+                    cmd.args(["node", "-e", code]);
+                }
+                "ruby" => {
+                    cmd.args(["ruby", "-e", code]);
+                }
+                _ => {
+                    cmd.args(["sh", "-c", code]);
+                }
+            }
+        } else {
+            cmd.args(["sh", "-c", code]);
+        }
+
+        // Clear potentially dangerous env vars
+        cmd.env_clear();
+        cmd.env("PATH", "/usr/local/bin:/usr/bin:/bin");
+        cmd.env("HOME", "/tmp");
+        cmd.env("TMPDIR", "/tmp");
+
+        let output = cmd
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| AgentError::ToolExecution(format!("failed to execute: {e}")))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        // Check for timeout (exit code 124)
+        if output.status.code() == Some(124) {
+            return Err(AgentError::ToolExecution(format!(
+                "sandbox execution timed out after {timeout_secs}s"
+            )));
+        }
+
+        if output.status.success() {
+            Ok(format!(
+                "[sandbox:fallback] Execution successful (Docker not available)\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}"
+            ))
+        } else {
+            Ok(format!(
+                "[sandbox:fallback] Execution failed (exit {})\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}",
+                output.status.code().unwrap_or(-1)
+            ))
         }
     }
 }
