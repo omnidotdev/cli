@@ -20,6 +20,10 @@ path = "src/main.rs"
 name = "omni_cli"
 path = "src/lib.rs"
 
+[features]
+default = ["clipboard"]
+clipboard = ["dep:arboard"]
+
 [dependencies]
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
@@ -27,7 +31,7 @@ clap = { version = "4", features = ["derive", "env"] }
 # TUI
 ratatui = "0.29"
 crossterm = "0.28"
-arboard = "3"
+arboard = { version = "3", optional = true }
 pulldown-cmark = "0.13"
 
 # HTTP API
