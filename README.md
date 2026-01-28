@@ -3,7 +3,7 @@
 
   <h1 align="center">Omni CLI</h1>
 
-[Website](https://cli.omni.dev) | [Docs](https://docs.omni.dev/cli/overview) | [Provide feedback on Omni Backfeed](https://backfeed.omni.dev/workspaces/omni/projects/cli) | [Join Omni community on Discord](https://discord.gg/omnidotdev)
+[Website](https://cli.omni.dev) | [Docs](https://docs.omni.dev/armory/omni-cli) | [Feedback](https://backfeed.omni.dev/workspaces/omni/projects/cli) | [Discord](https://discord.gg/omnidotdev)
 
 </div>
 
