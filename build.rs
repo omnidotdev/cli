@@ -3,11 +3,11 @@
 use std::process::Command;
 
 fn main() {
-    // Re-run if git HEAD changes.
+    // Re-run if git HEAD changes
     println!("cargo:rerun-if-changed=.git/HEAD");
     println!("cargo:rerun-if-changed=.git/refs/heads/");
 
-    // Get the git commit hash.
+    // Get the git commit hash
     let hash = Command::new("git")
         .args(["rev-parse", "--short=7", "HEAD"])
         .output()
@@ -18,7 +18,7 @@ fn main() {
 
     println!("cargo:rustc-env=BUILD_HASH={hash}");
 
-    // Check if the working directory is dirty.
+    // Check if the working directory is dirty
     let dirty = Command::new("git")
         .args(["status", "--porcelain"])
         .output()

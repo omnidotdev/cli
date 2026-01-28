@@ -42,10 +42,10 @@ pub fn render_session(
     selected_text: &mut String,
     session_cost: f64,
 ) -> ((u16, u16), Rect) {
-    // Calculate dynamic prompt height based on input lines.
-    // Height = top padding (1) + input lines + bottom padding (1) + status bar (1).
+    // Calculate dynamic prompt height based on input lines
+    // Height = top padding (1) + input lines + bottom padding (1) + status bar (1)
     let input_lines = input.lines().count().max(1) as u16;
-    // Add 1 for empty input that ends with newline.
+    // Add 1 for empty input that ends with newline
     let input_lines = if input.ends_with('\n') {
         input_lines + 1
     } else {
@@ -53,7 +53,7 @@ pub fn render_session(
     };
     let prompt_height = (input_lines + 3).clamp(4, 13);
 
-    // Split into message area and prompt area.
+    // Split into message area and prompt area
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -62,7 +62,7 @@ pub fn render_session(
         ])
         .split(area);
 
-    // Render messages.
+    // Render messages
     render_message_list(
         frame,
         chunks[0],
@@ -119,7 +119,7 @@ fn render_message_list(
     selection: Option<&Selection>,
     selected_text: &mut String,
 ) {
-    // Apply padding to message area.
+    // Apply padding to message area
     let padded_area = Rect::new(
         area.x + MESSAGE_PADDING_X,
         area.y,
@@ -128,7 +128,7 @@ fn render_message_list(
     );
 
     if messages.is_empty() && streaming_text.is_empty() {
-        // Render empty state.
+        // Render empty state
         let empty_msg = Paragraph::new(Line::from(Span::styled(
             "No messages yet. Start typing to begin.",
             Style::default().fg(DIMMED),
@@ -137,31 +137,31 @@ fn render_message_list(
         return;
     }
 
-    // Calculate total content height and render visible messages.
+    // Calculate total content height and render visible messages
     let mut y_offset: u16 = 0;
     let mut rendered_height: u16 = 0;
     let visible_start = scroll_offset;
 
     for message in messages {
-        // Estimate message height (simplified - could be more accurate).
+        // Estimate message height (simplified - could be more accurate)
         let msg_height = estimate_message_height(message, padded_area.width);
 
-        // Skip messages above the visible area.
+        // Skip messages above the visible area
         if y_offset + msg_height <= visible_start {
             y_offset += msg_height + 1; // +1 for spacing
             continue;
         }
 
-        // Stop if we've filled the visible area.
+        // Stop if we've filled the visible area
         if rendered_height >= padded_area.height {
             break;
         }
 
-        // Calculate render position.
+        // Calculate render position
         let render_y = padded_area.y + rendered_height;
         let available_height = padded_area.height.saturating_sub(rendered_height);
 
-        // Render the message.
+        // Render the message
         let msg_area = Rect::new(padded_area.x, render_y, padded_area.width, available_height);
         let sel_bounds = selection.map(Selection::bounds);
         let height = render_message(frame, msg_area, message, sel_bounds, selected_text);
@@ -170,7 +170,7 @@ fn render_message_list(
         y_offset += msg_height + 1;
     }
 
-    // Render streaming text if present.
+    // Render streaming text if present
     if !streaming_text.is_empty() && rendered_height < padded_area.height {
         // Add padding before streaming text
         rendered_height += 1;
@@ -179,15 +179,15 @@ fn render_message_list(
         let streaming_area =
             Rect::new(padded_area.x, render_y, padded_area.width, available_height);
 
-        // Check if streaming text overlaps with selection.
+        // Check if streaming text overlaps with selection
         let sel_bounds = selection.map(Selection::bounds);
         let is_selected = sel_bounds.is_some_and(|(min_y, max_y)| {
             render_y <= max_y && render_y + available_height >= min_y
         });
 
-        // Build styled lines with markdown parsing.
+        // Build styled lines with markdown parsing
         let lines: Vec<Line> = if is_selected {
-            // Collect selected lines from streaming text.
+            // Collect selected lines from streaming text
             if let Some((min_y, max_y)) = sel_bounds {
                 for (i, line) in streaming_text.lines().enumerate() {
                     #[allow(clippy::cast_possible_truncation)]
@@ -200,7 +200,7 @@ fn render_message_list(
                     }
                 }
             }
-            // Selection styling overrides markdown.
+            // Selection styling overrides markdown
             streaming_text
                 .lines()
                 .map(|line| {
@@ -213,7 +213,7 @@ fn render_message_list(
                 })
                 .collect()
         } else {
-            // Parse markdown for non-selected streaming text.
+            // Parse markdown for non-selected streaming text
             streaming_text
                 .lines()
                 .map(|line| Line::from(parse_markdown_line(line)))
@@ -245,7 +245,7 @@ pub fn calculate_content_height(
         total = total.saturating_add(1); // Spacing between messages.
     }
 
-    // Add streaming text height.
+    // Add streaming text height
     if !streaming_text.is_empty() {
         let width = width.max(1) as usize;
         let streaming_height: u16 = streaming_text
@@ -295,7 +295,7 @@ mod tests {
 
     #[test]
     fn estimate_height_wrapping() {
-        // 20 chars on width 10 should wrap to 3 lines (ceil(20/10) + 1 per line calc).
+        // 20 chars on width 10 should wrap to 3 lines (ceil(20/10) + 1 per line calc)
         let msg = user_message("12345678901234567890");
         let height = estimate_message_height(&msg, 10);
         assert_eq!(height, 3);
@@ -318,7 +318,7 @@ mod tests {
     fn calculate_content_height_single_message() {
         let messages = vec![user_message("hello")];
         let height = calculate_content_height(&messages, "", 80);
-        // 1 for message + 1 for spacing.
+        // 1 for message + 1 for spacing
         assert_eq!(height, 2);
     }
 
@@ -330,7 +330,7 @@ mod tests {
             user_message("third"),
         ];
         let height = calculate_content_height(&messages, "", 80);
-        // (1 + 1) + (1 + 1) + (1 + 1) = 6.
+        // (1 + 1) + (1 + 1) + (1 + 1) = 6
         assert_eq!(height, 6);
     }
 
@@ -339,7 +339,7 @@ mod tests {
         let messages = vec![user_message("hello")];
         let streaming = "streaming text";
         let height = calculate_content_height(&messages, streaming, 80);
-        // 2 for message + 1 for streaming.
+        // 2 for message + 1 for streaming
         assert_eq!(height, 3);
     }
 

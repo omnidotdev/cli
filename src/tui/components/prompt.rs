@@ -85,12 +85,12 @@ fn render_centered_prompt(
     let prompt_width = CENTERED_MAX_WIDTH.min(area.width.saturating_sub(4));
     let prompt_x = area.x + (area.width.saturating_sub(prompt_width)) / 2;
 
-    // Padding: 1 char left (after border), 1 char right.
+    // Padding: 1 char left (after border), 1 char right
     let padding = " ";
-    // Text width = prompt_width - border(1) - left_pad(1) - right_pad(1).
+    // Text width = prompt_width - border(1) - left_pad(1) - right_pad(1)
     let text_width = prompt_width.saturating_sub(3).max(1) as usize;
 
-    // Manually wrap text and build content lines.
+    // Manually wrap text and build content lines
     let wrapped: Vec<String> = if input.is_empty() {
         vec![placeholder.to_string()]
     } else {
@@ -100,7 +100,7 @@ fn render_centered_prompt(
             .collect()
     };
 
-    // Calculate cursor's visual line position for scrolling.
+    // Calculate cursor's visual line position for scrolling
     let before_cursor = &input[..cursor];
     let mut visual_line = 0;
     let mut cursor_col = 0;
@@ -132,28 +132,28 @@ fn render_centered_prompt(
         visual_line += line_wrapped;
     }
 
-    // Max visible lines (excluding top/bottom padding).
+    // Max visible lines (excluding top/bottom padding)
     let max_visible_lines: usize = 10;
     let visible_lines = wrapped.len().min(max_visible_lines);
     let prompt_height = (visible_lines + 2) as u16;
 
-    // Calculate scroll offset to keep cursor visible.
+    // Calculate scroll offset to keep cursor visible
     let scroll_offset = if visual_line >= max_visible_lines {
         visual_line - max_visible_lines + 1
     } else {
         0
     };
 
-    // Position prompt just below the content passed to us (small offset).
+    // Position prompt just below the content passed to us (small offset)
     let prompt_y = (area.y + 2).min(area.y + area.height.saturating_sub(1));
     let available_height = area.height.saturating_sub(prompt_y.saturating_sub(area.y));
     let clamped_height = prompt_height.min(available_height).max(1);
     let clamped_width = prompt_width.min(area.width);
     let prompt_area = Rect::new(prompt_x, prompt_y, clamped_width, clamped_height);
 
-    // Build content with vertical padding and consistent horizontal padding.
+    // Build content with vertical padding and consistent horizontal padding
     let mut content: Vec<Line> = vec![Line::from("")];
-    // Color input text based on agent mode.
+    // Color input text based on agent mode
     let input_color = match agent_mode {
         AgentMode::Build => BRAND_TEAL,
         AgentMode::Plan => PLAN_PURPLE,
@@ -164,9 +164,9 @@ fn render_centered_prompt(
         Style::default().fg(input_color)
     };
 
-    // Only render visible lines based on scroll offset.
+    // Only render visible lines based on scroll offset
     for line in wrapped.iter().skip(scroll_offset).take(max_visible_lines) {
-        // Pad right side to fill width.
+        // Pad right side to fill width
         let right_pad_len = text_width.saturating_sub(line.chars().count());
         let right_pad = " ".repeat(right_pad_len + 1); // +1 for right padding
         content.push(Line::from(vec![
@@ -210,13 +210,13 @@ fn render_centered_prompt(
         frame.render_widget(mode_para, mode_area);
     }
 
-    // Cursor position relative to visible area.
+    // Cursor position relative to visible area
     let visible_cursor_line = visual_line.saturating_sub(scroll_offset);
     let clamped_cursor_line = visible_cursor_line.min(max_visible_lines.saturating_sub(1));
 
-    // x = area.x + border(1) + left_pad(1) + cursor_col.
+    // x = area.x + border(1) + left_pad(1) + cursor_col
     let cursor_x = prompt_area.x + 2 + cursor_col.min(u16::MAX as usize) as u16;
-    // y = prompt_area.y + 1 (top padding) + visible cursor line.
+    // y = prompt_area.y + 1 (top padding) + visible cursor line
     let cursor_y = prompt_area.y + 1 + clamped_cursor_line as u16;
 
     ((cursor_x, cursor_y), prompt_area)
@@ -252,18 +252,18 @@ fn render_full_width_prompt(
     status_right: Option<&str>,
     agent_mode: AgentMode,
 ) -> ((u16, u16), Rect) {
-    // Early return for tiny areas.
+    // Early return for tiny areas
     if area.width < 3 || area.height < 2 {
         return ((area.x, area.y), area);
     }
 
-    // Split into input area and status line.
+    // Split into input area and status line
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
         .split(area);
 
-    // Calculate cursor line position for scrolling.
+    // Calculate cursor line position for scrolling
     let before_cursor = &input[..cursor];
     let cursor_line = before_cursor.matches('\n').count();
     let line_start = before_cursor.rfind('\n').map_or(0, |i| i + 1);
@@ -271,19 +271,19 @@ fn render_full_width_prompt(
 
     let lines: Vec<&str> = input.split('\n').collect();
 
-    // Available height for content (minus top/bottom padding).
+    // Available height for content (minus top/bottom padding)
     let available_height = chunks[0].height.saturating_sub(2) as usize;
     let max_visible_lines = available_height.max(1);
 
-    // Calculate scroll offset to keep cursor visible.
+    // Calculate scroll offset to keep cursor visible
     let scroll_offset = if cursor_line >= max_visible_lines {
         cursor_line - max_visible_lines + 1
     } else {
         0
     };
 
-    // Build multiline content with vertical padding.
-    // Color input text based on agent mode.
+    // Build multiline content with vertical padding
+    // Color input text based on agent mode
     let input_color = match agent_mode {
         AgentMode::Build => BRAND_TEAL,
         AgentMode::Plan => PLAN_PURPLE,
@@ -295,7 +295,7 @@ fn render_full_width_prompt(
             Span::styled("Type here...", Style::default().fg(DIMMED)),
         ]));
     } else {
-        // Only render visible lines based on scroll offset.
+        // Only render visible lines based on scroll offset
         for line in lines.iter().skip(scroll_offset).take(max_visible_lines) {
             content.push(Line::from(vec![
                 Span::raw(" "),
@@ -320,16 +320,16 @@ fn render_full_width_prompt(
     let para = Paragraph::new(content).block(block);
     frame.render_widget(para, chunks[0]);
 
-    // Render status line.
+    // Render status line
     if status_left.is_some() || status_right.is_some() {
         let left = status_left.unwrap_or("");
         let right = status_right.unwrap_or("");
 
-        // Create spans for left and right status.
+        // Create spans for left and right status
         let left_span = Span::styled(format!("  {left}"), Style::default().fg(DIMMED));
         let right_span = Span::styled(right, Style::default().fg(DIMMED));
 
-        // Calculate padding.
+        // Calculate padding
         let left_width = left.chars().count() + 2;
         let right_width = right.chars().count();
         let padding_width = (chunks[1].width as usize)
@@ -343,13 +343,13 @@ fn render_full_width_prompt(
         frame.render_widget(status_para, chunks[1]);
     }
 
-    // Cursor position relative to visible area.
+    // Cursor position relative to visible area
     let visible_cursor_line = cursor_line.saturating_sub(scroll_offset);
     let clamped_cursor_line = visible_cursor_line.min(max_visible_lines.saturating_sub(1));
 
-    // x = area.x + 1 (border) + 1 (padding) + column.
+    // x = area.x + 1 (border) + 1 (padding) + column
     let cursor_x = chunks[0].x + 2 + cursor_col.min(u16::MAX as usize) as u16;
-    // y = area.y + 1 (top padding) + visible cursor line.
+    // y = area.y + 1 (top padding) + visible cursor line
     let cursor_y = chunks[0].y + 1 + clamped_cursor_line as u16;
 
     ((cursor_x, cursor_y), chunks[0])

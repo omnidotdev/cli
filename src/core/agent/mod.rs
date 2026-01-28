@@ -414,7 +414,7 @@ impl Agent {
             match event {
                 CompletionEvent::TextDelta(text) => {
                     on_text(&text);
-                    // Append to last text block or create one.
+                    // Append to last text block or create one
                     if let Some(ContentBlock::Text { text: t }) = content_blocks.last_mut() {
                         t.push_str(&text);
                     } else {
@@ -443,7 +443,7 @@ impl Agent {
                         .push_str(&partial_json);
                 }
                 CompletionEvent::ContentBlockDone { index, block } => {
-                    // Finalize tool input if present.
+                    // Finalize tool input if present
                     if let Some(ContentBlock::ToolUse { input, .. }) = content_blocks.get_mut(index)
                     {
                         if let Some(json_str) = current_tool_inputs.remove(&index) {
@@ -451,7 +451,7 @@ impl Agent {
                                 serde_json::from_str(&json_str).unwrap_or(serde_json::Value::Null);
                         }
                     }
-                    // Use the finalized block from the event if it's a tool use.
+                    // Use the finalized block from the event if it's a tool use
                     if let ContentBlock::ToolUse {
                         input: event_input, ..
                     } = &block
@@ -459,7 +459,7 @@ impl Agent {
                         if let Some(ContentBlock::ToolUse { id, name, input }) =
                             content_blocks.get_mut(index)
                         {
-                            // Prefer the event's input if our input is still null.
+                            // Prefer the event's input if our input is still null
                             if input.is_null() {
                                 *input = event_input.clone();
                             }
@@ -510,7 +510,7 @@ impl Agent {
 
                 let (content, is_error) = match result {
                     Ok(output) => {
-                        // Check for mode switch markers.
+                        // Check for mode switch markers
                         if output == "[MODE_SWITCH:PLAN]" {
                             self.switch_mode(AgentMode::Plan, None);
                             on_text("[Switched to plan mode]\n");
@@ -839,7 +839,7 @@ Plan file location: {plan_path}
 "
         );
 
-        // Append to existing system prompt.
+        // Append to existing system prompt
         if let Some(existing) = self.conversation.system() {
             self.conversation
                 .set_system(format!("{existing}\n{plan_context}"));
@@ -861,7 +861,7 @@ Follow this plan. Refer back to it as you work.
                 plan_path.display()
             );
 
-            // Append to existing system prompt.
+            // Append to existing system prompt
             if let Some(existing) = self.conversation.system() {
                 self.conversation
                     .set_system(format!("{existing}\n{build_context}"));

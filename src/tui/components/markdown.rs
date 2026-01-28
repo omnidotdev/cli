@@ -59,14 +59,14 @@ pub fn parse_markdown_line(text: &str) -> Vec<Span<'static>> {
                 }
             }
             Event::End(tag_end) => {
-                // Restore previous style.
+                // Restore previous style
                 if let Some(prev_style) = style_stack.pop() {
                     current_style = prev_style;
                 }
 
-                // Handle paragraph/line endings - don't add extra newlines for inline parsing.
+                // Handle paragraph/line endings - don't add extra newlines for inline parsing
                 if matches!(tag_end, TagEnd::Paragraph) {
-                    // Paragraph ended, but we're parsing line by line so no action needed.
+                    // Paragraph ended, but we're parsing line by line so no action needed
                 }
             }
             Event::SoftBreak | Event::HardBreak => {
@@ -76,7 +76,7 @@ pub fn parse_markdown_line(text: &str) -> Vec<Span<'static>> {
         }
     }
 
-    // If no spans were created, return the original text as-is.
+    // If no spans were created, return the original text as-is
     if spans.is_empty() {
         return vec![Span::raw(text.to_owned())];
     }
@@ -98,7 +98,7 @@ mod tests {
     fn test_bold() {
         let spans = parse_markdown_line("hello **bold** world");
         assert!(spans.len() > 1);
-        // The bold span should have BOLD modifier.
+        // The bold span should have BOLD modifier
         let bold_span = spans.iter().find(|s| s.content == "bold");
         assert!(bold_span.is_some());
         assert!(

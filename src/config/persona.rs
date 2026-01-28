@@ -168,7 +168,7 @@ pub fn load_persona(name: &str) -> anyhow::Result<Persona> {
     if path.exists() {
         Persona::load(&path)
     } else {
-        // Fall back to Orin if persona not found.
+        // Fall back to Orin if persona not found
         tracing::warn!(persona = %name, "persona not found, using Orin");
         Ok(Persona::orin())
     }

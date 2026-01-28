@@ -13,7 +13,7 @@ use omni_cli::{
 async fn main() -> ExitCode {
     let cli = Cli::parse();
 
-    // Set up logging based on verbosity.
+    // Set up logging based on verbosity
     let filter = match cli.verbose {
         0 => "warn",
         1 => "info",
@@ -35,7 +35,7 @@ async fn main() -> ExitCode {
 }
 
 async fn run(cli: Cli) -> anyhow::Result<()> {
-    // Bare prompt = shell mode.
+    // Bare prompt = shell mode
     if let Some(prompt) = cli.prompt {
         if cli.command.is_some() {
             anyhow::bail!("Cannot use both a prompt and a subcommand");
@@ -53,7 +53,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("{e}"));
     }
 
-    // No subcommand = launch TUI.
+    // No subcommand = launch TUI
     let Some(command) = cli.command else {
         return omni_cli::tui::run().await;
     };

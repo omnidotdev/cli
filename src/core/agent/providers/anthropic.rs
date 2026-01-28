@@ -54,7 +54,7 @@ impl LlmProvider for AnthropicProvider {
         );
         headers.insert("anthropic-version", HeaderValue::from_static(API_VERSION));
 
-        // Convert to Anthropic-specific request format.
+        // Convert to Anthropic-specific request format
         let anthropic_request = MessagesRequest {
             model: request.model,
             max_tokens: request.max_tokens,
@@ -93,7 +93,7 @@ impl LlmProvider for AnthropicProvider {
                 let chunk = chunk?;
                 buffer.push_str(&String::from_utf8_lossy(&chunk));
 
-                // Process complete SSE events.
+                // Process complete SSE events
                 while let Some((event_opt, remainder)) = parse_sse_event(&buffer) {
                     buffer = remainder;
 
@@ -101,10 +101,10 @@ impl LlmProvider for AnthropicProvider {
                         continue;
                     };
 
-                    // Convert Anthropic events to generic completion events.
+                    // Convert Anthropic events to generic completion events
                     match event {
                         StreamEvent::ContentBlockStart { index, content_block } => {
-                            // Ensure we have space.
+                            // Ensure we have space
                             while current_blocks.len() <= index {
                                 current_blocks.push(ContentBlock::Text { text: String::new() });
                             }
@@ -118,7 +118,7 @@ impl LlmProvider for AnthropicProvider {
                         StreamEvent::ContentBlockDelta { index, delta } => {
                             match delta {
                                 crate::core::agent::types::Delta::TextDelta { text } => {
-                                    // Update accumulated block.
+                                    // Update accumulated block
                                     if let Some(ContentBlock::Text { text: t }) = current_blocks.get_mut(index) {
                                         t.push_str(&text);
                                     }
@@ -161,12 +161,12 @@ impl LlmProvider for AnthropicProvider {
 ///
 /// Returns the parsed event (if any) and the remaining buffer content.
 fn parse_sse_event(buffer: &str) -> Option<(Option<StreamEvent>, String)> {
-    // Find double newline (end of event).
+    // Find double newline (end of event)
     let end = buffer.find("\n\n")?;
     let event_str = &buffer[..end];
     let remainder = buffer[end + 2..].to_string();
 
-    // Parse event.
+    // Parse event
     let mut data = None;
 
     for line in event_str.lines() {
@@ -175,12 +175,12 @@ fn parse_sse_event(buffer: &str) -> Option<(Option<StreamEvent>, String)> {
         }
     }
 
-    // Skip non-data events.
+    // Skip non-data events
     let Some(data) = data else {
         return Some((None, remainder));
     };
 
-    // Parse JSON.
+    // Parse JSON
     match serde_json::from_str::<StreamEvent>(&data) {
         Ok(event) => Some((Some(event), remainder)),
         Err(e) => {

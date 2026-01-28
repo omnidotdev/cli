@@ -42,21 +42,21 @@ pub fn render_welcome(
     agent_mode: AgentMode,
     model: &str,
 ) -> ((u16, u16), Rect) {
-    // Early return for tiny terminals.
+    // Early return for tiny terminals
     if area.width < 10 || area.height < 5 {
         return ((area.x, area.y), area);
     }
 
-    // Calculate vertical centering.
+    // Calculate vertical centering
     let logo_height = LOGO_LINES.len() as u16;
     let total_height = logo_height + 8; // logo + tagline + cwd + model + prompt + mode indicator
     let start_y = area.y + area.height.saturating_sub(total_height) / 2;
 
-    // Calculate horizontal centering.
+    // Calculate horizontal centering
     let logo_width = LOGO_LINES.first().map_or(0, |l| l.chars().count()) as u16;
     let center_x = area.x + area.width.saturating_sub(logo_width) / 2;
 
-    // Render shadow (offset right only for subtle depth).
+    // Render shadow (offset right only for subtle depth)
     let shadow_style = Style::default().fg(SHADOW_COLOR);
     for (i, shadow_line) in LOGO_SHADOW.iter().enumerate() {
         let y = start_y + i as u16;
@@ -72,7 +72,7 @@ pub fn render_welcome(
         }
     }
 
-    // Render main logo (skip spaces to preserve shadow).
+    // Render main logo (skip spaces to preserve shadow)
     let logo_style = Style::default().fg(LOGO_COLOR);
     for (i, logo_line) in LOGO_LINES.iter().enumerate() {
         let y = start_y + i as u16;
@@ -81,7 +81,7 @@ pub fn render_welcome(
         }
     }
 
-    // Render tagline.
+    // Render tagline
     let tagline_y = start_y + logo_height + 1;
     if tagline_y < area.y + area.height.saturating_sub(1) {
         let tagline_text = format!("  {tagline}");
@@ -93,7 +93,7 @@ pub fn render_welcome(
         frame.render_widget(para, clamped);
     }
 
-    // Render CWD with git branch if available.
+    // Render CWD with git branch if available
     let cwd_y = tagline_y + 2;
     if cwd_y < area.y + area.height.saturating_sub(1) {
         let cwd = env::current_dir().map_or_else(|_| "~".to_string(), |p| abbreviate_path(&p));
@@ -109,7 +109,7 @@ pub fn render_welcome(
         frame.render_widget(para, clamped);
     }
 
-    // Render model info.
+    // Render model info
     let model_y = cwd_y + 1;
     if model_y < area.y + area.height.saturating_sub(1) && !model.is_empty() {
         let model_text = format!("using {model}");
@@ -121,7 +121,7 @@ pub fn render_welcome(
         frame.render_widget(para, clamped);
     }
 
-    // Render centered prompt.
+    // Render centered prompt
     let prompt_y = model_y
         .saturating_add(2)
         .min(area.y + area.height.saturating_sub(3));
@@ -219,12 +219,12 @@ fn git_branch() -> Option<String> {
     let git_head = find_git_head(&cwd)?;
     let contents = fs::read_to_string(git_head).ok()?;
 
-    // Parse HEAD: either "ref: refs/heads/branch-name" or a detached commit hash.
+    // Parse HEAD: either "ref: refs/heads/branch-name" or a detached commit hash
     let contents = contents.trim();
     if let Some(ref_path) = contents.strip_prefix("ref: refs/heads/") {
         Some(ref_path.to_string())
     } else {
-        // Detached HEAD - show short commit hash.
+        // Detached HEAD - show short commit hash
         Some(contents.chars().take(7).collect())
     }
 }

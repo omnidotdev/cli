@@ -16,18 +16,18 @@ async fn permission_request_flows_to_interface() {
     let (actor, permission_tx) = PermissionActor::new();
     let (interface_tx, mut interface_rx) = mpsc::unbounded_channel();
 
-    // Register interface.
+    // Register interface
     permission_tx
         .send(PermissionMessage::RegisterInterface { interface_tx })
         .unwrap();
 
-    // Spawn actor.
+    // Spawn actor
     tokio::spawn(actor.run());
 
-    // Create client and send request.
+    // Create client and send request
     let client = PermissionClient::new("test-session".to_string(), permission_tx);
 
-    // Spawn the request so it runs concurrently.
+    // Spawn the request so it runs concurrently
     let _request_handle = tokio::spawn(async move {
         client
             .request(
@@ -41,7 +41,7 @@ async fn permission_request_flows_to_interface() {
             .await
     });
 
-    // Should receive interface message.
+    // Should receive interface message
     let msg = timeout(Duration::from_millis(100), interface_rx.recv())
         .await
         .expect("timeout waiting for interface message")
@@ -62,19 +62,19 @@ async fn session_cache_skips_second_request() {
     let (mut actor, permission_tx) = PermissionActor::new();
     let (interface_tx, mut interface_rx) = mpsc::unbounded_channel();
 
-    // Manually process messages to control flow.
+    // Manually process messages to control flow
     permission_tx
         .send(PermissionMessage::RegisterInterface { interface_tx })
         .unwrap();
 
-    // Process registration.
+    // Process registration
     if let Some(msg) = actor.inbox.recv().await {
         actor.handle_message(msg);
     }
 
     let client = PermissionClient::new("test-session".to_string(), permission_tx.clone());
 
-    // First request.
+    // First request
     let client_clone = client.clone();
     let first_request = tokio::spawn(async move {
         client_clone
@@ -89,19 +89,19 @@ async fn session_cache_skips_second_request() {
             .await
     });
 
-    // Process request.
+    // Process request
     if let Some(msg) = actor.inbox.recv().await {
         actor.handle_message(msg);
     }
 
-    // Get interface message.
+    // Get interface message
     let msg = interface_rx.recv().await.unwrap();
     let request_id = match msg {
         InterfaceMessage::ShowPermissionDialog { request_id, .. } => request_id,
         _ => panic!("unexpected message"),
     };
 
-    // Respond with AllowForSession.
+    // Respond with AllowForSession
     actor.respond(
         request_id,
         PermissionResponse::AllowForSession,
@@ -110,11 +110,11 @@ async fn session_cache_skips_second_request() {
         &PermissionAction::Execute,
     );
 
-    // First request should complete.
+    // First request should complete
     let result = first_request.await.unwrap();
     assert!(result.unwrap());
 
-    // Second request should hit cache (no interface message).
+    // Second request should hit cache (no interface message)
     let client_clone = client.clone();
     let second_request = tokio::spawn(async move {
         client_clone
@@ -129,18 +129,18 @@ async fn session_cache_skips_second_request() {
             .await
     });
 
-    // Process second request.
+    // Process second request
     if let Some(msg) = actor.inbox.recv().await {
         actor.handle_message(msg);
     }
 
-    // Should complete immediately without interface message.
+    // Should complete immediately without interface message
     let result = timeout(Duration::from_millis(100), second_request)
         .await
         .expect("second request should complete quickly")
         .unwrap();
     assert!(result.unwrap());
 
-    // Interface should not have received another message.
+    // Interface should not have received another message
     assert!(interface_rx.try_recv().is_err());
 }

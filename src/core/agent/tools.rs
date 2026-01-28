@@ -19,7 +19,7 @@ pub fn is_read_only(command: &str) -> bool {
     let command = command.trim();
     let first_word = command.split_whitespace().next().unwrap_or("");
 
-    // Read-only commands.
+    // Read-only commands
     let read_only_commands = [
         "ls", "cat", "head", "tail", "less", "more", "grep", "rg", "find", "fd", "pwd", "echo",
         "printf", "wc", "sort", "uniq", "diff", "file", "stat", "which", "whereis", "type", "man",
@@ -31,37 +31,37 @@ pub fn is_read_only(command: &str) -> bool {
         return true;
     }
 
-    // Get the rest of the command after the first word.
+    // Get the rest of the command after the first word
     let rest = command.strip_prefix(first_word).unwrap_or("").trim();
 
-    // Git read-only subcommands.
+    // Git read-only subcommands
     if first_word == "git" {
-        // Simple subcommands (single word).
+        // Simple subcommands (single word)
         let simple_git = ["status", "log", "diff", "show", "branch", "remote", "tag"];
         let subcommand = rest.split_whitespace().next().unwrap_or("");
         if simple_git.contains(&subcommand) {
             return true;
         }
-        // Multi-word: only "stash list" is read-only.
+        // Multi-word: only "stash list" is read-only
         if rest.starts_with("stash list") {
             return true;
         }
         return false;
     }
 
-    // Cargo read-only subcommands.
+    // Cargo read-only subcommands
     if first_word == "cargo" {
-        // Simple subcommands (single word).
+        // Simple subcommands (single word)
         let simple_cargo = ["check", "clippy", "doc", "tree", "metadata"];
         let subcommand = rest.split_whitespace().next().unwrap_or("");
         if simple_cargo.contains(&subcommand) {
             return true;
         }
-        // fmt is only read-only with --check or --write=false flags.
+        // fmt is only read-only with --check or --write=false flags
         if subcommand == "fmt" && (rest.contains("--check") || rest.contains("--write=false")) {
             return true;
         }
-        // For "test --no-run" we need to check if --no-run is present anywhere.
+        // For "test --no-run" we need to check if --no-run is present anywhere
         if subcommand == "test" && rest.contains("--no-run") {
             return true;
         }
@@ -379,7 +379,7 @@ impl ToolRegistry {
             },
         ];
 
-        // Add mode-specific tools.
+        // Add mode-specific tools
         match mode {
             AgentMode::Build => {
                 tools.push(Tool {
@@ -463,14 +463,14 @@ impl ToolRegistry {
 
         let read_only = is_read_only(command);
 
-        // In Plan mode, only allow read-only commands.
+        // In Plan mode, only allow read-only commands
         if mode == AgentMode::Plan && !read_only {
             return Err(AgentError::ToolExecution(
                 "In plan mode, only read-only commands are allowed. Use plan_exit to switch to build mode for write operations.".to_string(),
             ));
         }
 
-        // Check if permission needed.
+        // Check if permission needed
         if !read_only {
             if let Some(perms) = permissions {
                 let approved = perms
@@ -543,7 +543,7 @@ impl ToolRegistry {
 
         let path_buf = PathBuf::from(path);
 
-        // In Plan mode, only allow writing to plan files.
+        // In Plan mode, only allow writing to plan files
         if mode == AgentMode::Plan && !plan_manager.is_plan_path(&path_buf) {
             return Err(AgentError::ToolExecution(format!(
                 "In plan mode, you can only write to plan files in .omni/plans/. Use plan_exit to switch to build mode for other file operations. Attempted: {path}"
@@ -552,7 +552,7 @@ impl ToolRegistry {
 
         tracing::info!(path = %path, "writing file");
 
-        // Ensure parent directory exists for plan files.
+        // Ensure parent directory exists for plan files
         if mode == AgentMode::Plan {
             if let Some(parent) = path_buf.parent() {
                 tokio::fs::create_dir_all(parent)
@@ -561,7 +561,7 @@ impl ToolRegistry {
             }
         }
 
-        // Request permission (skip for plan files in plan mode).
+        // Request permission (skip for plan files in plan mode)
         let needs_permission = mode != AgentMode::Plan || !plan_manager.is_plan_path(&path_buf);
         if needs_permission {
             if let Some(perms) = permissions {
@@ -649,7 +649,7 @@ impl ToolRegistry {
 
         tracing::info!(reason = %reason, "requesting plan mode");
 
-        // Ask user for confirmation via ask_user.
+        // Ask user for confirmation via ask_user
         if let Some(perms) = permissions {
             let question = format!("Switch to plan mode?\n\nReason: {reason}");
             let options = Some(vec![
@@ -664,7 +664,7 @@ impl ToolRegistry {
 
             if answer.to_lowercase().contains("yes") || answer.to_lowercase().contains("enter plan")
             {
-                // Return special marker that agent will interpret.
+                // Return special marker that agent will interpret
                 Ok("[MODE_SWITCH:PLAN]".to_string())
             } else {
                 Err(AgentError::ToolExecution(
@@ -691,7 +691,7 @@ impl ToolRegistry {
 
         tracing::info!("requesting build mode");
 
-        // Ask user for confirmation.
+        // Ask user for confirmation
         if let Some(perms) = permissions {
             let question = "Exit plan mode and return to build mode for implementation?";
             let options = Some(vec![
@@ -707,7 +707,7 @@ impl ToolRegistry {
             if answer.to_lowercase().contains("yes")
                 || answer.to_lowercase().contains("start building")
             {
-                // Return special marker that agent will interpret.
+                // Return special marker that agent will interpret
                 Ok("[MODE_SWITCH:BUILD]".to_string())
             } else {
                 Err(AgentError::ToolExecution(
@@ -732,7 +732,7 @@ impl ToolRegistry {
 
         tracing::info!(query = %query, "executing web search");
 
-        // Request permission.
+        // Request permission
         if let Some(perms) = permissions {
             let approved = perms
                 .request(
@@ -785,7 +785,7 @@ impl ToolRegistry {
 
         tracing::info!(query = %query, tokens = %tokens, "executing code search");
 
-        // Request permission.
+        // Request permission
         if let Some(perms) = permissions {
             let approved = perms
                 .request(
@@ -1429,7 +1429,7 @@ mod tests {
 
     #[test]
     fn is_read_only_handles_multi_word_subcommands() {
-        // Git stash: only "stash list" is read-only.
+        // Git stash: only "stash list" is read-only
         assert!(is_read_only("git stash list"));
         assert!(!is_read_only("git stash"));
         assert!(!is_read_only("git stash drop"));
@@ -1437,14 +1437,14 @@ mod tests {
         assert!(!is_read_only("git stash push"));
         assert!(!is_read_only("git stash apply"));
 
-        // Cargo fmt: only with --check is read-only.
+        // Cargo fmt: only with --check is read-only
         assert!(is_read_only("cargo fmt --check"));
         assert!(is_read_only("cargo fmt --all --check"));
         assert!(is_read_only("cargo fmt --write=false"));
         assert!(!is_read_only("cargo fmt"));
         assert!(!is_read_only("cargo fmt --all"));
 
-        // Cargo test: only with --no-run is read-only.
+        // Cargo test: only with --no-run is read-only
         assert!(is_read_only("cargo test --no-run"));
         assert!(is_read_only("cargo test --all --no-run"));
         assert!(!is_read_only("cargo test"));

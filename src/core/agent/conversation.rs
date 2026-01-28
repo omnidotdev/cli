@@ -78,7 +78,7 @@ impl Conversation {
             is_error: if is_error { Some(true) } else { None },
         };
 
-        // Tool results go in user messages.
+        // Tool results go in user messages
         self.messages.push(Message {
             role: Role::User,
             content: Content::Blocks(vec![block]),
@@ -96,7 +96,7 @@ impl Conversation {
     ///
     /// Returns an error if the file cannot be written.
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
-        // Ensure parent directory exists.
+        // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }

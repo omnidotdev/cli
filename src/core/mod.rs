@@ -27,7 +27,7 @@ pub use error::{Error, Result};
 /// Returns an error if the task execution fails.
 #[allow(clippy::unused_async)] // TODO: Will use async when fully implemented.
 pub async fn execute_task(prompt: &str) -> Result<TaskResult> {
-    // TODO: Implement agentic task execution.
+    // TODO: Implement agentic task execution
     tracing::info!(prompt = %prompt, "executing task");
 
     Ok(TaskResult {

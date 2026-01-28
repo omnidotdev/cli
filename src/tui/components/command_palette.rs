@@ -85,7 +85,7 @@ pub fn render_command_dropdown(
 ) -> u16 {
     let filtered = filter_commands(input);
 
-    // Build content lines.
+    // Build content lines
     let lines: Vec<Line> = if filtered.is_empty() {
         vec![Line::from(Span::styled(
             format!("  No commands matching '{input}'"),
@@ -125,13 +125,13 @@ pub fn render_command_dropdown(
     let dropdown_height = (content_lines + 2) as u16; // +2 for borders
     let dropdown_width = prompt_area.width;
 
-    // Position directly above the prompt (no gap).
+    // Position directly above the prompt (no gap)
     let dropdown_y = prompt_area.y.saturating_sub(dropdown_height);
     let dropdown_x = prompt_area.x;
 
     let dropdown_area = Rect::new(dropdown_x, dropdown_y, dropdown_width, dropdown_height);
 
-    // Clear area behind dropdown.
+    // Clear area behind dropdown
     frame.render_widget(Clear, dropdown_area);
 
     let block = Block::default()

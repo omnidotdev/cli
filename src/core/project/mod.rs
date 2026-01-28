@@ -46,12 +46,12 @@ impl Project {
     ///
     /// Returns error if project detection fails.
     pub fn detect(cwd: &Path) -> anyhow::Result<Self> {
-        // Try to find git root.
+        // Try to find git root
         let git_root = find_git_root(cwd);
 
         match git_root {
             Some(worktree) => {
-                // Get the root commit hash as project ID.
+                // Get the root commit hash as project ID
                 let id = get_git_root_commit(&worktree)?;
                 Ok(Self {
                     id,
@@ -64,7 +64,7 @@ impl Project {
                 })
             }
             None => {
-                // No git repo, use global project.
+                // No git repo, use global project
                 Ok(Self {
                     id: GLOBAL_PROJECT_ID.to_string(),
                     worktree: cwd.to_path_buf(),
@@ -86,12 +86,12 @@ impl Project {
     pub fn load_or_create(storage: &Storage, cwd: &Path) -> anyhow::Result<Self> {
         let detected = Self::detect(cwd)?;
 
-        // Try to load existing project.
+        // Try to load existing project
         if let Ok(existing) = storage.read::<Self>(&["project", &detected.id]) {
             return Ok(existing);
         }
 
-        // Save new project.
+        // Save new project
         storage.write(&["project", &detected.id], &detected)?;
         Ok(detected)
     }
@@ -133,7 +133,7 @@ fn get_git_root_commit(repo_path: &Path) -> anyhow::Result<String> {
         .filter(|s| !s.is_empty())
         .collect();
 
-    // Sort to get consistent ID even with multiple root commits.
+    // Sort to get consistent ID even with multiple root commits
     hashes.sort_unstable();
 
     hashes
@@ -148,11 +148,11 @@ mod tests {
 
     #[test]
     fn detect_current_directory() {
-        // This test runs in the omni/cli git repo.
+        // This test runs in the omni/cli git repo
         let cwd = std::env::current_dir().unwrap();
         let project = Project::detect(&cwd).unwrap();
 
-        // Should be a git project.
+        // Should be a git project
         assert!(project.vcs.is_some());
         assert_ne!(project.id, GLOBAL_PROJECT_ID);
         assert!(!project.id.is_empty());
@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn detect_non_git_directory() {
-        // Use temp directory which won't be a git repo.
+        // Use temp directory which won't be a git repo
         let temp = tempfile::tempdir().unwrap();
         let project = Project::detect(temp.path()).unwrap();
 
