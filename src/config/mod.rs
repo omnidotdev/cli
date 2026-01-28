@@ -619,7 +619,9 @@ impl AgentConfig {
             "google".to_string(),
             ProviderConfig {
                 api_type: ProviderApiType::OpenAi,
-                base_url: Some("https://generativelanguage.googleapis.com/v1beta/openai".to_string()),
+                base_url: Some(
+                    "https://generativelanguage.googleapis.com/v1beta/openai".to_string(),
+                ),
                 api_key_env: Some("GOOGLE_API_KEY".to_string()),
                 api_key: None,
             },

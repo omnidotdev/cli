@@ -431,6 +431,98 @@ impl ToolRegistry {
                     "required": ["edits"]
                 }),
             },
+            Tool {
+                name: "github_pr".to_string(),
+                description:
+                    "Create a GitHub pull request. Requires gh CLI to be installed and authenticated."
+                        .to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "PR title"
+                        },
+                        "body": {
+                            "type": "string",
+                            "description": "PR body/description (markdown)"
+                        },
+                        "base": {
+                            "type": "string",
+                            "description": "Base branch (default: repo default branch)"
+                        },
+                        "draft": {
+                            "type": "boolean",
+                            "description": "Create as draft PR"
+                        }
+                    },
+                    "required": ["title"]
+                }),
+            },
+            Tool {
+                name: "github_issue".to_string(),
+                description:
+                    "Create or view GitHub issues. Requires gh CLI to be installed and authenticated."
+                        .to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["create", "view", "list", "close"],
+                            "description": "Action to perform"
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "Issue title (for create)"
+                        },
+                        "body": {
+                            "type": "string",
+                            "description": "Issue body (for create)"
+                        },
+                        "number": {
+                            "type": "integer",
+                            "description": "Issue number (for view/close)"
+                        },
+                        "labels": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Labels to add (for create)"
+                        }
+                    },
+                    "required": ["action"]
+                }),
+            },
+            Tool {
+                name: "github_pr_review".to_string(),
+                description:
+                    "View or comment on pull requests. Requires gh CLI to be installed and authenticated."
+                        .to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["view", "diff", "checks", "comment", "list"],
+                            "description": "Action to perform"
+                        },
+                        "number": {
+                            "type": "integer",
+                            "description": "PR number (required for view/diff/checks/comment)"
+                        },
+                        "body": {
+                            "type": "string",
+                            "description": "Comment body (for comment action)"
+                        },
+                        "state": {
+                            "type": "string",
+                            "enum": ["open", "closed", "merged", "all"],
+                            "description": "Filter by state (for list action)"
+                        }
+                    },
+                    "required": ["action"]
+                }),
+            },
         ];
 
         // Add mode-specific tools
@@ -501,6 +593,12 @@ impl ToolRegistry {
             "todo_write" => self.execute_todo_write(input),
             "apply_patch" => self.execute_apply_patch(input, permissions, mode).await,
             "multi_edit" => self.execute_multi_edit(input, permissions, mode).await,
+            "github_pr" => self.execute_github_pr(input, permissions, mode).await,
+            "github_issue" => self.execute_github_issue(input, permissions, mode).await,
+            "github_pr_review" => {
+                self.execute_github_pr_review(input, permissions, mode)
+                    .await
+            }
             _ => Err(AgentError::ToolExecution(format!("unknown tool: {name}"))),
         }
     }
@@ -1440,7 +1538,9 @@ impl ToolRegistry {
         }
 
         if edits.is_empty() {
-            return Err(AgentError::ToolExecution("edits array is empty".to_string()));
+            return Err(AgentError::ToolExecution(
+                "edits array is empty".to_string(),
+            ));
         }
 
         tracing::info!(count = edits.len(), "multi-edit");
@@ -1454,12 +1554,12 @@ impl ToolRegistry {
             let path = edit["path"]
                 .as_str()
                 .ok_or_else(|| AgentError::ToolExecution(format!("edit {i}: missing path")))?;
-            let old_string = edit["old_string"]
-                .as_str()
-                .ok_or_else(|| AgentError::ToolExecution(format!("edit {i}: missing old_string")))?;
-            let new_string = edit["new_string"]
-                .as_str()
-                .ok_or_else(|| AgentError::ToolExecution(format!("edit {i}: missing new_string")))?;
+            let old_string = edit["old_string"].as_str().ok_or_else(|| {
+                AgentError::ToolExecution(format!("edit {i}: missing old_string"))
+            })?;
+            let new_string = edit["new_string"].as_str().ok_or_else(|| {
+                AgentError::ToolExecution(format!("edit {i}: missing new_string"))
+            })?;
 
             if old_string == new_string {
                 return Err(AgentError::ToolExecution(format!(
@@ -1468,9 +1568,9 @@ impl ToolRegistry {
             }
 
             // Read and validate
-            let content = tokio::fs::read_to_string(path)
-                .await
-                .map_err(|e| AgentError::ToolExecution(format!("edit {i}: failed to read {path}: {e}")))?;
+            let content = tokio::fs::read_to_string(path).await.map_err(|e| {
+                AgentError::ToolExecution(format!("edit {i}: failed to read {path}: {e}"))
+            })?;
 
             if !content.contains(old_string) {
                 return Err(AgentError::ToolExecution(format!(
@@ -1488,7 +1588,8 @@ impl ToolRegistry {
             let new_content = content.replacen(old_string, new_string, 1);
             let diff = generate_diff(&content, &new_content);
 
-            all_diffs.push_str(&format!("--- {path}\n+++ {path}\n{diff}\n"));
+            use std::fmt::Write;
+            let _ = write!(all_diffs, "--- {path}\n+++ {path}\n{diff}\n");
             pending_edits.push((path.to_string(), new_content));
         }
 
@@ -1526,6 +1627,431 @@ impl ToolRegistry {
             results.len(),
             results.join("\n")
         ))
+    }
+
+    async fn execute_github_pr(
+        &self,
+        input: serde_json::Value,
+        permissions: Option<&PermissionClient>,
+        mode: AgentMode,
+    ) -> Result<String> {
+        if mode == AgentMode::Plan {
+            return Err(AgentError::ToolExecution(
+                "Cannot create PRs in plan mode".to_string(),
+            ));
+        }
+
+        let title = input["title"]
+            .as_str()
+            .ok_or_else(|| AgentError::ToolExecution("missing title".to_string()))?;
+        let body = input["body"].as_str().unwrap_or("");
+        let base = input["base"].as_str();
+        let draft = input["draft"].as_bool().unwrap_or(false);
+
+        // Request permission
+        if let Some(perms) = permissions {
+            let mut cmd_desc = format!("gh pr create --title {title:?}");
+            if !body.is_empty() {
+                cmd_desc.push_str(" --body <...>");
+            }
+            if draft {
+                cmd_desc.push_str(" --draft");
+            }
+
+            let approved = perms
+                .request(
+                    "github_pr",
+                    PermissionAction::Execute,
+                    PermissionContext::Bash {
+                        command: cmd_desc,
+                        working_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
+                    },
+                )
+                .await
+                .map_err(|e| AgentError::ToolExecution(e.to_string()))?;
+
+            if !approved {
+                return Err(AgentError::ToolExecution(
+                    "Permission denied by user".to_string(),
+                ));
+            }
+        }
+
+        let mut cmd = Command::new("gh");
+        cmd.args(["pr", "create", "--title", title]);
+
+        if !body.is_empty() {
+            cmd.args(["--body", body]);
+        }
+        if let Some(b) = base {
+            cmd.args(["--base", b]);
+        }
+        if draft {
+            cmd.arg("--draft");
+        }
+
+        let output = cmd
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| AgentError::ToolExecution(format!("failed to run gh: {e}")))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        if output.status.success() {
+            Ok(format!("PR created: {stdout}"))
+        } else {
+            Err(AgentError::ToolExecution(format!(
+                "gh pr create failed: {stderr}"
+            )))
+        }
+    }
+
+    async fn execute_github_issue(
+        &self,
+        input: serde_json::Value,
+        permissions: Option<&PermissionClient>,
+        mode: AgentMode,
+    ) -> Result<String> {
+        let action = input["action"]
+            .as_str()
+            .ok_or_else(|| AgentError::ToolExecution("missing action".to_string()))?;
+
+        match action {
+            "create" => {
+                if mode == AgentMode::Plan {
+                    return Err(AgentError::ToolExecution(
+                        "Cannot create issues in plan mode".to_string(),
+                    ));
+                }
+
+                let title = input["title"]
+                    .as_str()
+                    .ok_or_else(|| AgentError::ToolExecution("missing title".to_string()))?;
+                let body = input["body"].as_str().unwrap_or("");
+                let labels: Vec<&str> = input["labels"]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+                    .unwrap_or_default();
+
+                // Request permission
+                if let Some(perms) = permissions {
+                    let approved = perms
+                        .request(
+                            "github_issue",
+                            PermissionAction::Execute,
+                            PermissionContext::Bash {
+                                command: format!("gh issue create --title {title:?}"),
+                                working_dir: std::env::current_dir()
+                                    .unwrap_or_else(|_| PathBuf::from("/")),
+                            },
+                        )
+                        .await
+                        .map_err(|e| AgentError::ToolExecution(e.to_string()))?;
+
+                    if !approved {
+                        return Err(AgentError::ToolExecution(
+                            "Permission denied by user".to_string(),
+                        ));
+                    }
+                }
+
+                let mut cmd = Command::new("gh");
+                cmd.args(["issue", "create", "--title", title]);
+
+                if !body.is_empty() {
+                    cmd.args(["--body", body]);
+                }
+                for label in labels {
+                    cmd.args(["--label", label]);
+                }
+
+                let output = cmd
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .output()
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("failed to run gh: {e}")))?;
+
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+
+                if output.status.success() {
+                    Ok(format!("Issue created: {stdout}"))
+                } else {
+                    Err(AgentError::ToolExecution(format!(
+                        "gh issue create failed: {stderr}"
+                    )))
+                }
+            }
+            "view" => {
+                let number = input["number"]
+                    .as_i64()
+                    .ok_or_else(|| AgentError::ToolExecution("missing number".to_string()))?;
+
+                let output = Command::new("gh")
+                    .args(["issue", "view", &number.to_string()])
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .output()
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("failed to run gh: {e}")))?;
+
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+
+                if output.status.success() {
+                    Ok(stdout.to_string())
+                } else {
+                    Err(AgentError::ToolExecution(format!(
+                        "gh issue view failed: {stderr}"
+                    )))
+                }
+            }
+            "list" => {
+                let output = Command::new("gh")
+                    .args(["issue", "list"])
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .output()
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("failed to run gh: {e}")))?;
+
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+
+                if output.status.success() {
+                    Ok(stdout.to_string())
+                } else {
+                    Err(AgentError::ToolExecution(format!(
+                        "gh issue list failed: {stderr}"
+                    )))
+                }
+            }
+            "close" => {
+                if mode == AgentMode::Plan {
+                    return Err(AgentError::ToolExecution(
+                        "Cannot close issues in plan mode".to_string(),
+                    ));
+                }
+
+                let number = input["number"]
+                    .as_i64()
+                    .ok_or_else(|| AgentError::ToolExecution("missing number".to_string()))?;
+
+                // Request permission
+                if let Some(perms) = permissions {
+                    let approved = perms
+                        .request(
+                            "github_issue",
+                            PermissionAction::Execute,
+                            PermissionContext::Bash {
+                                command: format!("gh issue close {number}"),
+                                working_dir: std::env::current_dir()
+                                    .unwrap_or_else(|_| PathBuf::from("/")),
+                            },
+                        )
+                        .await
+                        .map_err(|e| AgentError::ToolExecution(e.to_string()))?;
+
+                    if !approved {
+                        return Err(AgentError::ToolExecution(
+                            "Permission denied by user".to_string(),
+                        ));
+                    }
+                }
+
+                let output = Command::new("gh")
+                    .args(["issue", "close", &number.to_string()])
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .output()
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("failed to run gh: {e}")))?;
+
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+
+                if output.status.success() {
+                    Ok(format!("Issue closed: {stdout}"))
+                } else {
+                    Err(AgentError::ToolExecution(format!(
+                        "gh issue close failed: {stderr}"
+                    )))
+                }
+            }
+            _ => Err(AgentError::ToolExecution(format!(
+                "unknown issue action: {action}"
+            ))),
+        }
+    }
+
+    async fn execute_github_pr_review(
+        &self,
+        input: serde_json::Value,
+        permissions: Option<&PermissionClient>,
+        mode: AgentMode,
+    ) -> Result<String> {
+        let action = input["action"]
+            .as_str()
+            .ok_or_else(|| AgentError::ToolExecution("missing action".to_string()))?;
+
+        match action {
+            "view" => {
+                let number = input["number"]
+                    .as_i64()
+                    .ok_or_else(|| AgentError::ToolExecution("missing number".to_string()))?;
+
+                let output = Command::new("gh")
+                    .args(["pr", "view", &number.to_string()])
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .output()
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("failed to run gh: {e}")))?;
+
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+
+                if output.status.success() {
+                    Ok(stdout.to_string())
+                } else {
+                    Err(AgentError::ToolExecution(format!(
+                        "gh pr view failed: {stderr}"
+                    )))
+                }
+            }
+            "diff" => {
+                let number = input["number"]
+                    .as_i64()
+                    .ok_or_else(|| AgentError::ToolExecution("missing number".to_string()))?;
+
+                let output = Command::new("gh")
+                    .args(["pr", "diff", &number.to_string()])
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .output()
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("failed to run gh: {e}")))?;
+
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+
+                if output.status.success() {
+                    Ok(stdout.to_string())
+                } else {
+                    Err(AgentError::ToolExecution(format!(
+                        "gh pr diff failed: {stderr}"
+                    )))
+                }
+            }
+            "checks" => {
+                let number = input["number"]
+                    .as_i64()
+                    .ok_or_else(|| AgentError::ToolExecution("missing number".to_string()))?;
+
+                let output = Command::new("gh")
+                    .args(["pr", "checks", &number.to_string()])
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .output()
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("failed to run gh: {e}")))?;
+
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+
+                if output.status.success() {
+                    Ok(stdout.to_string())
+                } else {
+                    Err(AgentError::ToolExecution(format!(
+                        "gh pr checks failed: {stderr}"
+                    )))
+                }
+            }
+            "comment" => {
+                if mode == AgentMode::Plan {
+                    return Err(AgentError::ToolExecution(
+                        "Cannot comment on PRs in plan mode".to_string(),
+                    ));
+                }
+
+                let number = input["number"]
+                    .as_i64()
+                    .ok_or_else(|| AgentError::ToolExecution("missing number".to_string()))?;
+                let body = input["body"]
+                    .as_str()
+                    .ok_or_else(|| AgentError::ToolExecution("missing body".to_string()))?;
+
+                // Request permission
+                if let Some(perms) = permissions {
+                    let approved = perms
+                        .request(
+                            "github_pr_review",
+                            PermissionAction::Execute,
+                            PermissionContext::Bash {
+                                command: format!("gh pr comment {number}"),
+                                working_dir: std::env::current_dir()
+                                    .unwrap_or_else(|_| PathBuf::from("/")),
+                            },
+                        )
+                        .await
+                        .map_err(|e| AgentError::ToolExecution(e.to_string()))?;
+
+                    if !approved {
+                        return Err(AgentError::ToolExecution(
+                            "Permission denied by user".to_string(),
+                        ));
+                    }
+                }
+
+                let output = Command::new("gh")
+                    .args(["pr", "comment", &number.to_string(), "--body", body])
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .output()
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("failed to run gh: {e}")))?;
+
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+
+                if output.status.success() {
+                    Ok(format!("Comment added: {stdout}"))
+                } else {
+                    Err(AgentError::ToolExecution(format!(
+                        "gh pr comment failed: {stderr}"
+                    )))
+                }
+            }
+            "list" => {
+                let state = input["state"].as_str().unwrap_or("open");
+
+                let output = Command::new("gh")
+                    .args(["pr", "list", "--state", state])
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .output()
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("failed to run gh: {e}")))?;
+
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+
+                if output.status.success() {
+                    Ok(stdout.to_string())
+                } else {
+                    Err(AgentError::ToolExecution(format!(
+                        "gh pr list failed: {stderr}"
+                    )))
+                }
+            }
+            _ => Err(AgentError::ToolExecution(format!(
+                "unknown PR review action: {action}"
+            ))),
+        }
     }
 }
 

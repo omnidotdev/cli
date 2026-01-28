@@ -179,7 +179,10 @@ mod tests {
     fn cli_parses_tui_continue() {
         let cli = Cli::parse_from(["omni", "tui", "--continue"]);
         match cli.command {
-            Some(Commands::Tui { r#continue, session }) => {
+            Some(Commands::Tui {
+                r#continue,
+                session,
+            }) => {
                 assert!(r#continue);
                 assert!(session.is_none());
             }
@@ -191,7 +194,10 @@ mod tests {
     fn cli_parses_tui_session() {
         let cli = Cli::parse_from(["omni", "tui", "-s", "ses_123"]);
         match cli.command {
-            Some(Commands::Tui { r#continue, session }) => {
+            Some(Commands::Tui {
+                r#continue,
+                session,
+            }) => {
                 assert!(!r#continue);
                 assert_eq!(session, Some("ses_123".to_string()));
             }
@@ -203,7 +209,11 @@ mod tests {
     fn cli_parses_agent_continue() {
         let cli = Cli::parse_from(["omni", "agent", "-c", "do more"]);
         match cli.command {
-            Some(Commands::Agent { prompt, r#continue, session }) => {
+            Some(Commands::Agent {
+                prompt,
+                r#continue,
+                session,
+            }) => {
                 assert_eq!(prompt, "do more");
                 assert!(r#continue);
                 assert!(session.is_none());
