@@ -34,8 +34,9 @@ use crate::core::agent::{
 pub use app::App;
 use app::{ActiveAskUserDialog, ActiveDialog, ActivePermissionDialog, ChatMessage};
 use components::{
-    MESSAGE_PADDING_X, calculate_content_height, filter_commands, render_command_dropdown,
-    render_session, render_session_list, render_welcome, should_show_dropdown,
+    DropdownMode, MESSAGE_PADDING_X, calculate_content_height, dropdown_mode, filter_commands,
+    filter_models, render_command_dropdown, render_model_dropdown, render_session,
+    render_session_list, render_welcome, should_show_dropdown,
 };
 use message::DisplayMessage;
 use state::ViewState;
@@ -210,9 +211,23 @@ async fn run_app(
             // Set cursor position
             f.set_cursor_position(Position::new(cursor_pos.0, cursor_pos.1));
 
-            // Render command dropdown if visible - use the exact prompt area returned
+            // Render dropdown if visible - use the exact prompt area returned
             if app.show_command_dropdown && should_show_dropdown(&app.input) {
-                render_command_dropdown(f, prompt_area, &app.input, app.command_selection);
+                match dropdown_mode(&app.input) {
+                    DropdownMode::Commands => {
+                        render_command_dropdown(f, prompt_area, &app.input, app.command_selection);
+                    }
+                    DropdownMode::Models => {
+                        render_model_dropdown(
+                            f,
+                            prompt_area,
+                            &app.input,
+                            app.command_selection,
+                            &app.agent_config.models,
+                        );
+                    }
+                    DropdownMode::None => {}
+                }
             }
 
             // Render dialog overlay if active
@@ -411,12 +426,24 @@ fn handle_key(
     match code {
         KeyCode::Enter => {
             if !app.input.is_empty() && !app.loading {
-                // If dropdown is visible, execute selected command
+                // If dropdown is visible, execute selected item
                 if app.show_command_dropdown {
-                    let filtered = filter_commands(&app.input);
-                    if let Some(cmd) = filtered.get(app.command_selection) {
-                        app.input = cmd.name.to_string();
-                        app.show_command_dropdown = false;
+                    match dropdown_mode(&app.input) {
+                        DropdownMode::Commands => {
+                            let filtered = filter_commands(&app.input);
+                            if let Some(cmd) = filtered.get(app.command_selection) {
+                                app.input = cmd.name.to_string();
+                                app.show_command_dropdown = false;
+                            }
+                        }
+                        DropdownMode::Models => {
+                            let filtered = filter_models(&app.input, &app.agent_config.models);
+                            if let Some(model) = filtered.get(app.command_selection) {
+                                app.input = format!("/model {}", model.id);
+                                app.show_command_dropdown = false;
+                            }
+                        }
+                        DropdownMode::None => {}
                     }
                 }
 
@@ -449,17 +476,51 @@ fn handle_key(
                 if trimmed == "/model" || trimmed.starts_with("/model ") {
                     let model_arg = trimmed.strip_prefix("/model").unwrap_or("").trim();
                     if model_arg.is_empty() {
-                        // Show available models
+                        // Show available models (dropdown will appear)
+                        let models_list: String = app
+                            .agent_config
+                            .models
+                            .iter()
+                            .map(|m| format!("  {} ({})", m.id, m.provider))
+                            .collect::<Vec<_>>()
+                            .join("\n");
                         app.messages.push(DisplayMessage::tool(
                             "model",
                             "Available models",
-                            "Anthropic: claude-sonnet-4-20250514, claude-opus-4-20250514, claude-haiku-3-5-20241022\n\
-                             OpenAI: gpt-4o, gpt-4-turbo, gpt-3.5-turbo\n\n\
-                             Usage: /model <name>",
+                            format!("{models_list}\n\nUsage: /model <name>"),
                             false,
                         ));
                         app.enter_session();
                     } else if let Some(agent) = &mut app.agent {
+                        // Check if we need to switch providers
+                        let current_provider = agent.provider_name();
+                        let target_provider = app.agent_config.provider_for_model(model_arg);
+
+                        if let Some(provider_name) = target_provider {
+                            if provider_name != current_provider {
+                                match app.agent_config.create_provider_by_name(provider_name) {
+                                    Ok(new_provider) => {
+                                        agent.set_provider(new_provider);
+                                        app.messages.push(DisplayMessage::tool(
+                                            "model",
+                                            format!("Switched provider to {provider_name}"),
+                                            "",
+                                            false,
+                                        ));
+                                    }
+                                    Err(e) => {
+                                        app.messages.push(DisplayMessage::tool_error(
+                                            "model",
+                                            format!("Failed to switch provider: {e}"),
+                                        ));
+                                        app.clear_input();
+                                        app.enter_session();
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+
                         agent.set_model(model_arg);
                         app.model = model_arg.to_string();
                         app.messages.push(DisplayMessage::tool(
@@ -508,10 +569,22 @@ fn handle_key(
             if !app.loading {
                 // Autocomplete if dropdown visible, otherwise toggle mode
                 if app.show_command_dropdown {
-                    let filtered = filter_commands(&app.input);
-                    if let Some(cmd) = filtered.get(app.command_selection) {
-                        app.input = cmd.name.to_string();
-                        app.cursor = app.input.len();
+                    match dropdown_mode(&app.input) {
+                        DropdownMode::Commands => {
+                            let filtered = filter_commands(&app.input);
+                            if let Some(cmd) = filtered.get(app.command_selection) {
+                                app.input = cmd.name.to_string();
+                                app.cursor = app.input.len();
+                            }
+                        }
+                        DropdownMode::Models => {
+                            let filtered = filter_models(&app.input, &app.agent_config.models);
+                            if let Some(model) = filtered.get(app.command_selection) {
+                                app.input = format!("/model {}", model.id);
+                                app.cursor = app.input.len();
+                            }
+                        }
+                        DropdownMode::None => {}
                     }
                 } else if let Some(agent) = &mut app.agent {
                     let new_mode = match app.agent_mode {
@@ -584,8 +657,13 @@ fn handle_key(
         KeyCode::Down => {
             if app.show_command_dropdown {
                 // Navigate dropdown selection down
-                let filtered = filter_commands(&app.input);
-                let max_idx = filtered.len().saturating_sub(1);
+                let max_idx = match dropdown_mode(&app.input) {
+                    DropdownMode::Commands => filter_commands(&app.input).len().saturating_sub(1),
+                    DropdownMode::Models => filter_models(&app.input, &app.agent_config.models)
+                        .len()
+                        .saturating_sub(1),
+                    DropdownMode::None => 0,
+                };
                 app.command_selection = (app.command_selection + 1).min(max_idx);
             } else if app.is_multiline() {
                 app.move_down();

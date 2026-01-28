@@ -11,6 +11,15 @@ use crate::core::agent::{AgentMode, AnthropicProvider, LlmProvider, OpenAiProvid
 
 pub use persona::{Persona, list_personas, load_persona, personas_dir};
 
+/// Model information with provider association.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelInfo {
+    /// Model identifier (e.g., "claude-sonnet-4-20250514", "gpt-4o")
+    pub id: String,
+    /// Provider name (e.g., "anthropic", "openai")
+    pub provider: String,
+}
+
 /// Provider API type.
 ///
 /// Determines which API format to use for communication.
@@ -377,9 +386,93 @@ pub struct AgentConfig {
     /// Agent definitions.
     #[serde(default = "AgentConfig::default_agents")]
     pub agents: HashMap<String, AgentDefinition>,
+
+    /// Known models with provider associations.
+    #[serde(default = "AgentConfig::default_models")]
+    pub models: Vec<ModelInfo>,
 }
 
 impl AgentConfig {
+    /// Get the default model definitions.
+    fn default_models() -> Vec<ModelInfo> {
+        vec![
+            ModelInfo {
+                id: "claude-sonnet-4-20250514".to_string(),
+                provider: "anthropic".to_string(),
+            },
+            ModelInfo {
+                id: "claude-opus-4-20250514".to_string(),
+                provider: "anthropic".to_string(),
+            },
+            ModelInfo {
+                id: "claude-3-5-haiku-20241022".to_string(),
+                provider: "anthropic".to_string(),
+            },
+            ModelInfo {
+                id: "gpt-4o".to_string(),
+                provider: "openai".to_string(),
+            },
+            ModelInfo {
+                id: "gpt-4-turbo".to_string(),
+                provider: "openai".to_string(),
+            },
+            ModelInfo {
+                id: "gpt-3.5-turbo".to_string(),
+                provider: "openai".to_string(),
+            },
+            ModelInfo {
+                id: "o1".to_string(),
+                provider: "openai".to_string(),
+            },
+            ModelInfo {
+                id: "o1-mini".to_string(),
+                provider: "openai".to_string(),
+            },
+        ]
+    }
+
+    /// Look up the provider for a model.
+    ///
+    /// First checks the models registry, then falls back to prefix detection.
+    #[must_use]
+    pub fn provider_for_model(&self, model_id: &str) -> Option<&str> {
+        if let Some(info) = self.models.iter().find(|m| m.id == model_id) {
+            return Some(&info.provider);
+        }
+        // Fallback: detect by prefix
+        if model_id.starts_with("claude") {
+            Some("anthropic")
+        } else if model_id.starts_with("gpt") || model_id.starts_with("o1") {
+            Some("openai")
+        } else {
+            None
+        }
+    }
+
+    /// Create a provider by name.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if the provider is unknown or required API key is missing.
+    pub fn create_provider_by_name(&self, name: &str) -> anyhow::Result<Box<dyn LlmProvider>> {
+        let config = self.providers.get(name).ok_or_else(|| {
+            anyhow::anyhow!("unknown provider '{name}', check [agent.providers] config")
+        })?;
+
+        match config.api_type {
+            ProviderApiType::Anthropic => {
+                let key = Self::resolve_api_key(config)
+                    .ok_or_else(|| anyhow::anyhow!("API key not set for provider '{name}'"))?;
+                Ok(Box::new(AnthropicProvider::new(key)?))
+            }
+            ProviderApiType::OpenAi => {
+                let api_key = Self::resolve_api_key(config);
+                let base_url = config.base_url.clone();
+                Ok(Box::new(OpenAiProvider::with_config(api_key, base_url)?))
+            }
+        }
+    }
+
     /// Get the default agent definitions.
     fn default_agents() -> HashMap<String, AgentDefinition> {
         let mut agents = HashMap::new();
@@ -508,6 +601,7 @@ impl Default for AgentConfig {
             default_agent: "build".to_string(),
             providers: Self::default_providers(),
             agents: Self::default_agents(),
+            models: Self::default_models(),
         }
     }
 }

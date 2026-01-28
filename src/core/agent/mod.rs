@@ -834,6 +834,18 @@ impl Agent {
         tracing::info!(model = %self.model, "switched model");
     }
 
+    /// Set the LLM provider.
+    pub fn set_provider(&mut self, provider: Box<dyn LlmProvider>) {
+        tracing::info!(provider = %provider.name(), "switched provider");
+        self.provider = provider;
+    }
+
+    /// Get the current provider name.
+    #[must_use]
+    pub fn provider_name(&self) -> &'static str {
+        self.provider.name()
+    }
+
     /// Get the current plan file path, if any.
     #[must_use]
     pub const fn plan_path(&self) -> Option<&PathBuf> {
