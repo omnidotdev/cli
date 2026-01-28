@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use super::markdown::parse_markdown_line;
-use super::messages::render_message;
+use super::messages::{render_message, wrapped_line_height};
 use super::prompt::{PromptMode, render_prompt};
 use crate::core::agent::AgentMode;
 use crate::tui::app::Selection;
@@ -17,8 +17,6 @@ use crate::tui::message::DisplayMessage;
 
 /// Horizontal padding for message area.
 pub const MESSAGE_PADDING_X: u16 = 2;
-/// Bottom padding for message area.
-const MESSAGE_PADDING_BOTTOM: u16 = 1;
 
 /// Brand colors.
 const DIMMED: Color = Color::Rgb(100, 100, 110);
@@ -35,7 +33,7 @@ pub fn render_session(
     input: &str,
     cursor: usize,
     scroll_offset: u16,
-    loading: bool,
+    activity_status: Option<&str>,
     model: &str,
     agent_mode: AgentMode,
     selection: Option<&Selection>,
@@ -82,7 +80,7 @@ pub fn render_session(
     );
 
     // Render prompt with status
-    let status_left = if loading { Some("Thinking...") } else { None };
+    let status_left = activity_status;
     // Show mode, model, cost, and build version in status
     let version = crate::build_info::short_version();
     let cost_str = if session_cost > 0.0 {
@@ -124,7 +122,7 @@ fn render_message_list(
         area.x + MESSAGE_PADDING_X,
         area.y,
         area.width.saturating_sub(MESSAGE_PADDING_X * 2),
-        area.height.saturating_sub(MESSAGE_PADDING_BOTTOM),
+        area.height,
     );
 
     if messages.is_empty() && streaming_text.is_empty() {
@@ -250,10 +248,7 @@ pub fn calculate_content_height(
         let width = width.max(1) as usize;
         let streaming_height: u16 = streaming_text
             .lines()
-            .map(|line| {
-                let chars = line.chars().count();
-                ((chars / width) + 1) as u16
-            })
+            .map(|line| wrapped_line_height(line.chars().count(), width))
             .sum::<u16>()
             .max(1);
         total = total.saturating_add(streaming_height);
@@ -283,26 +278,29 @@ mod tests {
     fn estimate_height_single_line() {
         let msg = user_message("hello");
         let height = estimate_message_height(&msg, 80);
-        assert_eq!(height, 1);
+        // 1 line + 2 padding = 3
+        assert_eq!(height, 3);
     }
 
     #[test]
     fn estimate_height_multiline() {
         let msg = user_message("line one\nline two\nline three");
         let height = estimate_message_height(&msg, 80);
-        assert_eq!(height, 3);
+        // 3 lines + 2 padding = 5
+        assert_eq!(height, 5);
     }
 
     #[test]
     fn estimate_height_wrapping() {
-        // 20 chars on width 10 should wrap to 3 lines (ceil(20/10) + 1 per line calc)
+        // 20 chars on width 10 should wrap to 2 lines (ceil(20/10) = 2) + 2 padding = 4
         let msg = user_message("12345678901234567890");
         let height = estimate_message_height(&msg, 10);
-        assert_eq!(height, 3);
+        assert_eq!(height, 4);
     }
 
     #[test]
     fn estimate_height_assistant() {
+        // Assistant messages have no padding
         let msg = assistant_message("response text");
         let height = estimate_message_height(&msg, 80);
         assert_eq!(height, 1);
@@ -318,8 +316,8 @@ mod tests {
     fn calculate_content_height_single_message() {
         let messages = vec![user_message("hello")];
         let height = calculate_content_height(&messages, "", 80);
-        // 1 for message + 1 for spacing
-        assert_eq!(height, 2);
+        // 3 (user message with padding) + 1 (spacing) = 4
+        assert_eq!(height, 4);
     }
 
     #[test]
@@ -330,8 +328,8 @@ mod tests {
             user_message("third"),
         ];
         let height = calculate_content_height(&messages, "", 80);
-        // (1 + 1) + (1 + 1) + (1 + 1) = 6
-        assert_eq!(height, 6);
+        // (3 + 1) + (1 + 1) + (3 + 1) = 10
+        assert_eq!(height, 10);
     }
 
     #[test]
@@ -339,8 +337,8 @@ mod tests {
         let messages = vec![user_message("hello")];
         let streaming = "streaming text";
         let height = calculate_content_height(&messages, streaming, 80);
-        // 2 for message + 1 for streaming
-        assert_eq!(height, 3);
+        // 4 (user message with padding + spacing) + 1 (streaming) = 5
+        assert_eq!(height, 5);
     }
 
     #[test]

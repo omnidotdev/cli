@@ -23,7 +23,7 @@ const SELECTION_FG: Color = Color::White;
 /// Continuation character for tool output
 const CONT_CHAR: &str = "⎿";
 
-/// Render a user message with teal border and panel background
+/// Render a user message with teal border, panel background, and vertical padding
 ///
 /// Returns the height used.
 #[allow(clippy::cast_possible_truncation)]
@@ -37,40 +37,36 @@ fn render_user_message(
     // Calculate actual height needed, accounting for line wrapping
     // Subtract 1 for the left border
     let width = area.width.saturating_sub(1).max(1) as usize;
-    let height: u16 = text
+    let content_height: u16 = text
         .lines()
-        .map(|line| {
-            let chars = line.chars().count();
-            ((chars / width) + 1) as u16
-        })
+        .map(|line| wrapped_line_height(line.chars().count(), width))
         .sum::<u16>()
-        .max(1)
-        .min(area.height);
+        .max(1);
+    // Add 2 for top and bottom padding
+    let height = (content_height + 2).min(area.height);
 
-    // Build lines with selection highlighting
-    let lines: Vec<Line> = text
-        .lines()
-        .enumerate()
-        .map(|(i, line_text)| {
-            #[allow(clippy::cast_possible_truncation)]
-            let line_y = area.y + i as u16;
-            let is_selected =
-                selection.is_some_and(|(min_y, max_y)| line_y >= min_y && line_y <= max_y);
+    // Build lines with selection highlighting, adding vertical padding
+    let mut lines: Vec<Line> = vec![Line::from("")]; // Top padding
+    for (i, line_text) in text.lines().enumerate() {
+        #[allow(clippy::cast_possible_truncation)]
+        let line_y = area.y + 1 + i as u16; // +1 for top padding
+        let is_selected =
+            selection.is_some_and(|(min_y, max_y)| line_y >= min_y && line_y <= max_y);
 
-            if is_selected {
-                if !selected_text.is_empty() {
-                    selected_text.push('\n');
-                }
-                selected_text.push_str(line_text);
-                Line::from(Span::styled(
-                    line_text,
-                    Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
-                ))
-            } else {
-                Line::from(line_text)
+        if is_selected {
+            if !selected_text.is_empty() {
+                selected_text.push('\n');
             }
-        })
-        .collect();
+            selected_text.push_str(line_text);
+            lines.push(Line::from(Span::styled(
+                line_text,
+                Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
+            )));
+        } else {
+            lines.push(Line::from(line_text));
+        }
+    }
+    lines.push(Line::from("")); // Bottom padding
 
     let block = Block::default()
         .borders(Borders::LEFT)
@@ -102,10 +98,7 @@ fn render_assistant_message(
     let width = area.width.max(1) as usize;
     let height: u16 = text
         .lines()
-        .map(|line| {
-            let chars = line.chars().count();
-            ((chars / width) + 1) as u16
-        })
+        .map(|line| wrapped_line_height(line.chars().count(), width))
         .sum::<u16>()
         .max(1)
         .min(area.height);
@@ -262,8 +255,7 @@ fn render_tool_message(
 
     let mut height: u16 = 1; // Header line
     for line_text in output_lines.iter().take(show_lines) {
-        let chars = line_text.chars().count();
-        height += ((chars / effective_width) + 1) as u16;
+        height += wrapped_line_height(line_text.chars().count(), effective_width);
     }
     if truncated {
         height += 1;
@@ -311,17 +303,34 @@ pub fn render_message(
     }
 }
 
+/// Calculate how many rows a line of text takes when wrapped to a given width
+#[inline]
+#[allow(clippy::cast_possible_truncation)]
+pub const fn wrapped_line_height(chars: usize, width: usize) -> u16 {
+    if chars == 0 {
+        1
+    } else {
+        chars.div_ceil(width) as u16
+    }
+}
+
 /// Calculate message height without rendering
 #[allow(clippy::cast_possible_truncation)]
 pub fn message_height(message: &DisplayMessage, width: u16) -> u16 {
     let width = width.max(1) as usize;
     match message {
-        DisplayMessage::User { text, .. } | DisplayMessage::Assistant { text } => text
+        DisplayMessage::User { text, .. } => {
+            // User messages have top and bottom padding (+2)
+            let content_height: u16 = text
+                .lines()
+                .map(|line| wrapped_line_height(line.chars().count(), width))
+                .sum::<u16>()
+                .max(1);
+            content_height + 2
+        }
+        DisplayMessage::Assistant { text } => text
             .lines()
-            .map(|line| {
-                let chars = line.chars().count();
-                ((chars / width) + 1) as u16
-            })
+            .map(|line| wrapped_line_height(line.chars().count(), width))
             .sum::<u16>()
             .max(1),
         DisplayMessage::Tool { output, .. } => {
@@ -335,10 +344,7 @@ pub fn message_height(message: &DisplayMessage, width: u16) -> u16 {
             let output_height: u16 = output
                 .lines()
                 .take(max_output_lines)
-                .map(|line| {
-                    let chars = line.chars().count();
-                    ((chars / effective_width) + 1) as u16
-                })
+                .map(|line| wrapped_line_height(line.chars().count(), effective_width))
                 .sum();
 
             // 1 for header + wrapped output lines + optional truncation line

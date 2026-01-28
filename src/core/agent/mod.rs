@@ -729,6 +729,9 @@ impl Agent {
                 // Format invocation for display
                 let invocation = format_tool_invocation(name, input);
 
+                // Emit tool start event for activity status
+                on_event(ChatEvent::ToolStart { name: name.clone() });
+
                 let result = self
                     .tools
                     .execute(

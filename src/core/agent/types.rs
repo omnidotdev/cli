@@ -172,6 +172,8 @@ pub struct ApiError {
 pub enum ChatEvent {
     /// Text chunk from the assistant
     Text(String),
+    /// Tool invocation starting (for activity status)
+    ToolStart { name: String },
     /// Tool invocation with result
     ToolCall {
         name: String,

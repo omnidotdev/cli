@@ -72,6 +72,8 @@ impl Selection {
 pub enum ChatMessage {
     /// Text chunk to append
     Text(String),
+    /// Tool starting (for activity status)
+    ToolStart { name: String },
     /// Tool invocation with name, args, output, and error status
     Tool {
         name: String,
@@ -235,6 +237,9 @@ pub struct App {
 
     /// Agent configuration for permission presets.
     pub agent_config: AgentConfig,
+
+    /// Current activity status (e.g., "Using Bash..." or "Thinking...")
+    pub activity_status: Option<String>,
 }
 
 impl Default for App {
@@ -340,6 +345,7 @@ impl App {
             show_command_dropdown: false,
             command_selection: 0,
             agent_config: config.agent,
+            activity_status: None,
         }
     }
 
