@@ -1566,9 +1566,10 @@ impl ToolRegistry {
 
         // Request permission
         if let Some(perms) = permissions {
-            // Show a preview of the patch
+            // Show a preview of the patch (safely truncate at char boundary)
             let preview = if patch.len() > 500 {
-                format!("{}...\n({} bytes total)", &patch[..500], patch.len())
+                let truncated: String = patch.chars().take(500).collect();
+                format!("{truncated}...\n({} bytes total)", patch.len())
             } else {
                 patch.to_string()
             };
@@ -2186,7 +2187,22 @@ impl ToolRegistry {
         let language = input["language"].as_str().unwrap_or("bash");
         let timeout_secs = input["timeout_secs"].as_u64().unwrap_or(30).clamp(1, 300);
         let network = input["network"].as_bool().unwrap_or(false);
-        let workdir = input["workdir"].as_str();
+
+        // Validate and canonicalize workdir if provided
+        let workdir = if let Some(dir) = input["workdir"].as_str() {
+            let path = PathBuf::from(dir);
+            let canonical = path
+                .canonicalize()
+                .map_err(|e| AgentError::ToolExecution(format!("invalid workdir: {e}")))?;
+            if !canonical.is_dir() {
+                return Err(AgentError::ToolExecution(
+                    "workdir must be a directory".to_string(),
+                ));
+            }
+            Some(canonical)
+        } else {
+            None
+        };
 
         // Get the code/command to execute
         let (code, is_code) = if let Some(c) = input["code"].as_str() {
@@ -2237,9 +2253,21 @@ impl ToolRegistry {
             .is_ok_and(|s| s.success());
 
         if docker_available {
-            self.execute_sandbox_docker(language, &code, is_code, timeout_secs, network, workdir)
-                .await
+            self.execute_sandbox_docker(
+                language,
+                &code,
+                is_code,
+                timeout_secs,
+                network,
+                workdir.as_deref(),
+            )
+            .await
         } else {
+            if workdir.is_some() {
+                return Err(AgentError::ToolExecution(
+                    "workdir requires Docker (not available)".to_string(),
+                ));
+            }
             self.execute_sandbox_fallback(language, &code, is_code, timeout_secs)
                 .await
         }
@@ -2252,7 +2280,7 @@ impl ToolRegistry {
         is_code: bool,
         timeout_secs: u64,
         network: bool,
-        workdir: Option<&str>,
+        workdir: Option<&std::path::Path>,
     ) -> Result<String> {
         // Select appropriate Docker image
         let image = match language {
@@ -2279,10 +2307,10 @@ impl ToolRegistry {
         cmd.args(["--security-opt", "no-new-privileges"]);
         cmd.args(["--cap-drop", "ALL"]);
 
-        // Mount workdir read-only if specified
+        // Mount workdir read-only if specified (path already canonicalized)
         if let Some(dir) = workdir {
             cmd.arg("-v");
-            cmd.arg(format!("{dir}:/workspace:ro"));
+            cmd.arg(format!("{}:/workspace:ro", dir.display()));
             cmd.args(["-w", "/workspace"]);
         }
 
