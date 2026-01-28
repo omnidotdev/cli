@@ -11,8 +11,9 @@ use std::time::Duration;
 
 use crossterm::{
     event::{
-        self, Event, KeyCode, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
-        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+        self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEventKind,
+        KeyModifiers, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
+        PushKeyboardEnhancementFlags,
     },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
@@ -51,7 +52,7 @@ pub async fn run() -> anyhow::Result<()> {
     // Note: Mouse capture is disabled to allow native terminal copy/paste
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste)?;
 
     // Enable enhanced keyboard support for terminals like Kitty
     // DISAMBIGUATE_ESCAPE_CODES allows Shift+Enter detection without breaking shifted chars
@@ -137,7 +138,11 @@ pub async fn run() -> anyhow::Result<()> {
         execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags)?;
     }
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(
+        terminal.backend_mut(),
+        DisableBracketedPaste,
+        LeaveAlternateScreen
+    )?;
     terminal.show_cursor()?;
 
     result
@@ -251,19 +256,35 @@ async fn run_app(
             // Check for input events
             () = tokio::time::sleep(Duration::from_millis(10)) => {
                 while event::poll(Duration::from_millis(0))? {
-                    if let Event::Key(key) = event::read()? {
-                        // Accept Press and Repeat, but not Release
-                        // Some terminals (e.g. Termux) may not report KeyEventKind correctly
-                        if key.kind != KeyEventKind::Release {
-                            if app.has_dialog() {
-                                // Handle dialog input
-                                if handle_dialog_key(app, key.code, key.modifiers) {
+                    match event::read()? {
+                        Event::Key(key) => {
+                            // Accept Press and Repeat, but not Release
+                            // Some terminals (e.g. Termux) may not report KeyEventKind correctly
+                            if key.kind != KeyEventKind::Release {
+                                if app.has_dialog() {
+                                    // Handle dialog input
+                                    if handle_dialog_key(app, key.code, key.modifiers) {
+                                        return Ok(());
+                                    }
+                                } else if handle_key(app, key.code, key.modifiers, &permission_tx) {
                                     return Ok(());
                                 }
-                            } else if handle_key(app, key.code, key.modifiers, &permission_tx) {
-                                return Ok(());
                             }
                         }
+                        Event::Paste(text) => {
+                            // Insert pasted text directly without triggering submission
+                            // Strip any trailing newlines to prevent accidental submission
+                            let text = text.trim_end_matches('\n').trim_end_matches('\r');
+                            for c in text.chars() {
+                                if c == '\n' || c == '\r' {
+                                    // Convert newlines to actual newlines in input
+                                    app.insert_char('\n');
+                                } else {
+                                    app.insert_char(c);
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }

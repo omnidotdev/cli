@@ -11,3 +11,4 @@ Improve TUI experience
 - Implement smooth line-by-line scrolling for messages
 - Allow typing while agent is responding (can prepare next message)
 - Add rich diff rendering for all tool output (muted green/red for diff-like content)
+- Fix paste behavior: pasted text now inserts without auto-submitting
