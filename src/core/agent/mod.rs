@@ -148,6 +148,59 @@ impl Agent {
         Ok(())
     }
 
+    /// Switch to a different session by ID.
+    ///
+    /// Clears the current conversation and sets the new session as active.
+    /// Does not load messages - the TUI handles display separately.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if session not found or storage fails.
+    pub fn switch_session(&mut self, session_id: &str) -> Result<()> {
+        let Some(ref manager) = self.session_manager else {
+            return Err(AgentError::Config("no session manager".to_string()));
+        };
+
+        // Verify session exists
+        manager
+            .get_session(session_id)
+            .map_err(|e| AgentError::Config(e.to_string()))?;
+
+        // Clear conversation and switch
+        self.conversation.clear();
+        self.current_session_id = Some(session_id.to_string());
+
+        tracing::info!(session_id, "switched session");
+        Ok(())
+    }
+
+    /// Create a new session and switch to it.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if session creation fails.
+    pub fn new_session(&mut self) -> Result<String> {
+        let Some(ref manager) = self.session_manager else {
+            return Err(AgentError::Config("no session manager".to_string()));
+        };
+
+        let session = manager
+            .create_session()
+            .map_err(|e| AgentError::Config(e.to_string()))?;
+
+        self.conversation.clear();
+        self.current_session_id = Some(session.id.clone());
+
+        tracing::info!(session_id = %session.id, "created new session");
+        Ok(session.id)
+    }
+
+    /// Get the session manager reference.
+    #[must_use]
+    pub const fn session_manager(&self) -> Option<&SessionManager> {
+        self.session_manager.as_ref()
+    }
+
     /// Get the current session ID if sessions are enabled
     #[must_use]
     pub fn session_id(&self) -> Option<&str> {
