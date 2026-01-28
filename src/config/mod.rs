@@ -396,6 +396,7 @@ impl AgentConfig {
     /// Get the default model definitions.
     fn default_models() -> Vec<ModelInfo> {
         vec![
+            // Anthropic
             ModelInfo {
                 id: "claude-sonnet-4-20250514".to_string(),
                 provider: "anthropic".to_string(),
@@ -408,6 +409,7 @@ impl AgentConfig {
                 id: "claude-3-5-haiku-20241022".to_string(),
                 provider: "anthropic".to_string(),
             },
+            // OpenAI
             ModelInfo {
                 id: "gpt-4o".to_string(),
                 provider: "openai".to_string(),
@@ -427,6 +429,46 @@ impl AgentConfig {
             ModelInfo {
                 id: "o1-mini".to_string(),
                 provider: "openai".to_string(),
+            },
+            // Groq (fast inference)
+            ModelInfo {
+                id: "llama-3.3-70b-versatile".to_string(),
+                provider: "groq".to_string(),
+            },
+            ModelInfo {
+                id: "llama-3.1-8b-instant".to_string(),
+                provider: "groq".to_string(),
+            },
+            ModelInfo {
+                id: "mixtral-8x7b-32768".to_string(),
+                provider: "groq".to_string(),
+            },
+            // Google
+            ModelInfo {
+                id: "gemini-2.0-flash".to_string(),
+                provider: "google".to_string(),
+            },
+            ModelInfo {
+                id: "gemini-1.5-pro".to_string(),
+                provider: "google".to_string(),
+            },
+            // Mistral
+            ModelInfo {
+                id: "mistral-large-latest".to_string(),
+                provider: "mistral".to_string(),
+            },
+            ModelInfo {
+                id: "codestral-latest".to_string(),
+                provider: "mistral".to_string(),
+            },
+            // Together
+            ModelInfo {
+                id: "meta-llama/Llama-3.3-70B-Instruct-Turbo".to_string(),
+                provider: "together".to_string(),
+            },
+            ModelInfo {
+                id: "Qwen/Qwen2.5-Coder-32B-Instruct".to_string(),
+                provider: "together".to_string(),
             },
         ]
     }
@@ -549,6 +591,66 @@ impl AgentConfig {
                 api_type: ProviderApiType::OpenAi,
                 base_url: Some("http://localhost:11434/v1".to_string()),
                 api_key_env: None,
+                api_key: None,
+            },
+        );
+
+        providers.insert(
+            "lmstudio".to_string(),
+            ProviderConfig {
+                api_type: ProviderApiType::OpenAi,
+                base_url: Some("http://localhost:1234/v1".to_string()),
+                api_key_env: None,
+                api_key: None,
+            },
+        );
+
+        providers.insert(
+            "groq".to_string(),
+            ProviderConfig {
+                api_type: ProviderApiType::OpenAi,
+                base_url: Some("https://api.groq.com/openai/v1".to_string()),
+                api_key_env: Some("GROQ_API_KEY".to_string()),
+                api_key: None,
+            },
+        );
+
+        providers.insert(
+            "google".to_string(),
+            ProviderConfig {
+                api_type: ProviderApiType::OpenAi,
+                base_url: Some("https://generativelanguage.googleapis.com/v1beta/openai".to_string()),
+                api_key_env: Some("GOOGLE_API_KEY".to_string()),
+                api_key: None,
+            },
+        );
+
+        providers.insert(
+            "mistral".to_string(),
+            ProviderConfig {
+                api_type: ProviderApiType::OpenAi,
+                base_url: Some("https://api.mistral.ai/v1".to_string()),
+                api_key_env: Some("MISTRAL_API_KEY".to_string()),
+                api_key: None,
+            },
+        );
+
+        providers.insert(
+            "openrouter".to_string(),
+            ProviderConfig {
+                api_type: ProviderApiType::OpenAi,
+                base_url: Some("https://openrouter.ai/api/v1".to_string()),
+                api_key_env: Some("OPENROUTER_API_KEY".to_string()),
+                api_key: None,
+            },
+        );
+
+        providers.insert(
+            "together".to_string(),
+            ProviderConfig {
+                api_type: ProviderApiType::OpenAi,
+                base_url: Some("https://api.together.xyz/v1".to_string()),
+                api_key_env: Some("TOGETHER_API_KEY".to_string()),
                 api_key: None,
             },
         );

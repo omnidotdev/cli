@@ -377,6 +377,60 @@ impl ToolRegistry {
                     "required": ["action"]
                 }),
             },
+            Tool {
+                name: "apply_patch".to_string(),
+                description:
+                    "Apply a unified diff patch to one or more files. Use for applying changes from external sources or reverting changes."
+                        .to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "patch": {
+                            "type": "string",
+                            "description": "The unified diff patch content"
+                        },
+                        "path": {
+                            "type": "string",
+                            "description": "Base directory to apply patch in (default: current directory)"
+                        }
+                    },
+                    "required": ["patch"]
+                }),
+            },
+            Tool {
+                name: "multi_edit".to_string(),
+                description:
+                    "Edit multiple files in a single operation. More efficient than multiple edit_file calls."
+                        .to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "edits": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "path": {
+                                        "type": "string",
+                                        "description": "Path to the file to edit"
+                                    },
+                                    "old_string": {
+                                        "type": "string",
+                                        "description": "The exact text to find and replace"
+                                    },
+                                    "new_string": {
+                                        "type": "string",
+                                        "description": "The text to replace it with"
+                                    }
+                                },
+                                "required": ["path", "old_string", "new_string"]
+                            },
+                            "description": "List of edits to apply"
+                        }
+                    },
+                    "required": ["edits"]
+                }),
+            },
         ];
 
         // Add mode-specific tools
@@ -445,6 +499,8 @@ impl ToolRegistry {
             "web_fetch" => self.execute_web_fetch(input, permissions).await,
             "todo_read" => self.execute_todo_read(),
             "todo_write" => self.execute_todo_write(input),
+            "apply_patch" => self.execute_apply_patch(input, permissions, mode).await,
+            "multi_edit" => self.execute_multi_edit(input, permissions, mode).await,
             _ => Err(AgentError::ToolExecution(format!("unknown tool: {name}"))),
         }
     }
@@ -1275,6 +1331,201 @@ impl ToolRegistry {
                 "unknown action: {action}"
             ))),
         }
+    }
+
+    async fn execute_apply_patch(
+        &self,
+        input: serde_json::Value,
+        permissions: Option<&PermissionClient>,
+        mode: AgentMode,
+    ) -> Result<String> {
+        let patch = input["patch"]
+            .as_str()
+            .ok_or_else(|| AgentError::ToolExecution("missing patch".to_string()))?;
+        let base_path = input["path"].as_str().map_or_else(
+            || std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            PathBuf::from,
+        );
+
+        // In Plan mode, disallow patches
+        if mode == AgentMode::Plan {
+            return Err(AgentError::ToolExecution(
+                "In plan mode, applying patches is not allowed. Use plan_exit to switch to build mode."
+                    .to_string(),
+            ));
+        }
+
+        tracing::info!(path = %base_path.display(), "applying patch");
+
+        // Request permission
+        if let Some(perms) = permissions {
+            // Show a preview of the patch
+            let preview = if patch.len() > 500 {
+                format!("{}...\n({} bytes total)", &patch[..500], patch.len())
+            } else {
+                patch.to_string()
+            };
+
+            let approved = perms
+                .request(
+                    "apply_patch",
+                    PermissionAction::EditFile,
+                    PermissionContext::EditFile {
+                        path: base_path.clone(),
+                        diff: preview,
+                    },
+                )
+                .await
+                .map_err(|e| AgentError::ToolExecution(e.to_string()))?;
+
+            if !approved {
+                return Err(AgentError::ToolExecution(
+                    "Permission denied by user. Do not retry this action.".to_string(),
+                ));
+            }
+        }
+
+        // Apply using patch command
+        let mut child = Command::new("patch")
+            .args(["-p1", "--no-backup-if-mismatch"])
+            .current_dir(&base_path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| AgentError::ToolExecution(format!("failed to run patch: {e}")))?;
+
+        // Write patch to stdin
+        if let Some(mut stdin) = child.stdin.take() {
+            use tokio::io::AsyncWriteExt;
+            stdin
+                .write_all(patch.as_bytes())
+                .await
+                .map_err(|e| AgentError::ToolExecution(format!("failed to write patch: {e}")))?;
+        }
+
+        let output = child
+            .wait_with_output()
+            .await
+            .map_err(|e| AgentError::ToolExecution(format!("patch failed: {e}")))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        if output.status.success() {
+            Ok(format!("Patch applied successfully.\n{stdout}"))
+        } else {
+            Err(AgentError::ToolExecution(format!(
+                "Patch failed:\n{stdout}\n{stderr}"
+            )))
+        }
+    }
+
+    async fn execute_multi_edit(
+        &self,
+        input: serde_json::Value,
+        permissions: Option<&PermissionClient>,
+        mode: AgentMode,
+    ) -> Result<String> {
+        let edits = input["edits"]
+            .as_array()
+            .ok_or_else(|| AgentError::ToolExecution("missing edits array".to_string()))?;
+
+        // In Plan mode, disallow edits
+        if mode == AgentMode::Plan {
+            return Err(AgentError::ToolExecution(
+                "In plan mode, file editing is not allowed. Use plan_exit to switch to build mode."
+                    .to_string(),
+            ));
+        }
+
+        if edits.is_empty() {
+            return Err(AgentError::ToolExecution("edits array is empty".to_string()));
+        }
+
+        tracing::info!(count = edits.len(), "multi-edit");
+
+        let mut results = Vec::new();
+        let mut all_diffs = String::new();
+
+        // First pass: validate all edits and generate diffs
+        let mut pending_edits = Vec::new();
+        for (i, edit) in edits.iter().enumerate() {
+            let path = edit["path"]
+                .as_str()
+                .ok_or_else(|| AgentError::ToolExecution(format!("edit {i}: missing path")))?;
+            let old_string = edit["old_string"]
+                .as_str()
+                .ok_or_else(|| AgentError::ToolExecution(format!("edit {i}: missing old_string")))?;
+            let new_string = edit["new_string"]
+                .as_str()
+                .ok_or_else(|| AgentError::ToolExecution(format!("edit {i}: missing new_string")))?;
+
+            if old_string == new_string {
+                return Err(AgentError::ToolExecution(format!(
+                    "edit {i}: old_string and new_string must be different"
+                )));
+            }
+
+            // Read and validate
+            let content = tokio::fs::read_to_string(path)
+                .await
+                .map_err(|e| AgentError::ToolExecution(format!("edit {i}: failed to read {path}: {e}")))?;
+
+            if !content.contains(old_string) {
+                return Err(AgentError::ToolExecution(format!(
+                    "edit {i}: old_string not found in {path}"
+                )));
+            }
+
+            let count = content.matches(old_string).count();
+            if count > 1 {
+                return Err(AgentError::ToolExecution(format!(
+                    "edit {i}: found {count} matches in {path}. Provide more context to make the match unique."
+                )));
+            }
+
+            let new_content = content.replacen(old_string, new_string, 1);
+            let diff = generate_diff(&content, &new_content);
+
+            all_diffs.push_str(&format!("--- {path}\n+++ {path}\n{diff}\n"));
+            pending_edits.push((path.to_string(), new_content));
+        }
+
+        // Request permission for all edits
+        if let Some(perms) = permissions {
+            let approved = perms
+                .request(
+                    "multi_edit",
+                    PermissionAction::EditFile,
+                    PermissionContext::EditFile {
+                        path: PathBuf::from(format!("{} files", pending_edits.len())),
+                        diff: all_diffs.clone(),
+                    },
+                )
+                .await
+                .map_err(|e| AgentError::ToolExecution(e.to_string()))?;
+
+            if !approved {
+                return Err(AgentError::ToolExecution(
+                    "Permission denied by user. Do not retry this action.".to_string(),
+                ));
+            }
+        }
+
+        // Apply all edits
+        for (path, new_content) in pending_edits {
+            tokio::fs::write(&path, &new_content)
+                .await
+                .map_err(|e| AgentError::ToolExecution(format!("failed to write {path}: {e}")))?;
+            results.push(format!("Edited: {path}"));
+        }
+
+        Ok(format!(
+            "{} files edited successfully.\n\n{}",
+            results.len(),
+            results.join("\n")
+        ))
     }
 }
 
