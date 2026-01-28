@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::agent::{AgentMode, AnthropicProvider, LlmProvider, OpenAiProvider};
+use crate::core::agent::{AgentMode, AnthropicProvider, LlmProvider, OpenAiProvider, UnifiedProvider};
 
 pub use persona::{Persona, list_personas, load_persona, personas_dir};
 
@@ -26,11 +26,17 @@ pub struct ModelInfo {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ProviderApiType {
-    /// Anthropic Messages API (unique streaming format).
+    /// Anthropic Messages API (unique streaming format)
     #[default]
     Anthropic,
     /// `OpenAI` Chat Completions API (also used by compatible providers)
     OpenAi,
+    /// Google Gemini API
+    Google,
+    /// Groq API
+    Groq,
+    /// Mistral API
+    Mistral,
 }
 
 /// Permission action for agent operations.
@@ -518,6 +524,21 @@ impl AgentConfig {
                 let base_url = config.base_url.clone();
                 Ok(Box::new(OpenAiProvider::with_config(api_key, base_url)?))
             }
+            ProviderApiType::Google => {
+                let key = Self::resolve_api_key(config)
+                    .ok_or_else(|| anyhow::anyhow!("API key not set for provider '{name}'"))?;
+                Ok(Box::new(UnifiedProvider::google(key)?))
+            }
+            ProviderApiType::Groq => {
+                let key = Self::resolve_api_key(config)
+                    .ok_or_else(|| anyhow::anyhow!("API key not set for provider '{name}'"))?;
+                Ok(Box::new(UnifiedProvider::groq(key)?))
+            }
+            ProviderApiType::Mistral => {
+                let key = Self::resolve_api_key(config)
+                    .ok_or_else(|| anyhow::anyhow!("API key not set for provider '{name}'"))?;
+                Ok(Box::new(UnifiedProvider::mistral(key)?))
+            }
         }
     }
 
@@ -608,8 +629,8 @@ impl AgentConfig {
         providers.insert(
             "groq".to_string(),
             ProviderConfig {
-                api_type: ProviderApiType::OpenAi,
-                base_url: Some("https://api.groq.com/openai/v1".to_string()),
+                api_type: ProviderApiType::Groq,
+                base_url: None,
                 api_key_env: Some("GROQ_API_KEY".to_string()),
                 api_key: None,
             },
@@ -618,10 +639,8 @@ impl AgentConfig {
         providers.insert(
             "google".to_string(),
             ProviderConfig {
-                api_type: ProviderApiType::OpenAi,
-                base_url: Some(
-                    "https://generativelanguage.googleapis.com/v1beta/openai".to_string(),
-                ),
+                api_type: ProviderApiType::Google,
+                base_url: None,
                 api_key_env: Some("GOOGLE_API_KEY".to_string()),
                 api_key: None,
             },
@@ -630,8 +649,8 @@ impl AgentConfig {
         providers.insert(
             "mistral".to_string(),
             ProviderConfig {
-                api_type: ProviderApiType::OpenAi,
-                base_url: Some("https://api.mistral.ai/v1".to_string()),
+                api_type: ProviderApiType::Mistral,
+                base_url: None,
                 api_key_env: Some("MISTRAL_API_KEY".to_string()),
                 api_key: None,
             },
@@ -696,6 +715,24 @@ impl AgentConfig {
                 let api_key = Self::resolve_api_key(config);
                 let base_url = config.base_url.clone();
                 Ok(Box::new(OpenAiProvider::with_config(api_key, base_url)?))
+            }
+            ProviderApiType::Google => {
+                let key = Self::resolve_api_key(config).ok_or_else(|| {
+                    anyhow::anyhow!("API key not set for provider '{}'", self.provider)
+                })?;
+                Ok(Box::new(UnifiedProvider::google(key)?))
+            }
+            ProviderApiType::Groq => {
+                let key = Self::resolve_api_key(config).ok_or_else(|| {
+                    anyhow::anyhow!("API key not set for provider '{}'", self.provider)
+                })?;
+                Ok(Box::new(UnifiedProvider::groq(key)?))
+            }
+            ProviderApiType::Mistral => {
+                let key = Self::resolve_api_key(config).ok_or_else(|| {
+                    anyhow::anyhow!("API key not set for provider '{}'", self.provider)
+                })?;
+                Ok(Box::new(UnifiedProvider::mistral(key)?))
             }
         }
     }

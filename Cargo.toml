@@ -65,6 +65,9 @@ async-trait = "0.1"
 # HTTP client
 reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls"] }
 
+# LLM providers
+llm = { version = "1.2", features = ["openai", "anthropic", "google", "groq", "mistral"] }
+
 # Async streams
 async-stream = "0.3"
 pin-project-lite = "0.2"

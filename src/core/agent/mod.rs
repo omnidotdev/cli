@@ -19,7 +19,7 @@ pub use permission::{
 };
 pub use plan::PlanManager;
 pub use provider::{CompletionEvent, CompletionRequest, CompletionStream, LlmProvider};
-pub use providers::{AnthropicProvider, OpenAiProvider};
+pub use providers::{AnthropicProvider, OpenAiProvider, UnifiedProvider};
 pub use tools::ToolRegistry;
 pub use types::{
     ChatEvent, Content, ContentBlock, Message, MessagesRequest, Role, StopReason, StreamEvent, Tool,
