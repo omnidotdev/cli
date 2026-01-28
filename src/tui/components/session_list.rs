@@ -136,6 +136,26 @@ impl SessionListDialog {
         &self.filter
     }
 
+    /// Get all sessions (for deletion lookup).
+    #[must_use]
+    pub fn sessions(&self) -> &[Session] {
+        &self.sessions
+    }
+
+    /// Remove a session from the list by ID.
+    pub fn remove_session(&mut self, session_id: &str) {
+        self.sessions.retain(|s| s.id != session_id);
+        // Reset selection if needed
+        let filtered_len = self.filtered_sessions().len();
+        if filtered_len == 0 {
+            self.selected = 0;
+            self.list_state.select(None);
+        } else if self.selected >= filtered_len {
+            self.selected = filtered_len - 1;
+            self.list_state.select(Some(self.selected));
+        }
+    }
+
     /// Get mutable reference to list state.
     pub const fn list_state_mut(&mut self) -> &mut ListState {
         &mut self.list_state
@@ -282,10 +302,12 @@ pub fn render_session_list(frame: &mut Frame, dialog: &mut SessionListDialog) {
         Span::styled(" navigate  ", Style::default().fg(DIMMED)),
         Span::styled("Enter", Style::default().fg(BRAND_TEAL)),
         Span::styled(" select  ", Style::default().fg(DIMMED)),
-        Span::styled("Esc", Style::default().fg(BRAND_TEAL)),
-        Span::styled(" close  ", Style::default().fg(DIMMED)),
         Span::styled("n", Style::default().fg(BRAND_TEAL)),
-        Span::styled(" new session", Style::default().fg(DIMMED)),
+        Span::styled(" new  ", Style::default().fg(DIMMED)),
+        Span::styled("d", Style::default().fg(BRAND_TEAL)),
+        Span::styled(" delete  ", Style::default().fg(DIMMED)),
+        Span::styled("Esc", Style::default().fg(BRAND_TEAL)),
+        Span::styled(" close", Style::default().fg(DIMMED)),
     ]))
     .alignment(Alignment::Center);
 

@@ -1131,6 +1131,53 @@ fn handle_dialog_key(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> 
                     }
                 }
             }
+            KeyCode::Char('d') => {
+                // Delete selected session
+                if let Some(session) = d.selected_session() {
+                    let session_id = session.id.clone();
+                    let is_current = app.agent.as_ref()
+                        .and_then(|a| a.session_id())
+                        .is_some_and(|id| id == session_id);
+
+                    tracing::info!(session_id = %session_id, "deleting session");
+
+                    // Delete from storage
+                    if let Some(ref agent) = app.agent {
+                        if let Some(manager) = agent.session_manager() {
+                            if let Err(e) = manager.delete_session(&session_id) {
+                                tracing::error!("failed to delete session: {e}");
+                                app.active_dialog = Some(ActiveDialog::SessionList(d));
+                                return false;
+                            }
+                        }
+                    }
+
+                    // Remove from dialog list
+                    d.remove_session(&session_id);
+
+                    // If we deleted the current session, create a new one
+                    if is_current {
+                        if let Some(ref mut agent) = app.agent {
+                            match agent.new_session() {
+                                Ok(_) => {
+                                    app.messages.clear();
+                                    app.streaming_text.clear();
+                                    app.message_scroll = 0;
+                                }
+                                Err(e) => tracing::error!("failed to create replacement session: {e}"),
+                            }
+                        }
+                    }
+
+                    // Keep dialog open if there are more sessions
+                    if !d.sessions().is_empty() {
+                        app.active_dialog = Some(ActiveDialog::SessionList(d));
+                    }
+                    // Otherwise dialog closes (active_dialog stays None)
+                } else {
+                    app.active_dialog = Some(ActiveDialog::SessionList(d));
+                }
+            }
             KeyCode::Char(c) => {
                 d.filter_push(c);
                 app.active_dialog = Some(ActiveDialog::SessionList(d));
