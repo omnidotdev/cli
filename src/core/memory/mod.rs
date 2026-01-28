@@ -86,7 +86,7 @@ impl MemoryItem {
 
     /// Mark this memory as pinned
     #[must_use]
-    pub fn pinned(mut self) -> Self {
+    pub const fn pinned(mut self) -> Self {
         self.pinned = true;
         self
     }

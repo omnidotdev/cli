@@ -1600,7 +1600,15 @@ impl ToolRegistry {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| AgentError::ToolExecution(format!("failed to run patch: {e}")))?;
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    AgentError::ToolExecution(
+                        "patch command not found. Install with: apt install patch (Linux) or brew install gpatch (macOS)".to_string()
+                    )
+                } else {
+                    AgentError::ToolExecution(format!("failed to run patch: {e}"))
+                }
+            })?;
 
         // Write patch to stdin
         if let Some(mut stdin) = child.stdin.take() {
@@ -2333,31 +2341,20 @@ impl ToolRegistry {
         is_code: bool,
         timeout_secs: u64,
     ) -> Result<String> {
-        // Fallback: use timeout command with restricted env
-        let mut cmd = Command::new("timeout");
-        cmd.arg(format!("{timeout_secs}s"));
-
-        // Use nice to lower priority
-        cmd.args(["nice", "-n", "19"]);
-
-        if is_code {
+        // Build the inner command
+        let (program, args): (&str, Vec<&str>) = if is_code {
             match language {
-                "python" => {
-                    cmd.args(["python3", "-c", code]);
-                }
-                "node" => {
-                    cmd.args(["node", "-e", code]);
-                }
-                "ruby" => {
-                    cmd.args(["ruby", "-e", code]);
-                }
-                _ => {
-                    cmd.args(["sh", "-c", code]);
-                }
+                "python" => ("python3", vec!["-c", code]),
+                "node" => ("node", vec!["-e", code]),
+                "ruby" => ("ruby", vec!["-e", code]),
+                _ => ("sh", vec!["-c", code]),
             }
         } else {
-            cmd.args(["sh", "-c", code]);
-        }
+            ("sh", vec!["-c", code])
+        };
+
+        let mut cmd = Command::new(program);
+        cmd.args(&args);
 
         // Clear potentially dangerous env vars
         cmd.env_clear();
@@ -2365,22 +2362,19 @@ impl ToolRegistry {
         cmd.env("HOME", "/tmp");
         cmd.env("TMPDIR", "/tmp");
 
-        let output = cmd
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await
-            .map_err(|e| AgentError::ToolExecution(format!("failed to execute: {e}")))?;
+        // Run with timeout using tokio
+        let output = tokio::time::timeout(
+            std::time::Duration::from_secs(timeout_secs),
+            cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).output(),
+        )
+        .await
+        .map_err(|_| {
+            AgentError::ToolExecution(format!("sandbox execution timed out after {timeout_secs}s"))
+        })?
+        .map_err(|e| AgentError::ToolExecution(format!("failed to execute: {e}")))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
-
-        // Check for timeout (exit code 124)
-        if output.status.code() == Some(124) {
-            return Err(AgentError::ToolExecution(format!(
-                "sandbox execution timed out after {timeout_secs}s"
-            )));
-        }
 
         if output.status.success() {
             Ok(format!(
