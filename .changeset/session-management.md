@@ -1,5 +1,5 @@
 ---
-"omnidotdev-cli": minor
+"@omnidotdev/cli": minor
 ---
 
 Add session management to TUI
