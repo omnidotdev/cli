@@ -14,6 +14,7 @@ use super::types::Tool;
 use crate::core::lsp::{LspManager, LspOperation, LspResult};
 use crate::core::mcp::{McpClient, McpConfig};
 use crate::core::memory::{MemoryCategory, MemoryItem, MemoryManager};
+use crate::core::plugin::{PluginLoader, PluginRegistry};
 use crate::core::search::{self, CodeSearchParams, WebSearchParams};
 use crate::core::secret::mask_secrets;
 use crate::core::skill::SkillRegistry;
@@ -97,6 +98,8 @@ pub struct ToolRegistry {
     skill_registry: SkillRegistry,
     /// MCP client for external tool servers.
     mcp_client: std::sync::Arc<parking_lot::RwLock<McpClient>>,
+    /// Plugin registry for loaded plugins (uses tokio `RwLock` for async execute).
+    plugin_registry: std::sync::Arc<tokio::sync::RwLock<PluginRegistry>>,
 }
 
 impl Default for ToolRegistry {
@@ -106,10 +109,26 @@ impl Default for ToolRegistry {
             .map(|p| SkillRegistry::discover(&p))
             .unwrap_or_default();
 
+        // Auto-discover plugins from data directory
+        let plugin_registry = PluginRegistry::new();
+        if let Ok(loader) = PluginLoader::new() {
+            match loader.list_available() {
+                Ok(plugins) => {
+                    for info in &plugins {
+                        tracing::info!(plugin = %info.name, version = %info.version, "discovered plugin");
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!(error = %e, "failed to list plugins");
+                }
+            }
+        }
+
         Self {
             todos: std::sync::Arc::new(parking_lot::RwLock::new(Vec::new())),
             skill_registry,
             mcp_client: std::sync::Arc::new(parking_lot::RwLock::new(McpClient::new())),
+            plugin_registry: std::sync::Arc::new(tokio::sync::RwLock::new(plugin_registry)),
         }
     }
 }
@@ -119,6 +138,7 @@ impl std::fmt::Debug for ToolRegistry {
         f.debug_struct("ToolRegistry")
             .field("todos", &self.todos)
             .field("skill_registry", &self.skill_registry)
+            .field("plugin_count", &"<async>")
             .finish_non_exhaustive()
     }
 }
@@ -137,7 +157,28 @@ impl ToolRegistry {
             todos: std::sync::Arc::new(parking_lot::RwLock::new(Vec::new())),
             skill_registry,
             mcp_client: std::sync::Arc::new(parking_lot::RwLock::new(McpClient::new())),
+            plugin_registry: std::sync::Arc::new(tokio::sync::RwLock::new(PluginRegistry::new())),
         }
+    }
+
+    /// Register a plugin with the tool registry.
+    pub fn register_plugin(&self, name: impl Into<String>, plugin: Box<dyn crate::core::plugin::PluginHooks>) {
+        let mut registry = self.plugin_registry.blocking_write();
+        registry.register(name, plugin);
+    }
+
+    /// Get plugin tools as agent tool definitions.
+    fn plugin_tool_definitions(&self) -> Vec<Tool> {
+        let registry = self.plugin_registry.blocking_read();
+        registry
+            .all_tools()
+            .into_iter()
+            .map(|(qualified_name, plugin_tool)| Tool {
+                name: format!("plugin_{qualified_name}"),
+                description: plugin_tool.description,
+                input_schema: plugin_tool.input_schema,
+            })
+            .collect()
     }
 
     /// Configure MCP servers from config
@@ -752,6 +793,9 @@ impl ToolRegistry {
         // Add MCP tools from connected servers
         tools.extend(self.mcp_tool_definitions());
 
+        // Add plugin tools from registered plugins
+        tools.extend(self.plugin_tool_definitions());
+
         tools
     }
 
@@ -821,6 +865,7 @@ impl ToolRegistry {
             "skill" => self.execute_skill(input),
             "lsp" => self.execute_lsp(input).await,
             _ if name.starts_with("mcp_") => self.execute_mcp_tool(name, input),
+            _ if name.starts_with("plugin_") => self.execute_plugin_tool(name, input).await,
             _ => Err(AgentError::ToolExecution(format!("unknown tool: {name}"))),
         }
     }
@@ -836,6 +881,26 @@ impl ToolRegistry {
         client
             .call_tool(qualified_name, input)
             .map_err(|e| AgentError::ToolExecution(format!("MCP tool error: {e}")))
+    }
+
+    /// Execute a plugin tool
+    async fn execute_plugin_tool(&self, name: &str, input: serde_json::Value) -> Result<String> {
+        // Strip the "plugin_" prefix to get the qualified name
+        let qualified_name = name
+            .strip_prefix("plugin_")
+            .ok_or_else(|| AgentError::ToolExecution("invalid plugin tool name".to_string()))?;
+
+        let registry = self.plugin_registry.read().await;
+        let result = registry
+            .execute_tool(qualified_name, input)
+            .await
+            .map_err(|e| AgentError::ToolExecution(format!("plugin tool error: {e}")))?;
+
+        if result.is_error {
+            Err(AgentError::ToolExecution(result.output))
+        } else {
+            Ok(result.output)
+        }
     }
 
     async fn execute_shell(
