@@ -9,6 +9,8 @@ pub mod providers;
 mod tools;
 mod types;
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 pub use conversation::Conversation;
@@ -44,6 +46,12 @@ pub enum AgentMode {
 
 use futures::StreamExt;
 
+/// Default maximum iterations before stopping
+const DEFAULT_MAX_ITERATIONS: u32 = 50;
+
+/// Number of recent calls to check for loops
+const LOOP_DETECTION_WINDOW: usize = 5;
+
 /// Agent that orchestrates conversation with an LLM.
 pub struct Agent {
     provider: Box<dyn LlmProvider>,
@@ -59,6 +67,12 @@ pub struct Agent {
     session_manager: Option<SessionManager>,
     /// Current session ID
     current_session_id: Option<String>,
+    /// Tool filter - if set, only these tools are available
+    tool_filter: Option<std::collections::HashSet<String>>,
+    /// Maximum iterations per chat (prevents infinite loops)
+    max_iterations: u32,
+    /// Recent tool calls for loop detection (`tool_name`, `input_hash`)
+    recent_tool_calls: Vec<(String, u64)>,
 }
 
 impl Agent {
@@ -76,6 +90,9 @@ impl Agent {
             plan_manager: PlanManager::new(),
             session_manager: None,
             current_session_id: None,
+            tool_filter: None,
+            max_iterations: DEFAULT_MAX_ITERATIONS,
+            recent_tool_calls: Vec::new(),
         }
     }
 
@@ -98,6 +115,9 @@ impl Agent {
             plan_manager: PlanManager::new(),
             session_manager: None,
             current_session_id: None,
+            tool_filter: None,
+            max_iterations: DEFAULT_MAX_ITERATIONS,
+            recent_tool_calls: Vec::new(),
         }
     }
 
@@ -135,6 +155,68 @@ impl Agent {
     /// Set the permission client for tool execution.
     pub fn set_permission_client(&mut self, client: PermissionClient) {
         self.permission_client = Some(client);
+    }
+
+    /// Set tool filter to restrict available tools.
+    ///
+    /// Only tools in this list will be available to the agent.
+    /// Pass `None` to allow all tools.
+    pub fn set_tool_filter(&mut self, allowed: Option<Vec<String>>) {
+        self.tool_filter = allowed.map(|v| v.into_iter().collect());
+    }
+
+    /// Get filtered tool definitions based on current filter.
+    fn filtered_tools(&self) -> Vec<types::Tool> {
+        let all_tools = self.tools.definitions(self.mode);
+        match &self.tool_filter {
+            Some(filter) => all_tools
+                .into_iter()
+                .filter(|t| filter.contains(&t.name))
+                .collect(),
+            None => all_tools,
+        }
+    }
+
+    /// Set maximum iterations for the agent loop
+    pub const fn set_max_iterations(&mut self, max: u32) {
+        self.max_iterations = max;
+    }
+
+    /// Compute a hash for tool input (for loop detection)
+    fn hash_input(input: &serde_json::Value) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        input.to_string().hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// Check if a tool call appears to be in a loop
+    fn is_loop_detected(&self, tool_name: &str, input_hash: u64) -> bool {
+        // Count how many times this exact call appears in recent history
+        let count = self
+            .recent_tool_calls
+            .iter()
+            .filter(|(name, hash)| name == tool_name && *hash == input_hash)
+            .count();
+
+        // If the same call appears 3+ times in the window, it's a loop
+        count >= 3
+    }
+
+    /// Record a tool call for loop detection
+    fn record_tool_call(&mut self, tool_name: &str, input_hash: u64) {
+        self.recent_tool_calls
+            .push((tool_name.to_string(), input_hash));
+
+        // Keep only the most recent calls
+        if self.recent_tool_calls.len() > LOOP_DETECTION_WINDOW * 2 {
+            self.recent_tool_calls
+                .drain(0..LOOP_DETECTION_WINDOW);
+        }
+    }
+
+    /// Clear tool call history (call at start of new chat)
+    fn clear_tool_history(&mut self) {
+        self.recent_tool_calls.clear();
     }
 
     /// Enable session persistence for this agent
@@ -510,8 +592,25 @@ impl Agent {
     {
         self.conversation.add_user_message(message);
         self.persist_user_message(message);
+        self.clear_tool_history();
+
+        let mut iterations = 0u32;
 
         loop {
+            // Check iteration limit
+            iterations += 1;
+            if iterations > self.max_iterations {
+                tracing::warn!(
+                    iterations = iterations,
+                    max = self.max_iterations,
+                    "agent loop exceeded maximum iterations"
+                );
+                return Err(AgentError::LoopDetected(format!(
+                    "exceeded maximum iterations ({} tool calls)",
+                    self.max_iterations
+                )));
+            }
+
             let (content_blocks, stop_reason) = self.stream_response_events(&mut on_event).await?;
 
             if !content_blocks.is_empty() {
@@ -520,6 +619,23 @@ impl Agent {
             }
 
             if stop_reason == Some(StopReason::ToolUse) {
+                // Check for loops before executing tools
+                for block in &content_blocks {
+                    if let ContentBlock::ToolUse { name, input, .. } = block {
+                        let input_hash = Self::hash_input(input);
+                        if self.is_loop_detected(name, input_hash) {
+                            tracing::warn!(
+                                tool = %name,
+                                "detected repeated tool call loop"
+                            );
+                            return Err(AgentError::LoopDetected(format!(
+                                "repeated calls to tool '{name}' with same arguments"
+                            )));
+                        }
+                        self.record_tool_call(name, input_hash);
+                    }
+                }
+
                 self.handle_tool_use_events(&content_blocks, &mut on_event)
                     .await?;
             } else {
@@ -555,7 +671,7 @@ impl Agent {
             max_tokens: self.max_tokens,
             messages: self.conversation.messages().to_vec(),
             system: self.conversation.system().map(String::from),
-            tools: Some(self.tools.definitions(self.mode)),
+            tools: Some(self.filtered_tools()),
         };
 
         let stream = self.provider.stream(request).await?;
@@ -719,7 +835,7 @@ impl Agent {
             max_tokens: self.max_tokens,
             messages: self.conversation.messages().to_vec(),
             system: self.conversation.system().map(String::from),
-            tools: Some(self.tools.definitions(self.mode)),
+            tools: Some(self.filtered_tools()),
         };
 
         let stream = self.provider.stream(request).await?;

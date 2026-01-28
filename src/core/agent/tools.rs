@@ -14,6 +14,7 @@ use super::types::Tool;
 use crate::core::lsp::{LspManager, LspOperation, LspResult};
 use crate::core::memory::{MemoryCategory, MemoryItem, MemoryManager};
 use crate::core::search::{self, CodeSearchParams, WebSearchParams};
+use crate::core::secret::mask_secrets;
 use crate::core::skill::SkillRegistry;
 
 /// Check if a shell command is read-only (safe to execute without permission).
@@ -720,7 +721,26 @@ impl ToolRegistry {
     /// # Errors
     ///
     /// Returns error if tool is unknown, permission denied, or execution fails.
+    ///
+    /// Note: Tool output is automatically masked for secrets before returning.
     pub async fn execute(
+        &self,
+        name: &str,
+        input: serde_json::Value,
+        permissions: Option<&PermissionClient>,
+        mode: AgentMode,
+        plan_manager: &PlanManager,
+    ) -> Result<String> {
+        let result = self
+            .execute_inner(name, input, permissions, mode, plan_manager)
+            .await?;
+
+        // Mask any secrets in the output
+        Ok(mask_secrets(&result).into_owned())
+    }
+
+    /// Internal execute without secret masking
+    async fn execute_inner(
         &self,
         name: &str,
         input: serde_json::Value,

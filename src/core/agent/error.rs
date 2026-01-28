@@ -30,6 +30,10 @@ pub enum AgentError {
     /// Configuration or file I/O error.
     #[error("config error: {0}")]
     Config(String),
+
+    /// Agent entered an infinite loop.
+    #[error("loop detected: {0}")]
+    LoopDetected(String),
 }
 
 /// Result type for agent operations.

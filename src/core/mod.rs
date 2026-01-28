@@ -9,6 +9,7 @@ pub mod memory;
 pub mod plugin;
 pub mod project;
 pub mod search;
+pub mod secret;
 pub mod session;
 pub mod shell;
 pub mod skill;
