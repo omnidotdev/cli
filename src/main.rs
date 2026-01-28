@@ -7,6 +7,7 @@ use tracing_subscriber::EnvFilter;
 use omni_cli::{
     Config,
     cli::{Cli, Commands, ConfigCommands, SessionCommands},
+    core::session::SessionTarget,
 };
 
 #[tokio::main]
@@ -59,7 +60,20 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
     };
 
     match command {
-        Commands::Agent { prompt } => {
+        Commands::Agent {
+            prompt,
+            r#continue,
+            session,
+        } => {
+            // Fail fast if explicit session ID doesn't exist
+            if let Some(ref id) = session {
+                let manager = omni_cli::core::session::SessionManager::for_current_project()?;
+                manager
+                    .find_session(id)
+                    .map_err(|_| anyhow::anyhow!("session not found: {id}"))?;
+            }
+
+            let target = SessionTarget::from_flags(r#continue, session);
             let config = Config::load()?;
             let provider = config.agent.create_provider()?;
             let mut agent = omni_cli::core::Agent::with_context(
@@ -68,6 +82,11 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                 config.agent.max_tokens,
                 None,
             );
+
+            // Enable sessions with target
+            if let Err(e) = agent.enable_sessions_with_target(target) {
+                tracing::warn!("failed to enable sessions: {e}");
+            }
 
             let _response = agent
                 .chat(&prompt, |text| {
@@ -80,8 +99,20 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             println!();
         }
 
-        Commands::Tui => {
-            omni_cli::tui::run().await?;
+        Commands::Tui {
+            r#continue,
+            session,
+        } => {
+            // Fail fast if explicit session ID doesn't exist
+            if let Some(ref id) = session {
+                let manager = omni_cli::core::session::SessionManager::for_current_project()?;
+                manager
+                    .find_session(id)
+                    .map_err(|_| anyhow::anyhow!("session not found: {id}"))?;
+            }
+
+            let target = SessionTarget::from_flags(r#continue, session);
+            omni_cli::tui::run_with_target(target).await?;
         }
 
         Commands::Serve { host, port } => {
@@ -118,14 +149,9 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
 }
 
 fn handle_session_command(command: SessionCommands) -> anyhow::Result<()> {
-    use omni_cli::core::project::Project;
     use omni_cli::core::session::SessionManager;
-    use omni_cli::core::storage::Storage;
 
-    let data_dir = Config::data_dir()?;
-    let storage = Storage::with_root(data_dir);
-    let project = Project::detect(&std::env::current_dir()?)?;
-    let manager = SessionManager::new(storage, project);
+    let manager = SessionManager::for_current_project()?;
 
     match command {
         SessionCommands::List { format, limit } => {
@@ -135,9 +161,9 @@ fn handle_session_command(command: SessionCommands) -> anyhow::Result<()> {
             if format == "json" {
                 println!("{}", serde_json::to_string_pretty(&sessions)?);
             } else {
-                // Table format
-                println!("{:<36} {:<30} Created", "ID", "Title");
-                println!("{}", "-".repeat(80));
+                // Table format - show slug for easy CLI use
+                println!("{:<20} {:<30} Created", "Slug", "Title");
+                println!("{}", "-".repeat(70));
                 for session in sessions {
                     let created = chrono::DateTime::from_timestamp_millis(session.time.created)
                         .map_or_else(
@@ -145,7 +171,7 @@ fn handle_session_command(command: SessionCommands) -> anyhow::Result<()> {
                             |dt| dt.format("%Y-%m-%d %H:%M").to_string(),
                         );
                     let title: String = session.title.chars().take(28).collect();
-                    println!("{:<36} {:<30} {}", session.id, title, created);
+                    println!("{:<20} {:<30} {}", session.slug, title, created);
                 }
             }
         }

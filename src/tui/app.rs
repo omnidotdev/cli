@@ -49,7 +49,7 @@ use crate::core::agent::{
     AgentMode, AskUserResponse, InterfaceMessage, PermissionAction, PermissionContext,
     PermissionResponse,
 };
-use crate::core::session::SessionManager;
+use crate::core::session::{SessionManager, SessionTarget};
 
 /// Active text selection state.
 #[derive(Debug, Clone)]
@@ -252,6 +252,12 @@ impl App {
     /// Create a new application state.
     #[must_use]
     pub fn new() -> Self {
+        Self::with_session_target(SessionTarget::default())
+    }
+
+    /// Create a new application state with a specific session target.
+    #[must_use]
+    pub fn with_session_target(target: SessionTarget) -> Self {
         let config = Config::load().unwrap_or_default();
         let model = config.agent.model.clone();
 
@@ -259,10 +265,28 @@ impl App {
             Agent::with_context(provider, &config.agent.model, config.agent.max_tokens, None)
         });
 
-        // Enable session persistence
+        // Track if we're resuming a session
+        let mut session_resumed = false;
+        let mut display_messages = Vec::new();
+
+        // Enable session persistence with target
         if let Some(ref mut a) = agent {
-            if let Err(e) = a.enable_sessions() {
-                tracing::warn!("failed to enable sessions: {e}");
+            match a.enable_sessions_with_target(target) {
+                Ok(session_id) => {
+                    // Check if we loaded any messages (resuming)
+                    if !a.conversation_is_empty() {
+                        session_resumed = true;
+                        // Load display messages
+                        if let Some(manager) = a.session_manager() {
+                            if let Ok(msgs) = Self::load_session_messages(manager, &session_id) {
+                                display_messages = msgs;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("failed to enable sessions: {e}");
+                }
             }
         }
 
@@ -271,14 +295,6 @@ impl App {
         if let Some(ref mut a) = agent {
             if persisted_mode != AgentMode::default() {
                 a.switch_mode(persisted_mode, None);
-            }
-        }
-
-        // Try to load conversation history (legacy, for migration)
-        let mut history_loaded = false;
-        if let Some(ref mut a) = agent {
-            if a.load_history().is_ok() && a.has_history() {
-                history_loaded = true;
             }
         }
 
@@ -306,10 +322,17 @@ impl App {
 
         let output = if agent.is_none() {
             "No provider configured. Set an API key or add credentials to ~/.config/omni/config.toml".to_string()
-        } else if history_loaded {
-            "Welcome back! Conversation history loaded.".to_string()
+        } else if session_resumed {
+            "Session resumed.".to_string()
         } else {
             String::new()
+        };
+
+        // If resuming with messages, start in session view
+        let (view_state, show_welcome) = if session_resumed && !display_messages.is_empty() {
+            (ViewState::Session, false)
+        } else {
+            (ViewState::Welcome, true)
         };
 
         Self {
@@ -319,7 +342,7 @@ impl App {
             scroll_offset: 0,
             auto_scroll: true,
             loading: false,
-            show_welcome: true,
+            show_welcome,
             tagline,
             tip,
             placeholder,
@@ -329,8 +352,8 @@ impl App {
             interface_rx: None,
             permission_response_tx: None,
             ask_user_response_tx: None,
-            view_state: ViewState::Welcome,
-            messages: Vec::new(),
+            view_state,
+            messages: display_messages,
             streaming_text: String::new(),
             message_scroll: 0,
             model,

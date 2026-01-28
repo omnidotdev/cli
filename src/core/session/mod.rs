@@ -25,6 +25,30 @@ pub use part::{Part, PartTime, ReasoningPart, TextPart, ToolPart, ToolState};
 pub use titling::{MAX_TITLE_LENGTH, extract_title, titling_prompt};
 
 use super::project::Project;
+
+/// Target session for resumption
+#[derive(Debug, Clone, Default)]
+pub enum SessionTarget {
+    /// Create a new session
+    #[default]
+    New,
+    /// Continue the most recent session
+    MostRecent,
+    /// Resume a specific session by ID
+    Specific(String),
+}
+
+impl SessionTarget {
+    /// Create a session target from CLI flags
+    #[must_use]
+    pub fn from_flags(continue_flag: bool, session_id: Option<String>) -> Self {
+        match (continue_flag, session_id) {
+            (true, _) => Self::MostRecent,
+            (_, Some(id)) => Self::Specific(id),
+            _ => Self::New,
+        }
+    }
+}
 use super::storage::Storage;
 
 /// Generate a new session ID.
@@ -201,6 +225,30 @@ impl SessionManager {
         Ok(self
             .storage
             .read(&["session", &self.project.id, session_id])?)
+    }
+
+    /// Find a session by ID or slug.
+    ///
+    /// Tries exact ID match first, then searches by slug.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if session not found.
+    pub fn find_session(&self, id_or_slug: &str) -> anyhow::Result<Session> {
+        // Try exact ID match first
+        if let Ok(session) = self.get_session(id_or_slug) {
+            return Ok(session);
+        }
+
+        // Search by slug
+        let sessions = self.list_sessions()?;
+        for session in sessions {
+            if session.slug == id_or_slug {
+                return Ok(session);
+            }
+        }
+
+        anyhow::bail!("session not found: {id_or_slug}")
     }
 
     /// Update a session.

@@ -38,10 +38,26 @@ pub enum Commands {
     Agent {
         /// The prompt or task to execute.
         prompt: String,
+
+        /// Continue the most recent session.
+        #[arg(short, long, conflicts_with = "session")]
+        r#continue: bool,
+
+        /// Resume a specific session by ID.
+        #[arg(short, long, conflicts_with = "continue")]
+        session: Option<String>,
     },
 
     /// Start the TUI interface.
-    Tui,
+    Tui {
+        /// Continue the most recent session.
+        #[arg(short, long, conflicts_with = "session")]
+        r#continue: bool,
+
+        /// Resume a specific session by ID.
+        #[arg(short, long, conflicts_with = "continue")]
+        session: Option<String>,
+    },
 
     /// Start the HTTP API server.
     Serve {
@@ -135,7 +151,7 @@ mod tests {
     fn cli_parses_agent_command() {
         let cli = Cli::parse_from(["omni", "agent", "do something"]);
         match cli.command {
-            Some(Commands::Agent { prompt }) => {
+            Some(Commands::Agent { prompt, .. }) => {
                 assert_eq!(prompt, "do something");
             }
             _ => panic!("expected Agent command"),
@@ -146,7 +162,7 @@ mod tests {
     fn cli_parses_agent_alias() {
         let cli = Cli::parse_from(["omni", "a", "do something"]);
         match cli.command {
-            Some(Commands::Agent { prompt }) => {
+            Some(Commands::Agent { prompt, .. }) => {
                 assert_eq!(prompt, "do something");
             }
             _ => panic!("expected Agent command"),
@@ -156,7 +172,44 @@ mod tests {
     #[test]
     fn cli_parses_tui_command() {
         let cli = Cli::parse_from(["omni", "tui"]);
-        assert!(matches!(cli.command, Some(Commands::Tui)));
+        assert!(matches!(cli.command, Some(Commands::Tui { .. })));
+    }
+
+    #[test]
+    fn cli_parses_tui_continue() {
+        let cli = Cli::parse_from(["omni", "tui", "--continue"]);
+        match cli.command {
+            Some(Commands::Tui { r#continue, session }) => {
+                assert!(r#continue);
+                assert!(session.is_none());
+            }
+            _ => panic!("expected Tui command"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_tui_session() {
+        let cli = Cli::parse_from(["omni", "tui", "-s", "ses_123"]);
+        match cli.command {
+            Some(Commands::Tui { r#continue, session }) => {
+                assert!(!r#continue);
+                assert_eq!(session, Some("ses_123".to_string()));
+            }
+            _ => panic!("expected Tui command"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_agent_continue() {
+        let cli = Cli::parse_from(["omni", "agent", "-c", "do more"]);
+        match cli.command {
+            Some(Commands::Agent { prompt, r#continue, session }) => {
+                assert_eq!(prompt, "do more");
+                assert!(r#continue);
+                assert!(session.is_none());
+            }
+            _ => panic!("expected Agent command"),
+        }
     }
 
     #[test]
@@ -220,7 +273,7 @@ mod tests {
     fn cli_verbose_is_global() {
         let cli = Cli::parse_from(["omni", "-v", "tui"]);
         assert_eq!(cli.verbose, 1);
-        assert!(matches!(cli.command, Some(Commands::Tui)));
+        assert!(matches!(cli.command, Some(Commands::Tui { .. })));
 
         // Also works after subcommand
         let cli = Cli::parse_from(["omni", "tui", "-v"]);

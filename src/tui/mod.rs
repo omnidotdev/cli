@@ -31,6 +31,7 @@ use crate::core::agent::{
     AskUserResponse, InterfaceMessage, PermissionAction, PermissionActor, PermissionClient,
     PermissionContext, PermissionMessage, PermissionResponse,
 };
+use crate::core::session::SessionTarget;
 
 pub use app::App;
 use app::{ActiveAskUserDialog, ActiveDialog, ActivePermissionDialog, ChatMessage};
@@ -48,6 +49,15 @@ use state::ViewState;
 ///
 /// Returns an error if terminal initialization fails or the event loop encounters an error.
 pub async fn run() -> anyhow::Result<()> {
+    run_with_target(SessionTarget::default()).await
+}
+
+/// Run the TUI application with a specific session target.
+///
+/// # Errors
+///
+/// Returns an error if terminal initialization fails or the event loop encounters an error.
+pub async fn run_with_target(target: SessionTarget) -> anyhow::Result<()> {
     // Set up terminal
     // Note: Mouse capture is disabled to allow native terminal copy/paste
     enable_raw_mode()?;
@@ -113,8 +123,8 @@ pub async fn run() -> anyhow::Result<()> {
         }
     });
 
-    // Create app state with permission channels
-    let mut app = App::new();
+    // Create app state with permission channels and session target
+    let mut app = App::with_session_target(target);
     app.interface_rx = Some(interface_rx);
     app.permission_response_tx = Some(perm_response_tx);
     app.ask_user_response_tx = Some(ask_response_tx);
@@ -687,8 +697,19 @@ fn handle_key(
         }
         KeyCode::Up => {
             if app.show_command_dropdown {
-                // Navigate dropdown selection up
-                app.command_selection = app.command_selection.saturating_sub(1);
+                // Navigate dropdown selection up (wrap to bottom)
+                let max_idx = match dropdown_mode(&app.input) {
+                    DropdownMode::Commands => filter_commands(&app.input).len().saturating_sub(1),
+                    DropdownMode::Models => filter_models(&app.input, &app.agent_config.models)
+                        .len()
+                        .saturating_sub(1),
+                    DropdownMode::None => 0,
+                };
+                app.command_selection = if app.command_selection == 0 {
+                    max_idx
+                } else {
+                    app.command_selection - 1
+                };
             } else if app.is_multiline() {
                 app.move_up();
             } else if app.view_state == ViewState::Session {
@@ -699,7 +720,7 @@ fn handle_key(
         }
         KeyCode::Down => {
             if app.show_command_dropdown {
-                // Navigate dropdown selection down
+                // Navigate dropdown selection down (wrap to top)
                 let max_idx = match dropdown_mode(&app.input) {
                     DropdownMode::Commands => filter_commands(&app.input).len().saturating_sub(1),
                     DropdownMode::Models => filter_models(&app.input, &app.agent_config.models)
@@ -707,7 +728,11 @@ fn handle_key(
                         .saturating_sub(1),
                     DropdownMode::None => 0,
                 };
-                app.command_selection = (app.command_selection + 1).min(max_idx);
+                app.command_selection = if app.command_selection >= max_idx {
+                    0
+                } else {
+                    app.command_selection + 1
+                };
             } else if app.is_multiline() {
                 app.move_down();
             } else if app.view_state == ViewState::Session {

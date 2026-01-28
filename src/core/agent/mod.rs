@@ -29,7 +29,7 @@ use std::collections::HashMap;
 
 use super::session::{
     AssistantMessage as SessionAssistantMessage, Message as SessionMessage, Part, SessionManager,
-    TextPart, UserMessage as SessionUserMessage, extract_title, titling_prompt,
+    SessionTarget, TextPart, UserMessage as SessionUserMessage, extract_title, titling_prompt,
 };
 
 /// Agent operating mode.
@@ -141,15 +141,114 @@ impl Agent {
     ///
     /// Creates or loads a session for the current project
     pub fn enable_sessions(&mut self) -> Result<()> {
+        self.enable_sessions_with_target(SessionTarget::default())
+            .map(|_| ())
+    }
+
+    /// Enable sessions with a specific target
+    ///
+    /// Returns the session ID that was loaded or created
+    ///
+    /// # Errors
+    ///
+    /// Returns error if session operations fail
+    pub fn enable_sessions_with_target(&mut self, target: SessionTarget) -> Result<String> {
         let manager =
             SessionManager::for_current_project().map_err(|e| AgentError::Config(e.to_string()))?;
 
-        let session = manager
-            .get_or_create_current()
+        let (session_id, should_load) = match target {
+            SessionTarget::New => {
+                let session = manager
+                    .create_session()
+                    .map_err(|e| AgentError::Config(e.to_string()))?;
+                (session.id, false)
+            }
+            SessionTarget::MostRecent => {
+                let session = manager
+                    .get_or_create_current()
+                    .map_err(|e| AgentError::Config(e.to_string()))?;
+                // Load if session has messages
+                let has_messages = manager
+                    .list_messages(&session.id)
+                    .map(|msgs| !msgs.is_empty())
+                    .unwrap_or(false);
+                (session.id, has_messages)
+            }
+            SessionTarget::Specific(id_or_slug) => {
+                // Find by ID or slug
+                let session = manager
+                    .find_session(&id_or_slug)
+                    .map_err(|e| AgentError::Config(e.to_string()))?;
+                (session.id, true)
+            }
+        };
+
+        self.session_manager = Some(manager);
+        self.current_session_id = Some(session_id.clone());
+
+        // Load existing messages into conversation if resuming
+        if should_load {
+            self.load_session_into_conversation(&session_id)?;
+        }
+
+        tracing::info!(session_id = %session_id, resumed = should_load, "session enabled");
+        Ok(session_id)
+    }
+
+    /// Load session messages into the conversation
+    fn load_session_into_conversation(&mut self, session_id: &str) -> Result<()> {
+        let Some(ref manager) = self.session_manager else {
+            return Err(AgentError::Config("no session manager".to_string()));
+        };
+
+        let messages = manager
+            .list_messages(session_id)
             .map_err(|e| AgentError::Config(e.to_string()))?;
 
-        self.current_session_id = Some(session.id);
-        self.session_manager = Some(manager);
+        for msg in messages {
+            let parts = manager
+                .list_parts(msg.id())
+                .map_err(|e| AgentError::Config(e.to_string()))?;
+
+            match msg {
+                SessionMessage::User(_) => {
+                    // Collect text parts into user message
+                    let text: String = parts
+                        .iter()
+                        .filter_map(|p| match p {
+                            Part::Text(t) => Some(t.text.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+
+                    if !text.is_empty() {
+                        self.conversation.add_user_message(&text);
+                    }
+                }
+                SessionMessage::Assistant(_) => {
+                    // Collect text parts into assistant message
+                    let text: String = parts
+                        .iter()
+                        .filter_map(|p| match p {
+                            Part::Text(t) => Some(t.text.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("");
+
+                    if !text.is_empty() {
+                        self.conversation.add_assistant_message(&text);
+                    }
+                }
+            }
+        }
+
+        tracing::debug!(
+            session_id,
+            message_count = self.conversation.messages().len(),
+            "loaded session into conversation"
+        );
         Ok(())
     }
 
@@ -822,6 +921,12 @@ impl Agent {
     #[must_use]
     pub fn has_history(&self) -> bool {
         !self.conversation.is_empty()
+    }
+
+    /// Check if conversation is empty.
+    #[must_use]
+    pub fn conversation_is_empty(&self) -> bool {
+        self.conversation.is_empty()
     }
 
     /// Get the current agent mode.
