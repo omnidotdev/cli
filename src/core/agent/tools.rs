@@ -11,6 +11,7 @@ use super::error::{AgentError, Result};
 use super::permission::{PermissionAction, PermissionClient, PermissionContext};
 use super::plan::PlanManager;
 use super::types::Tool;
+use crate::core::memory::{MemoryCategory, MemoryItem, MemoryManager};
 use crate::core::search::{self, CodeSearchParams, WebSearchParams};
 
 /// Check if a shell command is read-only (safe to execute without permission).
@@ -560,6 +561,73 @@ impl ToolRegistry {
                     "required": []
                 }),
             },
+            Tool {
+                name: "memory_add".to_string(),
+                description:
+                    "Store a fact in long-term memory for future sessions. Use for user preferences, project patterns, or corrections."
+                        .to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "content": {
+                            "type": "string",
+                            "description": "The fact to remember"
+                        },
+                        "category": {
+                            "type": "string",
+                            "enum": ["preference", "project_fact", "correction", "general"],
+                            "description": "Category of memory (default: general)"
+                        },
+                        "tags": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Optional tags for filtering"
+                        },
+                        "pinned": {
+                            "type": "boolean",
+                            "description": "If true, always include in context"
+                        }
+                    },
+                    "required": ["content"]
+                }),
+            },
+            Tool {
+                name: "memory_search".to_string(),
+                description:
+                    "Search long-term memory for relevant facts about this project or user."
+                        .to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query"
+                        },
+                        "category": {
+                            "type": "string",
+                            "enum": ["preference", "project_fact", "correction", "general"],
+                            "description": "Filter by category"
+                        }
+                    },
+                    "required": []
+                }),
+            },
+            Tool {
+                name: "memory_delete".to_string(),
+                description:
+                    "Delete a memory item by ID. Use when a fact is no longer accurate."
+                        .to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "Memory ID to delete"
+                        }
+                    },
+                    "required": ["id"]
+                }),
+            },
         ];
 
         // Add mode-specific tools
@@ -637,6 +705,9 @@ impl ToolRegistry {
                     .await
             }
             "sandbox_exec" => self.execute_sandbox(input, permissions, mode).await,
+            "memory_add" => self.execute_memory_add(input),
+            "memory_search" => self.execute_memory_search(input),
+            "memory_delete" => self.execute_memory_delete(input),
             _ => Err(AgentError::ToolExecution(format!("unknown tool: {name}"))),
         }
     }
@@ -2320,6 +2391,107 @@ impl ToolRegistry {
                 "[sandbox:fallback] Execution failed (exit {})\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}",
                 output.status.code().unwrap_or(-1)
             ))
+        }
+    }
+
+    #[allow(clippy::unused_self)]
+    fn execute_memory_add(&self, input: serde_json::Value) -> Result<String> {
+        let content = input["content"]
+            .as_str()
+            .ok_or_else(|| AgentError::ToolExecution("missing content".to_string()))?;
+
+        let category = match input["category"].as_str() {
+            Some("preference") => MemoryCategory::Preference,
+            Some("project_fact") => MemoryCategory::ProjectFact,
+            Some("correction") => MemoryCategory::Correction,
+            _ => MemoryCategory::General,
+        };
+
+        let mut item = MemoryItem::new(content.to_string(), category);
+
+        // Add tags
+        if let Some(tags) = input["tags"].as_array() {
+            for tag in tags {
+                if let Some(t) = tag.as_str() {
+                    item.tags.push(t.to_string());
+                }
+            }
+        }
+
+        // Set pinned
+        if input["pinned"].as_bool().unwrap_or(false) {
+            item.pinned = true;
+        }
+
+        let manager = MemoryManager::for_current_project()
+            .map_err(|e| AgentError::ToolExecution(format!("failed to init memory: {e}")))?;
+
+        let id = manager
+            .add(item)
+            .map_err(|e| AgentError::ToolExecution(format!("failed to save memory: {e}")))?;
+
+        Ok(format!("Memory saved with ID: {id}"))
+    }
+
+    #[allow(clippy::unused_self)]
+    fn execute_memory_search(&self, input: serde_json::Value) -> Result<String> {
+        let manager = MemoryManager::for_current_project()
+            .map_err(|e| AgentError::ToolExecution(format!("failed to init memory: {e}")))?;
+
+        let items = if let Some(query) = input["query"].as_str() {
+            manager
+                .search(query)
+                .map_err(|e| AgentError::ToolExecution(format!("search failed: {e}")))?
+        } else {
+            let category = match input["category"].as_str() {
+                Some("preference") => Some(MemoryCategory::Preference),
+                Some("project_fact") => Some(MemoryCategory::ProjectFact),
+                Some("correction") => Some(MemoryCategory::Correction),
+                Some("general") => Some(MemoryCategory::General),
+                _ => None,
+            };
+            manager
+                .list(category)
+                .map_err(|e| AgentError::ToolExecution(format!("list failed: {e}")))?
+        };
+
+        if items.is_empty() {
+            return Ok("No memories found.".to_string());
+        }
+
+        use std::fmt::Write;
+        let mut output = format!("Found {} memories:\n\n", items.len());
+        for item in items {
+            let _ = writeln!(
+                output,
+                "- [{}] {} (ID: {}{})",
+                item.category,
+                item.content,
+                item.id,
+                if item.pinned { ", pinned" } else { "" }
+            );
+        }
+
+        Ok(output)
+    }
+
+    #[allow(clippy::unused_self)]
+    fn execute_memory_delete(&self, input: serde_json::Value) -> Result<String> {
+        let id = input["id"]
+            .as_str()
+            .ok_or_else(|| AgentError::ToolExecution("missing id".to_string()))?;
+
+        let manager = MemoryManager::for_current_project()
+            .map_err(|e| AgentError::ToolExecution(format!("failed to init memory: {e}")))?;
+
+        let deleted = manager
+            .delete(id)
+            .map_err(|e| AgentError::ToolExecution(format!("delete failed: {e}")))?;
+
+        if deleted {
+            Ok(format!("Memory {id} deleted."))
+        } else {
+            Ok(format!("Memory {id} not found."))
         }
     }
 }
