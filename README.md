@@ -28,6 +28,8 @@ cargo build --release
 # Binary will be at target/release/omni
 ```
 
+More distribution platforms (AUR, brew, ...) are coming soon. Let us know if you are looking for a specific one in meantime.
+
 ## Quick Start
 
 ### TUI Mode (Default)
