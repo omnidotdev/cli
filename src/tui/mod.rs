@@ -1115,8 +1115,21 @@ fn handle_dialog_key(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> 
                 app.active_dialog = Some(ActiveDialog::SessionList(d));
             }
             KeyCode::Char('n') => {
-                // TODO: create new session
-                tracing::info!("new session requested");
+                // Create new session
+                if let Some(ref mut agent) = app.agent {
+                    match agent.new_session() {
+                        Ok(session_id) => {
+                            tracing::info!(session_id = %session_id, "created new session");
+                            // Clear display and switch to welcome
+                            app.messages.clear();
+                            app.streaming_text.clear();
+                            app.message_scroll = 0;
+                            app.view_state = ViewState::Welcome;
+                            app.show_welcome = true;
+                        }
+                        Err(e) => tracing::error!("failed to create session: {e}"),
+                    }
+                }
             }
             KeyCode::Char(c) => {
                 d.filter_push(c);
