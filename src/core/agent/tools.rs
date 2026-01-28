@@ -13,6 +13,7 @@ use super::plan::PlanManager;
 use super::types::Tool;
 use crate::core::memory::{MemoryCategory, MemoryItem, MemoryManager};
 use crate::core::search::{self, CodeSearchParams, WebSearchParams};
+use crate::core::skill::SkillRegistry;
 
 /// Check if a shell command is read-only (safe to execute without permission).
 #[must_use]
@@ -90,12 +91,20 @@ pub struct TodoItem {
 pub struct ToolRegistry {
     /// In-memory todo storage for agent task tracking.
     todos: std::sync::Arc<parking_lot::RwLock<Vec<TodoItem>>>,
+    /// Skill registry for loading skill instructions.
+    skill_registry: SkillRegistry,
 }
 
 impl Default for ToolRegistry {
     fn default() -> Self {
+        // Try to discover skills from current directory
+        let skill_registry = std::env::current_dir()
+            .map(|p| SkillRegistry::discover(&p))
+            .unwrap_or_default();
+
         Self {
             todos: std::sync::Arc::new(parking_lot::RwLock::new(Vec::new())),
+            skill_registry,
         }
     }
 }
@@ -105,6 +114,15 @@ impl ToolRegistry {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Create a tool registry with a custom skill registry.
+    #[must_use]
+    pub fn with_skills(skill_registry: SkillRegistry) -> Self {
+        Self {
+            todos: std::sync::Arc::new(parking_lot::RwLock::new(Vec::new())),
+            skill_registry,
+        }
     }
 
     /// Get tool definitions for the given mode.
@@ -628,6 +646,7 @@ impl ToolRegistry {
                     "required": ["id"]
                 }),
             },
+            self.skill_tool_definition(),
         ];
 
         // Add mode-specific tools
@@ -708,6 +727,7 @@ impl ToolRegistry {
             "memory_add" => self.execute_memory_add(input),
             "memory_search" => self.execute_memory_search(input),
             "memory_delete" => self.execute_memory_delete(input),
+            "skill" => self.execute_skill(input),
             _ => Err(AgentError::ToolExecution(format!("unknown tool: {name}"))),
         }
     }
@@ -2515,6 +2535,63 @@ impl ToolRegistry {
         } else {
             Ok(format!("Memory {id} not found."))
         }
+    }
+
+    /// Build the skill tool definition with available skills in the description
+    fn skill_tool_definition(&self) -> Tool {
+        // Build list of available skills for the description
+        let skills = self.skill_registry.all();
+        let skill_list = if skills.is_empty() {
+            "No skills are currently available.".to_string()
+        } else {
+            let list: Vec<String> = skills
+                .iter()
+                .map(|s| format!("  - {}: {}", s.name, s.description))
+                .collect();
+            format!(
+                "Available skills:\n{}",
+                list.join("\n")
+            )
+        };
+
+        Tool {
+            name: "skill".to_string(),
+            description: format!(
+                "Load a skill to get detailed instructions for a specific task. \
+                Skills provide specialized guidance for common workflows.\n\n{skill_list}"
+            ),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the skill to load"
+                    }
+                },
+                "required": ["name"]
+            }),
+        }
+    }
+
+    /// Execute the skill tool
+    fn execute_skill(&self, input: serde_json::Value) -> Result<String> {
+        let name = input["name"]
+            .as_str()
+            .ok_or_else(|| AgentError::ToolExecution("missing skill name".to_string()))?;
+
+        let skill = self.skill_registry.get(name)
+            .ok_or_else(|| AgentError::ToolExecution(format!("skill not found: {name}")))?;
+
+        let content = self.skill_registry.load_content(name)
+            .map_err(|e| AgentError::ToolExecution(format!("failed to load skill: {e}")))?;
+
+        // Return formatted skill content
+        Ok(format!(
+            "# Skill: {}\n\n{}\n\n---\n\n{}",
+            skill.name,
+            skill.description,
+            content
+        ))
     }
 }
 

@@ -10,6 +10,7 @@ pub mod project;
 pub mod search;
 pub mod session;
 pub mod shell;
+pub mod skill;
 pub mod snapshot;
 pub mod storage;
 pub mod watcher;
