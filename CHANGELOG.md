@@ -1,5 +1,27 @@
 # @omnidotdev/cli
 
+## 0.2.1
+
+### Patch Changes
+
+- [`ccaf64f`](https://github.com/omnidotdev/cli/commit/ccaf64f71c0410fefda4b7f1b8a7b084b58cfa69) Thanks [@coopbri](https://github.com/coopbri)! - Improve terminal compatibility and provider configuration UX
+
+  - Fix key event handling for Termux and other terminals that don't report KeyEventKind correctly
+  - Show provider-agnostic messages when no provider is configured
+  - Update placeholder text to guide users toward configuration
+
+- [`5820f20`](https://github.com/omnidotdev/cli/commit/5820f20c30130331be52342b49884aba782e50ae) Thanks [@coopbri](https://github.com/coopbri)! - Improve TUI experience
+
+  - Fix message cutoff by removing bottom padding and correcting height calculations
+  - Show activity status (e.g., "Using Bash...") instead of just "Thinking..."
+  - Add vertical and horizontal padding to user messages for better visual separation
+  - Lighten user message background color for a "previous message" look
+  - Implement smooth line-by-line scrolling for messages
+  - Allow typing while agent is responding (can prepare next message)
+  - Add rich diff rendering for all tool output (muted green/red for diff-like content)
+  - Fix paste behavior: pasted text now inserts without auto-submitting
+  - Add Ctrl+Left/Right for word-by-word cursor movement
+
 ## 0.2.0
 
 ### Minor Changes
