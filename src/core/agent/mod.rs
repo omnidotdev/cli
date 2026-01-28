@@ -121,20 +121,12 @@ impl Agent {
         let context = ProjectContext::gather();
         let context_str = context.to_prompt_context();
 
-        // Add model tag after environment section
-        let context_with_model = if context_str.contains("</environment>") {
-            context_str.replacen(
-                "</environment>",
-                &format!("</environment>\n<model>{model_str}</model>"),
-                1,
-            )
-        } else {
-            format!("{context_str}\n\n<model>{model_str}</model>")
-        };
+        // Build system prompt with model identity at the very start
+        let model_identity = format!("You are {model_str}, accessed through the Omni CLI.");
 
         let system_prompt = match persona_prompt {
-            Some(persona) => format!("{persona}\n\n{context_with_model}"),
-            None => context_with_model,
+            Some(persona) => format!("{model_identity}\n\n{persona}\n\n{context_str}"),
+            None => format!("{model_identity}\n\n{context_str}"),
         };
 
         Self::with_system(provider, model_str, max_tokens, system_prompt)
@@ -843,39 +835,42 @@ impl Agent {
 
     /// Set the model name.
     ///
-    /// Also updates the system prompt to reflect the new model.
+    /// Also updates the system prompt and adds a context message to help
+    /// the new model understand it has taken over the conversation.
     pub fn set_model(&mut self, model: impl Into<String>) {
-        self.model = model.into();
+        let old_model = std::mem::replace(&mut self.model, model.into());
         self.update_model_in_system_prompt();
+
+        // Add context message if there's conversation history and model changed
+        if old_model != self.model && !self.conversation.messages().is_empty() {
+            self.conversation.add_user_message(format!(
+                "[Model switched from {} to {}]",
+                old_model, self.model
+            ));
+        }
+
         tracing::info!(model = %self.model, "switched model");
     }
 
     /// Update the model info in the system prompt.
     fn update_model_in_system_prompt(&mut self) {
-        let model_tag = format!("<model>{}</model>", self.model);
+        let model_identity = format!("You are {}, accessed through the Omni CLI.", self.model);
 
         if let Some(existing) = self.conversation.system() {
-            // Replace existing model tag or append
-            if let (Some(start), Some(end)) = (existing.find("<model>"), existing.find("</model>"))
-            {
-                if start < end {
+            // Replace existing model identity at start of prompt
+            if existing.starts_with("You are ") {
+                // Find end of first line
+                if let Some(end) = existing.find('\n') {
                     let mut updated = existing.to_string();
-                    updated.replace_range(start..end + "</model>".len(), &model_tag);
+                    updated.replace_range(..end, &model_identity);
                     self.conversation.set_system(updated);
                     return;
                 }
             }
 
-            // No existing model tag - insert after </environment> or append
-            if let Some(pos) = existing.find("</environment>") {
-                let insert_pos = pos + "</environment>".len();
-                let mut updated = existing.to_string();
-                updated.insert_str(insert_pos, &format!("\n{model_tag}"));
-                self.conversation.set_system(updated);
-            } else {
-                self.conversation
-                    .set_system(format!("{existing}\n\n{model_tag}"));
-            }
+            // No existing model identity - prepend it
+            self.conversation
+                .set_system(format!("{model_identity}\n\n{existing}"));
         }
     }
 

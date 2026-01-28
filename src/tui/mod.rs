@@ -153,11 +153,6 @@ async fn run_app(
         // Clear selected text before render (will be populated if selection is active)
         app.selected_text.clear();
 
-        // Calculate content height for scroll calculations (account for horizontal padding)
-        let padded_width = app.term_width.saturating_sub(MESSAGE_PADDING_X * 2);
-        let content_height =
-            calculate_content_height(&app.messages, &app.streaming_text, padded_width);
-
         terminal.draw(|f| {
             let full_area = f.area();
 
@@ -168,6 +163,11 @@ async fn run_app(
                 full_area.width.saturating_sub(2),
                 full_area.height,
             );
+
+            // Calculate content height for scroll calculations (account for message area padding)
+            let padded_width = area.width.saturating_sub(MESSAGE_PADDING_X * 2);
+            let content_height =
+                calculate_content_height(&app.messages, &app.streaming_text, padded_width);
 
             // Update dimensions for scroll calculations
             app.update_dimensions(area.width, area.height, content_height);
@@ -523,9 +523,10 @@ fn handle_key(
 
                         agent.set_model(model_arg);
                         app.model = model_arg.to_string();
+                        let provider_info = agent.provider_name();
                         app.messages.push(DisplayMessage::tool(
                             "model",
-                            format!("Switched to {model_arg}"),
+                            format!("Switched to {model_arg} ({provider_info})"),
                             "",
                             false,
                         ));

@@ -43,7 +43,7 @@ pub const ECOSYSTEM_TIPS: &[&str] = &[
     "Friendly reminder: commit early, commit often, blame later",
 ];
 
-use crate::config::{AgentConfig, AgentPermissions, Config, load_persona};
+use crate::config::{AgentConfig, AgentPermissions, Config};
 use crate::core::Agent;
 use crate::core::agent::{
     AgentMode, AskUserResponse, InterfaceMessage, PermissionAction, PermissionContext,
@@ -249,16 +249,9 @@ impl App {
     pub fn new() -> Self {
         let config = Config::load().unwrap_or_default();
         let model = config.agent.model.clone();
-        let persona = load_persona(&config.agent.persona).unwrap_or_default();
-        let persona_prompt = persona.build_system_prompt();
 
         let mut agent = config.agent.create_provider().ok().map(|provider| {
-            Agent::with_context(
-                provider,
-                &config.agent.model,
-                config.agent.max_tokens,
-                Some(&persona_prompt),
-            )
+            Agent::with_context(provider, &config.agent.model, config.agent.max_tokens, None)
         });
 
         // Enable session persistence
