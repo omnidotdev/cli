@@ -1,5 +1,66 @@
 # @omnidotdev/cli
 
+## 0.3.0
+
+### Minor Changes
+
+- [`0783ebd`](https://github.com/omnidotdev/cli/commit/0783ebdfc88814b2c20aa517b2309685d5a7f776) Thanks [@coopbri](https://github.com/coopbri)! - Add unified LLM provider, session sharing, skill system, and LSP integration
+
+  - Add unified LLM provider via `llm` crate supporting Anthropic, OpenAI, Google Gemini, Groq, and Mistral
+  - Add session sharing with URL tokens, secrets, and optional TTL expiration
+  - Add CLI commands: `omni session share` and `omni session unshare`
+  - Add skill system for loading reusable instructions from SKILL.md files
+  - Discover skills from `.omni/skill/`, `.opencode/skill/`, and `.claude/skills/` directories
+  - Add `skill` tool for agents to load specialized instructions on demand
+  - Add LSP integration with support for 13 language servers
+  - Add `lsp` tool for code intelligence (hover, definition, references, symbols)
+  - Add agent loop detection to prevent infinite tool call loops
+  - Add secret masking for API keys, tokens, and credentials in tool output
+  - Add MCP server integration to discover and execute external tools
+  - Add plugin auto-discovery and integration into agent tool registry
+
+- [`80a07eb`](https://github.com/omnidotdev/cli/commit/80a07ebd733a3c7a30041cb0c16c905698385291) Thanks [@coopbri](https://github.com/coopbri)! - Add GitHub integration tools
+
+  - Add `github_pr` tool for creating pull requests
+  - Add `github_issue` tool for creating, viewing, listing, and closing issues
+  - Add `github_pr_review` tool for viewing PRs, diffs, checks, and adding comments
+  - All tools use the `gh` CLI and respect plan mode restrictions
+
+- [`46bedb3`](https://github.com/omnidotdev/cli/commit/46bedb3837e9f738a089d91a7fb9b335eecdf1ad) Thanks [@coopbri](https://github.com/coopbri)! - Add persistent memory system for cross-session context
+
+  - Add `memory_add` tool for storing facts about user preferences, project patterns, and corrections
+  - Add `memory_search` tool for finding relevant memories by query or category
+  - Add `memory_delete` tool for removing outdated memories
+  - Memories persist across sessions and can be injected into system prompts
+  - Support for pinned memories that are always included in context
+
+- [`08b5595`](https://github.com/omnidotdev/cli/commit/08b559543609df28f5341264209da8ccdada43a9) Thanks [@coopbri](https://github.com/coopbri)! - Add sandboxed execution tool
+
+  - Add `sandbox_exec` tool for running untrusted code safely
+  - Uses Docker containers with resource limits when available
+  - Falls back to timeout + restricted env when Docker not present
+  - Supports Python, Node, Ruby, and shell execution
+  - Configurable timeout, network access, and workdir mounting
+
+- [`761b54a`](https://github.com/omnidotdev/cli/commit/761b54a9c70079e23756dcea33d22b387c0a00ea) Thanks [@coopbri](https://github.com/coopbri)! - Add session continuity flags for resuming conversations
+
+  - Add `--continue` / `-c` flag to resume most recent session
+  - Add `--session` / `-s` flag to resume specific session by ID or slug
+  - Works with both `tui` and `agent` commands
+  - Session list now shows slugs for easier CLI use
+  - Fix `session list` command using wrong storage path
+  - Fail fast with clear error for invalid session IDs
+
+- [`6e4f1ac`](https://github.com/omnidotdev/cli/commit/6e4f1ac1f4c38c26ebe5b4a856db60e4b4a7cb2e) Thanks [@coopbri](https://github.com/coopbri)! - Add new agent tools and LLM providers
+
+  - Add `apply_patch` tool for applying unified diffs to files
+  - Add `multi_edit` tool for editing multiple files in a single operation
+  - Add support for Groq, Google Gemini, Mistral, LMStudio, OpenRouter, and Together AI providers
+
+### Patch Changes
+
+- [`761b54a`](https://github.com/omnidotdev/cli/commit/761b54a9c70079e23756dcea33d22b387c0a00ea) Thanks [@coopbri](https://github.com/coopbri)! - Wrap command palette selection at top/bottom for better UX
+
 ## 0.2.1
 
 ### Patch Changes
