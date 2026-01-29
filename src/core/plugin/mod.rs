@@ -171,7 +171,10 @@ impl PluginRegistry {
     ///
     /// Returns the plugin Arc and tool name, allowing the caller to
     /// drop any locks before awaiting the tool execution
-    pub fn lookup_tool(&self, qualified_name: &str) -> anyhow::Result<(Arc<dyn PluginHooks>, String)> {
+    pub fn lookup_tool(
+        &self,
+        qualified_name: &str,
+    ) -> anyhow::Result<(Arc<dyn PluginHooks>, String)> {
         let parts: Vec<&str> = qualified_name.splitn(2, "::").collect();
         if parts.len() != 2 {
             anyhow::bail!("Invalid tool name format: {qualified_name}");
