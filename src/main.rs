@@ -214,12 +214,11 @@ fn handle_session_command(command: SessionCommands) -> anyhow::Result<()> {
             println!("Access via API:");
             println!("  GET http://localhost:7890/api/share/{}", share.token);
             println!();
-            if share.expires_at.is_some() {
-                let expires = chrono::DateTime::from_timestamp_millis(share.expires_at.unwrap())
-                    .map_or_else(
-                        || "Unknown".to_string(),
-                        |dt| dt.format("%Y-%m-%d %H:%M UTC").to_string(),
-                    );
+            if let Some(expires_at) = share.expires_at {
+                let expires = chrono::DateTime::from_timestamp_millis(expires_at).map_or_else(
+                    || "Unknown".to_string(),
+                    |dt| dt.format("%Y-%m-%d %H:%M UTC").to_string(),
+                );
                 println!("Expires: {expires}");
             } else {
                 println!("Expires: Never");
@@ -258,7 +257,7 @@ fn parse_duration(s: &str) -> anyhow::Result<u64> {
         "m" => num * 60,
         "h" => num * 3600,
         "d" => num * 86400,
-        "w" => num * 604800,
+        "w" => num * 604_800,
         _ => anyhow::bail!("invalid duration unit (use s, m, h, d, or w)"),
     };
 
