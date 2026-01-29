@@ -98,8 +98,8 @@ pub struct ToolRegistry {
     skill_registry: SkillRegistry,
     /// MCP client for external tool servers.
     mcp_client: std::sync::Arc<parking_lot::RwLock<McpClient>>,
-    /// Plugin registry for loaded plugins (uses tokio `RwLock` for async execute).
-    plugin_registry: std::sync::Arc<tokio::sync::RwLock<PluginRegistry>>,
+    /// Plugin registry for loaded plugins
+    plugin_registry: std::sync::Arc<parking_lot::RwLock<PluginRegistry>>,
 }
 
 impl Default for ToolRegistry {
@@ -128,7 +128,7 @@ impl Default for ToolRegistry {
             todos: std::sync::Arc::new(parking_lot::RwLock::new(Vec::new())),
             skill_registry,
             mcp_client: std::sync::Arc::new(parking_lot::RwLock::new(McpClient::new())),
-            plugin_registry: std::sync::Arc::new(tokio::sync::RwLock::new(plugin_registry)),
+            plugin_registry: std::sync::Arc::new(parking_lot::RwLock::new(plugin_registry)),
         }
     }
 }
@@ -157,7 +157,7 @@ impl ToolRegistry {
             todos: std::sync::Arc::new(parking_lot::RwLock::new(Vec::new())),
             skill_registry,
             mcp_client: std::sync::Arc::new(parking_lot::RwLock::new(McpClient::new())),
-            plugin_registry: std::sync::Arc::new(tokio::sync::RwLock::new(PluginRegistry::new())),
+            plugin_registry: std::sync::Arc::new(parking_lot::RwLock::new(PluginRegistry::new())),
         }
     }
 
@@ -165,15 +165,15 @@ impl ToolRegistry {
     pub fn register_plugin(
         &self,
         name: impl Into<String>,
-        plugin: Box<dyn crate::core::plugin::PluginHooks>,
+        plugin: std::sync::Arc<dyn crate::core::plugin::PluginHooks>,
     ) {
-        let mut registry = self.plugin_registry.blocking_write();
+        let mut registry = self.plugin_registry.write();
         registry.register(name, plugin);
     }
 
     /// Get plugin tools as agent tool definitions.
     fn plugin_tool_definitions(&self) -> Vec<Tool> {
-        let registry = self.plugin_registry.blocking_read();
+        let registry = self.plugin_registry.read();
         registry
             .all_tools()
             .into_iter()
@@ -894,9 +894,17 @@ impl ToolRegistry {
             .strip_prefix("plugin_")
             .ok_or_else(|| AgentError::ToolExecution("invalid plugin tool name".to_string()))?;
 
-        let registry = self.plugin_registry.read().await;
-        let result = registry
-            .execute_tool(qualified_name, input)
+        // Look up the plugin and clone the Arc before dropping the lock
+        let (plugin, tool_name) = {
+            let registry = self.plugin_registry.read();
+            registry
+                .lookup_tool(qualified_name)
+                .map_err(|e| AgentError::ToolExecution(format!("plugin tool error: {e}")))?
+        };
+
+        // Now we can await without holding the lock
+        let result = plugin
+            .execute_tool(&tool_name, input)
             .await
             .map_err(|e| AgentError::ToolExecution(format!("plugin tool error: {e}")))?;
 
@@ -3081,5 +3089,15 @@ mod tests {
         assert!(is_read_only("cargo test --all --no-run"));
         assert!(!is_read_only("cargo test"));
         assert!(!is_read_only("cargo test --all"));
+    }
+
+    #[tokio::test]
+    async fn definitions_callable_from_async_context() {
+        // This test verifies that calling definitions() from within an async
+        // runtime doesn't panic. Previously used tokio::sync::RwLock with
+        // blocking_read() which panics in async context.
+        let registry = ToolRegistry::new();
+        let tools = registry.definitions(AgentMode::Build);
+        assert!(!tools.is_empty());
     }
 }

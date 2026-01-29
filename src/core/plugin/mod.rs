@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -103,7 +104,7 @@ pub struct PluginConfig {
 
 /// Plugin registry for managing loaded plugins
 pub struct PluginRegistry {
-    plugins: HashMap<String, Box<dyn PluginHooks>>,
+    plugins: HashMap<String, Arc<dyn PluginHooks>>,
     configs: HashMap<String, PluginConfig>,
 }
 
@@ -118,16 +119,22 @@ impl PluginRegistry {
     }
 
     /// Register a plugin
-    pub fn register(&mut self, name: impl Into<String>, plugin: Box<dyn PluginHooks>) {
+    pub fn register(&mut self, name: impl Into<String>, plugin: Arc<dyn PluginHooks>) {
         let name = name.into();
         tracing::info!(plugin = %name, "registered plugin");
         self.plugins.insert(name, plugin);
     }
 
     /// Unregister a plugin
-    pub fn unregister(&mut self, name: &str) -> Option<Box<dyn PluginHooks>> {
+    pub fn unregister(&mut self, name: &str) -> Option<Arc<dyn PluginHooks>> {
         tracing::info!(plugin = %name, "unregistered plugin");
         self.plugins.remove(name)
+    }
+
+    /// Get a plugin by name
+    #[must_use]
+    pub fn get(&self, name: &str) -> Option<Arc<dyn PluginHooks>> {
+        self.plugins.get(name).cloned()
     }
 
     /// Set configuration for a plugin
@@ -160,11 +167,11 @@ impl PluginRegistry {
     /// # Errors
     ///
     /// Returns error if tool not found or execution fails
-    pub async fn execute_tool(
-        &self,
-        qualified_name: &str,
-        args: serde_json::Value,
-    ) -> anyhow::Result<ToolResult> {
+    /// Look up a plugin and tool name from a qualified name
+    ///
+    /// Returns the plugin Arc and tool name, allowing the caller to
+    /// drop any locks before awaiting the tool execution
+    pub fn lookup_tool(&self, qualified_name: &str) -> anyhow::Result<(Arc<dyn PluginHooks>, String)> {
         let parts: Vec<&str> = qualified_name.splitn(2, "::").collect();
         if parts.len() != 2 {
             anyhow::bail!("Invalid tool name format: {qualified_name}");
@@ -174,11 +181,24 @@ impl PluginRegistry {
         let tool_name = parts[1];
 
         let plugin = self
-            .plugins
             .get(plugin_name)
             .ok_or_else(|| anyhow::anyhow!("Plugin not found: {plugin_name}"))?;
 
-        plugin.execute_tool(tool_name, args).await
+        Ok((plugin, tool_name.to_string()))
+    }
+
+    /// Execute a tool by qualified name
+    ///
+    /// # Errors
+    ///
+    /// Returns error if tool not found or execution fails
+    pub async fn execute_tool(
+        &self,
+        qualified_name: &str,
+        args: serde_json::Value,
+    ) -> anyhow::Result<ToolResult> {
+        let (plugin, tool_name) = self.lookup_tool(qualified_name)?;
+        plugin.execute_tool(&tool_name, args).await
     }
 
     /// Load plugins on startup
@@ -363,14 +383,14 @@ mod tests {
     #[test]
     fn registry_registers_plugin() {
         let mut registry = PluginRegistry::new();
-        registry.register("test", Box::new(TestPlugin));
+        registry.register("test", Arc::new(TestPlugin));
         assert!(registry.names().contains(&"test"));
     }
 
     #[test]
     fn registry_collects_tools() {
         let mut registry = PluginRegistry::new();
-        registry.register("test", Box::new(TestPlugin));
+        registry.register("test", Arc::new(TestPlugin));
         let tools = registry.all_tools();
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0].0, "test::test_tool");
@@ -379,7 +399,7 @@ mod tests {
     #[tokio::test]
     async fn registry_executes_tool() {
         let mut registry = PluginRegistry::new();
-        registry.register("test", Box::new(TestPlugin));
+        registry.register("test", Arc::new(TestPlugin));
         let result = registry
             .execute_tool("test::test_tool", serde_json::json!({}))
             .await
