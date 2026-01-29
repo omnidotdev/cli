@@ -181,10 +181,12 @@ fn handle_session_command(command: SessionCommands) -> anyhow::Result<()> {
             format,
             output,
         } => {
+            // Resolve slug or ID to actual session ID
+            let session = manager.find_session(&session_id)?;
             let content = if format == "markdown" {
-                manager.export_to_markdown(&session_id)?
+                manager.export_to_markdown(&session.id)?
             } else {
-                manager.export_to_json(&session_id)?
+                manager.export_to_json(&session.id)?
             };
 
             if let Some(path) = output {
@@ -201,10 +203,12 @@ fn handle_session_command(command: SessionCommands) -> anyhow::Result<()> {
         } => {
             use omni_cli::core::session::ShareOptions;
 
+            // Resolve slug or ID to actual session ID
+            let session = manager.find_session(&session_id)?;
             let ttl_seconds = expires.map(|e| parse_duration(&e)).transpose()?;
             let options = ShareOptions { ttl_seconds };
 
-            let share = manager.create_share(&session_id, options)?;
+            let share = manager.create_share(&session.id, options)?;
 
             println!("Share created!");
             println!();
