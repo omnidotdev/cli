@@ -22,3 +22,19 @@ jobs:
         run: cargo clippy -- -D warnings
       - name: Run tests
         run: cargo test
+
+  version-check:
+    name: Version sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check version sync
+        run: |
+          PKG_VERSION=$(jq -r '.version' package.json)
+          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          if [ "$PKG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Version mismatch: package.json=$PKG_VERSION, Cargo.toml=$CARGO_VERSION"
+            exit 1
+          fi
+          echo "Versions match: $PKG_VERSION"
