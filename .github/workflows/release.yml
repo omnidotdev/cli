@@ -24,11 +24,13 @@ jobs:
         run: bun i
       - name: Create release pull request
         id: changesets
-        uses: changesets/action@v1
+        uses: changesets/action@v1.4.9
         with:
-          version: bun run version
-          title: "feature(release): version packages"
-          commit: "ci(changesets): version packages"
+          version: bun run version && git add Cargo.toml
+          publish: |
+            echo "Publishing @omnidotdev/cli@$(jq -r '.version' package.json)"
+          title: "chore(release): version packages"
+          commit: "chore(release): version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
