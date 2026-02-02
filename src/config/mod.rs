@@ -478,6 +478,19 @@ impl AgentConfig {
                 id: "Qwen/Qwen2.5-Coder-32B-Instruct".to_string(),
                 provider: "together".to_string(),
             },
+            // Kimi (Moonshot AI)
+            ModelInfo {
+                id: "kimi-k2.5".to_string(),
+                provider: "kimi".to_string(),
+            },
+            ModelInfo {
+                id: "moonshot-v1-128k".to_string(),
+                provider: "kimi".to_string(),
+            },
+            ModelInfo {
+                id: "moonshot-v1-32k".to_string(),
+                provider: "kimi".to_string(),
+            },
         ]
     }
 
@@ -500,6 +513,8 @@ impl AgentConfig {
             Some("anthropic")
         } else if model_lower.starts_with("gpt") || model_lower.starts_with("o1") {
             Some("openai")
+        } else if model_lower.starts_with("kimi") || model_lower.starts_with("moonshot") {
+            Some("kimi")
         } else {
             None
         }
@@ -678,6 +693,16 @@ impl AgentConfig {
             },
         );
 
+        providers.insert(
+            "kimi".to_string(),
+            ProviderConfig {
+                api_type: ProviderApiType::OpenAi,
+                base_url: Some("https://api.moonshot.cn/v1".to_string()),
+                api_key_env: Some("MOONSHOT_API_KEY".to_string()),
+                api_key: None,
+            },
+        );
+
         providers
     }
 
@@ -846,5 +871,30 @@ mod tests {
         config.agents.get_mut("plan").unwrap().model = Some("custom-model".to_string());
         assert_eq!(config.model_for_agent("plan"), "custom-model");
         assert_eq!(config.model_for_agent("build"), config.model);
+    }
+
+    #[test]
+    fn kimi_provider_exists() {
+        let config = AgentConfig::default();
+        assert!(config.providers.contains_key("kimi"));
+    }
+
+    #[test]
+    fn kimi_has_correct_base_url() {
+        let config = AgentConfig::default();
+        let kimi = config.providers.get("kimi").unwrap();
+        assert_eq!(
+            kimi.base_url,
+            Some("https://api.moonshot.cn/v1".to_string())
+        );
+        assert_eq!(kimi.api_type, ProviderApiType::OpenAi);
+    }
+
+    #[test]
+    fn provider_for_model_detects_kimi() {
+        let config = AgentConfig::default();
+        assert_eq!(config.provider_for_model("kimi-k2.5"), Some("kimi"));
+        assert_eq!(config.provider_for_model("moonshot-v1-128k"), Some("kimi"));
+        assert_eq!(config.provider_for_model("KIMI-K2.5"), Some("kimi"));
     }
 }
