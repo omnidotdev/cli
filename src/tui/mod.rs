@@ -11,8 +11,9 @@ use std::time::Duration;
 
 use crossterm::{
     event::{
-        self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEventKind,
-        KeyModifiers, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
+        EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+        KeyboardEnhancementFlags, MouseEventKind, PopKeyboardEnhancementFlags,
         PushKeyboardEnhancementFlags,
     },
     execute,
@@ -58,11 +59,15 @@ pub async fn run() -> anyhow::Result<()> {
 ///
 /// Returns an error if terminal initialization fails or the event loop encounters an error.
 pub async fn run_with_target(target: SessionTarget) -> anyhow::Result<()> {
-    // Set up terminal
-    // Note: Mouse capture is disabled to allow native terminal copy/paste
+    // Mouse capture enabled: Shift+Drag for text selection
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableBracketedPaste,
+        EnableMouseCapture
+    )?;
 
     // Enable enhanced keyboard support for terminals like Kitty
     // DISAMBIGUATE_ESCAPE_CODES allows Shift+Enter detection without breaking shifted chars
@@ -150,6 +155,7 @@ pub async fn run_with_target(target: SessionTarget) -> anyhow::Result<()> {
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
+        DisableMouseCapture,
         DisableBracketedPaste,
         LeaveAlternateScreen
     )?;
@@ -292,6 +298,27 @@ async fn run_app(
                                     app.insert_char('\n');
                                 } else {
                                     app.insert_char(c);
+                                }
+                            }
+                        }
+                        Event::Mouse(mouse) => {
+                            if !app.has_dialog() {
+                                match mouse.kind {
+                                    MouseEventKind::ScrollUp => {
+                                        if app.view_state == ViewState::Session {
+                                            app.scroll_messages_up(3);
+                                        } else {
+                                            app.scroll_up(3);
+                                        }
+                                    }
+                                    MouseEventKind::ScrollDown => {
+                                        if app.view_state == ViewState::Session {
+                                            app.scroll_messages_down(3);
+                                        } else {
+                                            app.scroll_down(3, 1000);
+                                        }
+                                    }
+                                    _ => {}
                                 }
                             }
                         }
