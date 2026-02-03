@@ -15,24 +15,20 @@ pub async fn fetch_provider_models(
     let mut results: HashMap<String, Vec<ModelInfo>> = HashMap::new();
 
     for (provider_name, provider_config) in &config.providers {
-        let keychain_key = keychain::get_api_key(provider_name);
-        let has_keychain_key = keychain_key.is_some();
-        let has_env_key = provider_config
+        let env_key = provider_config
             .api_key_env
             .as_ref()
-            .is_some_and(|env| std::env::var(env).is_ok());
+            .and_then(|env| std::env::var(env).ok());
+        let has_env_key = env_key.is_some();
+        let keychain_key = if has_env_key { None } else { keychain::get_api_key(provider_name) };
+        let has_keychain_key = keychain_key.is_some();
         let is_local = provider_config.base_url.is_some() && provider_config.api_key_env.is_none();
 
-        if !has_keychain_key && !has_env_key && !is_local {
+        if !has_env_key && !has_keychain_key && !is_local {
             continue;
         }
 
-        let api_key = keychain_key.or_else(|| {
-            provider_config
-                .api_key_env
-                .as_ref()
-                .and_then(|env| std::env::var(env).ok())
-        });
+        let api_key = env_key.or(keychain_key);
 
         if let Some(base_url) = &provider_config.base_url {
             if let Ok(models) = fetch_openai_compatible_models(&client, base_url, api_key.as_deref(), provider_name).await {

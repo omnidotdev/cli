@@ -727,20 +727,22 @@ impl App {
         for model in &self.agent_config.models {
             let provider_name = &model.provider;
 
-            let has_keychain_key = keychain::get_api_key(provider_name).is_some();
+            // Check env var first (avoids Keychain prompt when env is set)
             let has_env_key = self
                 .agent_config
                 .providers
                 .get(provider_name)
                 .and_then(|p| p.api_key_env.as_ref())
                 .is_some_and(|env| std::env::var(env).is_ok());
+            // Only check keychain if no env var exists
+            let has_keychain_key = !has_env_key && keychain::get_api_key(provider_name).is_some();
             let is_local_provider = self
                 .agent_config
                 .providers
                 .get(provider_name)
                 .is_some_and(|p| p.base_url.is_some() && p.api_key_env.is_none());
 
-            if has_keychain_key || has_env_key || is_local_provider {
+            if has_env_key || has_keychain_key || is_local_provider {
                 provider_models
                     .entry(provider_name.clone())
                     .or_default()
@@ -750,15 +752,15 @@ impl App {
 
         if provider_models.is_empty() {
             let config_provider = &self.agent_config.provider;
-            let has_keychain = keychain::get_api_key(config_provider).is_some();
             let has_env = self
                 .agent_config
                 .providers
                 .get(config_provider)
                 .and_then(|p| p.api_key_env.as_ref())
                 .is_some_and(|env| std::env::var(env).is_ok());
+            let has_keychain = !has_env && keychain::get_api_key(config_provider).is_some();
 
-            if has_keychain || has_env {
+            if has_env || has_keychain {
                 provider_models.insert(
                     config_provider.clone(),
                     vec![crate::config::ModelInfo {
