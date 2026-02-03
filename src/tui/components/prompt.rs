@@ -1,11 +1,11 @@
 //! Reusable prompt component.
 
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph, Wrap},
+    Frame,
 };
 
 use super::command_palette::CENTERED_MAX_WIDTH;
@@ -46,7 +46,8 @@ pub fn render_prompt(
     cursor: usize,
     mode: PromptMode,
     status_left: Option<&str>,
-    status_right: Option<&str>,
+    model: &str,
+    provider: &str,
     placeholder: Option<&str>,
     agent_mode: AgentMode,
 ) -> ((u16, u16), Rect) {
@@ -61,7 +62,8 @@ pub fn render_prompt(
             input,
             cursor,
             status_left,
-            status_right,
+            model,
+            provider,
             agent_mode,
         ),
     }
@@ -249,7 +251,8 @@ fn render_full_width_prompt(
     input: &str,
     cursor: usize,
     status_left: Option<&str>,
-    status_right: Option<&str>,
+    model: &str,
+    provider: &str,
     agent_mode: AgentMode,
 ) -> ((u16, u16), Rect) {
     // Early return for tiny areas
@@ -305,43 +308,41 @@ fn render_full_width_prompt(
     }
     content.push(Line::from(""));
 
-    // Style based on agent mode
     let border_color = match agent_mode {
         AgentMode::Build => BRAND_TEAL,
         AgentMode::Plan => PLAN_PURPLE,
     };
+    let mode_str = match agent_mode {
+        AgentMode::Build => "build",
+        AgentMode::Plan => "plan",
+    };
+    let footer = Line::from(vec![
+        Span::raw(" "),
+        Span::styled(mode_str, Style::default().fg(border_color)),
+        Span::raw("  "),
+        Span::styled(model, Style::default().fg(Color::White)),
+        Span::raw("  "),
+        Span::styled(provider, Style::default().fg(DIMMED)),
+    ]);
+    content.push(footer);
 
     let block = Block::default()
-        .borders(Borders::LEFT)
-        .border_type(BorderType::Plain)
+        .borders(Borders::LEFT | Borders::BOTTOM)
+        .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(border_color))
         .style(Style::default().bg(INPUT_BG));
 
     let para = Paragraph::new(content).block(block);
     frame.render_widget(para, chunks[0]);
 
-    // Render status line
-    if status_left.is_some() || status_right.is_some() {
-        let left = status_left.unwrap_or("");
-        let right = status_right.unwrap_or("");
-
-        // Create spans for left and right status
-        let left_span = Span::styled(format!("  {left}"), Style::default().fg(DIMMED));
-        let right_span = Span::styled(right, Style::default().fg(DIMMED));
-
-        // Calculate padding
-        let left_width = left.chars().count() + 2;
-        let right_width = right.chars().count();
-        let padding_width = (chunks[1].width as usize)
-            .saturating_sub(left_width)
-            .saturating_sub(right_width);
-        let padding = " ".repeat(padding_width);
-
-        let status_line = Line::from(vec![left_span, Span::raw(padding), right_span]);
-
-        let status_para = Paragraph::new(status_line);
-        frame.render_widget(status_para, chunks[1]);
-    }
+    let hints_text = if let Some(activity) = status_left {
+        format!("  {activity}")
+    } else {
+        "  tab mode · / commands".to_string()
+    };
+    let hints_line = Line::from(vec![Span::styled(hints_text, Style::default().fg(DIMMED))]);
+    let hints_para = Paragraph::new(hints_line);
+    frame.render_widget(hints_para, chunks[1]);
 
     // Cursor position relative to visible area
     let visible_cursor_line = cursor_line.saturating_sub(scroll_offset);

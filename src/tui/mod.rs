@@ -207,6 +207,7 @@ async fn run_app(
                         app.placeholder,
                         app.agent_mode,
                         &app.model,
+                        &app.provider,
                     )
                 }
                 ViewState::Session => {
@@ -227,6 +228,7 @@ async fn run_app(
                         app.message_scroll,
                         status,
                         &app.model,
+                        &app.provider,
                         app.agent_mode,
                         app.selection.as_ref(),
                         &mut app.selected_text,
@@ -602,7 +604,8 @@ fn handle_key(
 
                         agent.set_model(model_arg);
                         app.model = model_arg.to_string();
-                        let provider_info = agent.provider_name();
+                        app.provider = agent.provider_name().to_string();
+                        let provider_info = &app.provider;
                         app.messages.push(DisplayMessage::tool(
                             "model",
                             format!("Switched to {model_arg} ({provider_info})"),
@@ -680,8 +683,11 @@ fn handle_key(
                     agent.switch_mode(new_mode, None);
                     app.sync_agent_mode();
                 } else {
-                    // No provider configured
-                    app.output = "Configure a provider to switch modes".to_string();
+                
+                    app.agent_mode = match app.agent_mode {
+                        crate::core::agent::AgentMode::Build => crate::core::agent::AgentMode::Plan,
+                        crate::core::agent::AgentMode::Plan => crate::core::agent::AgentMode::Build,
+                    };
                 }
             }
         }

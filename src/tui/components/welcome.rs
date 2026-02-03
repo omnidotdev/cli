@@ -5,15 +5,15 @@ use std::fs;
 use std::path::Path;
 
 use ratatui::{
-    Frame,
     buffer::Buffer,
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
     widgets::Paragraph,
+    Frame,
 };
 
-use super::prompt::{PromptMode, render_prompt};
+use super::prompt::{render_prompt, PromptMode};
 use crate::core::agent::AgentMode;
 use crate::tui::app::{LOGO_LINES, LOGO_SHADOW};
 
@@ -41,6 +41,7 @@ pub fn render_welcome(
     placeholder: &str,
     agent_mode: AgentMode,
     model: &str,
+    provider: &str,
 ) -> ((u16, u16), Rect) {
     // Early return for tiny terminals
     if area.width < 10 || area.height < 5 {
@@ -181,7 +182,8 @@ pub fn render_welcome(
         cursor,
         PromptMode::Centered,
         None,
-        None,
+        model,
+        provider,
         Some(placeholder),
         agent_mode,
     )

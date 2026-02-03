@@ -1,16 +1,16 @@
 //! Session screen component.
 
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
+    Frame,
 };
 
 use super::markdown::parse_markdown_line;
 use super::messages::{render_message_with_scroll, wrapped_line_height};
-use super::prompt::{PromptMode, render_prompt};
+use super::prompt::{render_prompt, PromptMode};
 use crate::core::agent::AgentMode;
 use crate::tui::app::Selection;
 use crate::tui::message::DisplayMessage;
@@ -35,10 +35,11 @@ pub fn render_session(
     scroll_offset: u16,
     activity_status: Option<&str>,
     model: &str,
+    provider: &str,
     agent_mode: AgentMode,
     selection: Option<&Selection>,
     selected_text: &mut String,
-    session_cost: f64,
+    _session_cost: f64,
 ) -> ((u16, u16), Rect) {
     // Calculate dynamic prompt height based on input lines
     // Height = top padding (1) + input lines + bottom padding (1) + status bar (1)
@@ -79,28 +80,15 @@ pub fn render_session(
         chunks[1].height,
     );
 
-    // Render prompt with status
-    let status_left = activity_status;
-    // Show mode, model, cost, and build version in status
-    let version = crate::build_info::short_version();
-    let cost_str = if session_cost > 0.0 {
-        format!(" · ${session_cost:.4}")
-    } else {
-        String::new()
-    };
-    let status_right_text = match agent_mode {
-        AgentMode::Build => format!("{model}{cost_str} | {version}"),
-        AgentMode::Plan => format!("plan mode · {model}{cost_str} | {version}"),
-    };
-
     render_prompt(
         frame,
         prompt_area,
         input,
         cursor,
         PromptMode::FullWidth,
-        status_left,
-        Some(&status_right_text),
+        activity_status,
+        model,
+        provider,
         None,
         agent_mode,
     )

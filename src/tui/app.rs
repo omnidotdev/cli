@@ -241,6 +241,9 @@ pub struct App {
 
     /// Current activity status (e.g., "Using Bash..." or "Thinking...")
     pub activity_status: Option<String>,
+
+    /// Current provider name.
+    pub provider: String,
 }
 
 impl Default for App {
@@ -336,6 +339,11 @@ impl App {
             (ViewState::Welcome, true)
         };
 
+        let provider = agent
+            .as_ref()
+            .map(|a| a.provider_name().to_string())
+            .unwrap_or_default();
+
         Self {
             input: String::new(),
             cursor: 0,
@@ -370,6 +378,7 @@ impl App {
             command_selection: 0,
             agent_config: config.agent,
             activity_status: None,
+            provider,
         }
     }
 
