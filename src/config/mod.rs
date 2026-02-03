@@ -598,7 +598,9 @@ impl AgentConfig {
             ProviderApiType::OpenAi => {
                 let api_key = Self::resolve_api_key(name, config);
                 let base_url = config.base_url.clone();
-                Ok(Box::new(OpenAiProvider::with_config(api_key, base_url)?))
+                Ok(Box::new(OpenAiProvider::with_config(
+                    api_key, base_url, name,
+                )?))
             }
             ProviderApiType::Google => {
                 let key = Self::resolve_api_key(name, config).ok_or_else(missing_key_error)?;
@@ -796,7 +798,11 @@ impl AgentConfig {
             ProviderApiType::OpenAi => {
                 let api_key = Self::resolve_api_key(provider_name, config);
                 let base_url = config.base_url.clone();
-                Ok(Box::new(OpenAiProvider::with_config(api_key, base_url)?))
+                Ok(Box::new(OpenAiProvider::with_config(
+                    api_key,
+                    base_url,
+                    provider_name,
+                )?))
             }
             ProviderApiType::Google => {
                 let key =

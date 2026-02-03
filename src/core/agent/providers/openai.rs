@@ -21,6 +21,7 @@ pub struct OpenAiProvider {
     http: reqwest::Client,
     api_key: Option<String>,
     base_url: String,
+    provider_name: String,
 }
 
 impl OpenAiProvider {
@@ -39,10 +40,11 @@ impl OpenAiProvider {
             http: reqwest::Client::new(),
             api_key: Some(api_key),
             base_url: DEFAULT_BASE_URL.to_string(),
+            provider_name: "openai".to_string(),
         })
     }
 
-    /// Create a provider with optional API key and base URL.
+    /// Create a provider with optional API key, base URL, and provider name.
     ///
     /// Use this for OpenAI-compatible providers that may not require an API key
     /// (e.g., local Ollama) or use a different endpoint.
@@ -50,11 +52,16 @@ impl OpenAiProvider {
     /// # Errors
     ///
     /// Returns error if configuration is invalid.
-    pub fn with_config(api_key: Option<String>, base_url: Option<String>) -> Result<Self> {
+    pub fn with_config(
+        api_key: Option<String>,
+        base_url: Option<String>,
+        provider_name: &str,
+    ) -> Result<Self> {
         Ok(Self {
             http: reqwest::Client::new(),
             api_key,
             base_url: base_url.unwrap_or_else(|| DEFAULT_BASE_URL.to_string()),
+            provider_name: provider_name.to_string(),
         })
     }
 }
@@ -328,7 +335,18 @@ fn convert_stop_reason(reason: &str) -> Option<StopReason> {
 #[async_trait]
 impl LlmProvider for OpenAiProvider {
     fn name(&self) -> &'static str {
-        "openai"
+        match self.provider_name.as_str() {
+            "openai" => "openai",
+            "openrouter" => "openrouter",
+            "together" => "together",
+            "ollama" => "ollama",
+            "lmstudio" => "lmstudio",
+            "groq" => "groq",
+            "mistral" => "mistral",
+            "fireworks" => "fireworks",
+            "deepseek" => "deepseek",
+            _ => "openai",
+        }
     }
 
     #[allow(clippy::too_many_lines)]
@@ -505,7 +523,8 @@ mod tests {
 
     #[test]
     fn with_config_uses_default_base_url() {
-        let provider = OpenAiProvider::with_config(Some("key".to_string()), None).unwrap();
+        let provider =
+            OpenAiProvider::with_config(Some("key".to_string()), None, "openai").unwrap();
         assert_eq!(provider.base_url, DEFAULT_BASE_URL);
     }
 
@@ -514,6 +533,7 @@ mod tests {
         let provider = OpenAiProvider::with_config(
             Some("key".to_string()),
             Some("http://localhost:8080/v1".to_string()),
+            "openai",
         )
         .unwrap();
         assert_eq!(provider.base_url, "http://localhost:8080/v1");
@@ -521,8 +541,15 @@ mod tests {
 
     #[test]
     fn with_config_no_api_key() {
-        let provider = OpenAiProvider::with_config(None, None).unwrap();
+        let provider = OpenAiProvider::with_config(None, None, "ollama").unwrap();
         assert!(provider.api_key.is_none());
+    }
+
+    #[test]
+    fn with_config_custom_provider_name() {
+        let provider =
+            OpenAiProvider::with_config(Some("key".to_string()), None, "openrouter").unwrap();
+        assert_eq!(provider.name(), "openrouter");
     }
 
     #[test]
