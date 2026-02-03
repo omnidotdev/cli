@@ -1,11 +1,11 @@
 //! Command palette dropdown for slash commands.
 
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
+    Frame,
 };
 
 use crate::config::ModelInfo;
@@ -36,6 +36,10 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "/clear",
         description: "Clear conversation history",
+    },
+    Command {
+        name: "/new",
+        description: "Start new conversation (alias for /clear)",
     },
     Command {
         name: "/sessions",

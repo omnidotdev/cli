@@ -564,8 +564,8 @@ fn handle_key(
                     return true;
                 }
 
-                // Handle clear command
-                if trimmed == "/clear" {
+                // Handle clear command (with /new alias)
+                if trimmed == "/clear" || trimmed == "/new" {
                     app.clear_input();
                     app.output.clear();
                     app.scroll_offset = 0;
