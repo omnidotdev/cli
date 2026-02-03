@@ -1,4 +1,5 @@
-use crate::config::{AgentConfig, Config, ProviderConfig};
+use crate::config::{AgentConfig, Config};
+use crate::core::keychain;
 use dialoguer::{theme::ColorfulTheme, Password, Select};
 
 use super::LoginArgs;
@@ -27,19 +28,17 @@ pub fn auth_login(args: LoginArgs) -> anyhow::Result<()> {
         None => prompt_api_key(&provider)?,
     };
 
-    let default_config = default_providers
+    keychain::store_api_key(&provider, &api_key)?;
+
+    let provider_config = default_providers
         .get(&provider)
         .cloned()
         .unwrap_or_default();
 
-    let provider_config = ProviderConfig {
-        api_key: Some(api_key),
-        ..default_config
-    };
-
     Config::save_provider(&provider, &provider_config)?;
 
-    println!("Successfully saved credentials for provider '{provider}'");
+    println!("Stored API key in system keychain");
+    println!("Successfully configured provider '{provider}'");
 
     Ok(())
 }
@@ -72,6 +71,7 @@ fn prompt_api_key(provider: &str) -> anyhow::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ProviderConfig;
 
     #[test]
     fn test_auth_login_validates_provider() {
@@ -120,29 +120,23 @@ mod tests {
     fn test_full_onboarding_flow() {
         use tempfile::TempDir;
 
-        // Create temp config dir
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("config.toml");
 
-        // Simulate auth login by directly calling save_provider_to_path
         let anthropic_config = ProviderConfig {
             api_type: crate::config::ProviderApiType::Anthropic,
             base_url: None,
             api_key_env: Some("ANTHROPIC_API_KEY".to_string()),
-            api_key: Some("sk-test-anthropic-key".to_string()),
         };
 
-        // This should save the provider config
         let result = Config::save_provider_to_path("anthropic", &anthropic_config, &config_path);
         assert!(result.is_ok(), "save_provider_to_path should succeed");
 
-        // Verify config file was created
         assert!(
             config_path.exists(),
             "Config file should exist after auth login"
         );
 
-        // Verify provider section exists in config
         let contents = std::fs::read_to_string(&config_path).unwrap();
         let loaded: toml::Value = toml::from_str(&contents).unwrap();
 
@@ -157,7 +151,6 @@ mod tests {
             "Should contain anthropic provider"
         );
 
-        // Verify we can load config and it has the provider
         let config_str = std::fs::read_to_string(&config_path).unwrap();
         let config: Config = toml::from_str(&config_str).unwrap();
         assert!(
@@ -170,29 +163,21 @@ mod tests {
     fn test_ollama_no_key_required() {
         let default_config = AgentConfig::default();
 
-        // Verify Ollama is in default providers
         assert!(
             default_config.providers.contains_key("ollama"),
             "Ollama should be in default providers"
         );
 
-        // Get Ollama config
         let ollama_config = default_config
             .providers
             .get("ollama")
             .expect("Ollama provider should exist");
 
-        // Verify Ollama doesn't require API key (api_key_env should be None)
         assert!(
             ollama_config.api_key_env.is_none(),
             "Ollama should not require api_key_env"
         );
-        assert!(
-            ollama_config.api_key.is_none(),
-            "Ollama should not have api_key set"
-        );
 
-        // Verify it has a base_url (local endpoint)
         assert!(
             ollama_config.base_url.is_some(),
             "Ollama should have base_url configured"
@@ -210,27 +195,22 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("config.toml");
 
-        // Save anthropic provider first
         let anthropic_config = ProviderConfig {
             api_type: crate::config::ProviderApiType::Anthropic,
             base_url: None,
             api_key_env: Some("ANTHROPIC_API_KEY".to_string()),
-            api_key: Some("sk-anthropic-test".to_string()),
         };
 
         Config::save_provider_to_path("anthropic", &anthropic_config, &config_path).unwrap();
 
-        // Now add openai provider
         let openai_config = ProviderConfig {
             api_type: crate::config::ProviderApiType::OpenAi,
-            base_url: None,
+            base_url: Some("https://api.openai.com/v1".to_string()),
             api_key_env: Some("OPENAI_API_KEY".to_string()),
-            api_key: Some("sk-openai-test".to_string()),
         };
 
         Config::save_provider_to_path("openai", &openai_config, &config_path).unwrap();
 
-        // Verify both providers exist in config
         let contents = std::fs::read_to_string(&config_path).unwrap();
         let loaded: toml::Value = toml::from_str(&contents).unwrap();
 
@@ -249,15 +229,14 @@ mod tests {
             "Should contain openai provider"
         );
 
-        // Verify original settings are preserved
-        let anthropic_entry = providers
-            .get("anthropic")
+        let openai_entry = providers
+            .get("openai")
             .and_then(|a| a.as_table())
-            .expect("anthropic should be a table");
+            .expect("openai should be a table");
 
         assert_eq!(
-            anthropic_entry.get("api_key").and_then(|k| k.as_str()),
-            Some("sk-anthropic-test")
+            openai_entry.get("base_url").and_then(|k| k.as_str()),
+            Some("https://api.openai.com/v1")
         );
     }
 

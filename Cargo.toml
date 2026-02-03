@@ -97,6 +97,9 @@ ulid = "1"
 which = "7"
 dialoguer = "0.12.0"
 
+# Secure credential storage
+keyring = "3"
+
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3"

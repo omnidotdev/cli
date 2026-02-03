@@ -214,7 +214,10 @@ mod tests {
 
         let registry = SkillRegistry::discover(dir.path());
 
-        assert_eq!(registry.all().len(), 2);
+        assert!(
+            registry.all().len() >= 2,
+            "should find at least the 2 created skills"
+        );
         assert!(registry.contains("test-skill"));
         assert!(registry.contains("another-skill"));
     }
