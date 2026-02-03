@@ -164,29 +164,14 @@ impl ModelSelectionDialog {
             return;
         }
 
-        // Account for provider headers in the display
-        let filtered = self.get_filtered_models();
-        if filtered.is_empty() {
+        let items = self.get_selectable_items();
+        if items.is_empty() {
             self.scroll_offset = 0;
             return;
         }
 
-        // Calculate the visual line of the selected item
-        let mut visual_line = 0;
-        let mut current_provider: Option<&str> = None;
-
-        for (idx, (provider, _)) in filtered.iter().enumerate() {
-            if current_provider != Some(provider.as_str()) {
-                current_provider = Some(provider.as_str());
-                if idx <= self.selected_idx {
-                    visual_line += 1; // Provider header line
-                }
-            }
-            if idx == self.selected_idx {
-                break;
-            }
-            visual_line += 1; // Model line
-        }
+        // Each item is one visual line now
+        let visual_line = self.selected_idx;
 
         // Ensure selected item is visible
         if visual_line < self.scroll_offset {
