@@ -755,17 +755,16 @@ impl AgentConfig {
     }
 
     fn resolve_api_key(provider_name: &str, config: &ProviderConfig) -> Option<String> {
-        if let Some(key) = keychain::get_api_key(provider_name) {
-            return Some(key);
-        }
-
+        // Check environment variable first (avoids Keychain prompts during development,
+        // since each `cargo build` produces a new binary that macOS sees as untrusted)
         if let Some(env_name) = &config.api_key_env {
             if let Ok(key) = std::env::var(env_name) {
                 return Some(key);
             }
         }
 
-        None
+        // Fall back to Keychain (for users who ran `omni auth login`)
+        keychain::get_api_key(provider_name)
     }
 
     /// Create the configured LLM provider.
