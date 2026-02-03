@@ -131,6 +131,52 @@ pub fn auth_logout(args: LogoutArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub fn auth_status() -> anyhow::Result<()> {
+    let default_config = AgentConfig::default();
+    let mut providers: Vec<(&String, &crate::config::ProviderConfig)> =
+        default_config.providers.iter().collect();
+    providers.sort_by_key(|(name, _)| *name);
+
+    println!(
+        "{:<14} {:<10} {:<20} {}",
+        "Provider", "Keychain", "Env Var", "Status"
+    );
+    println!("{}", "─".repeat(58));
+
+    for (name, config) in providers {
+        let has_keychain = keychain::get_api_key(name).is_some();
+        let env_var_name = config.api_key_env.as_deref().unwrap_or("-");
+        let has_env = config
+            .api_key_env
+            .as_ref()
+            .map(|e| std::env::var(e).is_ok())
+            .unwrap_or(false);
+        let is_local = config.base_url.is_some() && config.api_key_env.is_none();
+
+        let keychain_col = if has_keychain { "✓" } else { "-" };
+        let env_col = if config.api_key_env.is_some() {
+            env_var_name
+        } else {
+            "-"
+        };
+        let status = if has_keychain {
+            "keychain"
+        } else if has_env {
+            "env var"
+        } else if is_local {
+            "local"
+        } else {
+            "not configured"
+        };
+
+        println!(
+            "{:<14} {:<10} {:<20} {}",
+            name, keychain_col, env_col, status
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

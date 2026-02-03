@@ -109,6 +109,8 @@ pub enum AuthCommands {
     Login(LoginArgs),
     /// Remove credentials for a provider.
     Logout(LogoutArgs),
+    /// Show credential sources for all providers.
+    Status,
 }
 
 #[derive(Args)]
