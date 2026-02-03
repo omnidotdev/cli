@@ -75,36 +75,33 @@ pub fn auth_logout(args: LogoutArgs) -> anyhow::Result<()> {
     let default_providers = &default_config.providers;
     let provider_names: Vec<&str> = default_providers.keys().map(String::as_str).collect();
 
-    let provider = match args.provider {
-        Some(p) => {
-            if !default_providers.contains_key(&p) {
-                anyhow::bail!(
-                    "Unknown provider '{}'. Available providers: {}",
-                    p,
-                    provider_names.join(", ")
-                );
-            }
-            p
+    let provider = if let Some(p) = args.provider {
+        if !default_providers.contains_key(&p) {
+            anyhow::bail!(
+                "Unknown provider '{}'. Available providers: {}",
+                p,
+                provider_names.join(", ")
+            );
         }
-        None => {
-            let authenticated: Vec<&str> = provider_names
-                .iter()
-                .filter(|p| keychain::get_api_key(p).is_some())
-                .copied()
-                .collect();
+        p
+    } else {
+        let authenticated: Vec<&str> = provider_names
+            .iter()
+            .filter(|p| keychain::get_api_key(p).is_some())
+            .copied()
+            .collect();
 
-            if authenticated.is_empty() {
-                anyhow::bail!("No providers have stored credentials");
-            }
-
-            let selection = Select::with_theme(&ColorfulTheme::default())
-                .with_prompt("Select provider to logout")
-                .items(&authenticated)
-                .default(0)
-                .interact()?;
-
-            authenticated[selection].to_string()
+        if authenticated.is_empty() {
+            anyhow::bail!("No providers have stored credentials");
         }
+
+        let selection = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Select provider to logout")
+            .items(&authenticated)
+            .default(0)
+            .interact()?;
+
+        authenticated[selection].to_string()
     };
 
     let confirmed = Confirm::with_theme(&ColorfulTheme::default())
@@ -138,8 +135,8 @@ pub fn auth_status() -> anyhow::Result<()> {
     providers.sort_by_key(|(name, _)| *name);
 
     println!(
-        "{:<14} {:<10} {:<20} {}",
-        "Provider", "Keychain", "Env Var", "Active"
+        "{:<14} {:<10} {:<20} Active",
+        "Provider", "Keychain", "Env Var"
     );
     println!("{}", "─".repeat(58));
 
@@ -149,8 +146,7 @@ pub fn auth_status() -> anyhow::Result<()> {
         let has_env = config
             .api_key_env
             .as_ref()
-            .map(|e| std::env::var(e).is_ok())
-            .unwrap_or(false);
+            .is_some_and(|e| std::env::var(e).is_ok());
         let is_local = config.base_url.is_some() && config.api_key_env.is_none();
 
         let keychain_col = if has_keychain { "✓" } else { "-" };
@@ -173,10 +169,7 @@ pub fn auth_status() -> anyhow::Result<()> {
             "not configured"
         };
 
-        println!(
-            "{:<14} {:<10} {:<20} {}",
-            name, keychain_col, env_col, status
-        );
+        println!("{name:<14} {keychain_col:<10} {env_col:<20} {status}");
     }
     Ok(())
 }

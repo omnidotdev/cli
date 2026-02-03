@@ -15,7 +15,7 @@ use crate::core::keychain;
 pub use persona::{list_personas, load_persona, personas_dir, Persona};
 
 /// Model information with provider association.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelInfo {
     /// Model identifier (e.g., "claude-sonnet-4-20250514", "gpt-4o")
     pub id: String,

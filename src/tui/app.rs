@@ -8,6 +8,9 @@ use super::components::{ModelSelectionDialog, SessionListDialog};
 use super::message::{format_tool_invocation, DisplayMessage};
 use super::state::ViewState;
 
+/// Type alias for model fetch results receiver.
+type ModelsFetchRx = mpsc::UnboundedReceiver<Vec<(String, Vec<crate::config::ModelInfo>)>>;
+
 /// ASCII art logo lines (main text).
 pub const LOGO_LINES: &[&str] = &[
     "  █▀▀█ █▀▄▀█ █▀▀▄ ▀█▀",
@@ -250,7 +253,7 @@ pub struct App {
     pub cached_provider_models: Option<Vec<(String, Vec<crate::config::ModelInfo>)>>,
 
     /// Receiver for model fetch results.
-    pub models_rx: Option<mpsc::UnboundedReceiver<Vec<(String, Vec<crate::config::ModelInfo>)>>>,
+    pub models_rx: Option<ModelsFetchRx>,
 }
 
 impl Default for App {

@@ -152,18 +152,13 @@ impl Storage {
         }
 
         let mut results = Vec::new();
-        self.list_recursive(&dir, prefix, &mut results)?;
+        Self::list_recursive(&dir, prefix, &mut results)?;
 
         results.sort();
         Ok(results)
     }
 
-    fn list_recursive(
-        &self,
-        dir: &Path,
-        prefix: &[&str],
-        results: &mut Vec<Vec<String>>,
-    ) -> Result<()> {
+    fn list_recursive(dir: &Path, prefix: &[&str], results: &mut Vec<Vec<String>>) -> Result<()> {
         for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
@@ -175,7 +170,7 @@ impl Storage {
                 // Use leaked string to maintain lifetime (acceptable for path traversal)
                 let leaked: &'static str = Box::leak(name.clone().into_boxed_str());
                 new_prefix.push(leaked);
-                self.list_recursive(&path, &new_prefix, results)?;
+                Self::list_recursive(&path, &new_prefix, results)?;
             } else if path.extension().is_some_and(|e| e == "json") {
                 // Add file key (without .json extension)
                 let stem = path.file_stem().unwrap().to_string_lossy().to_string();

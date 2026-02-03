@@ -19,7 +19,7 @@ const INPUT_BG: Color = Color::Rgb(22, 24, 28);
 const DIALOG_BG: Color = Color::Rgb(30, 32, 38);
 
 /// Represents a navigable item in the model list
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectableItem {
     ProviderHeader(String),
     Model(String, ModelInfo),

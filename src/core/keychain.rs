@@ -10,6 +10,11 @@ fn get_cache() -> &'static RwLock<HashMap<String, Option<String>>> {
     CACHE.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
+/// Store an API key in the system keychain.
+///
+/// # Panics
+///
+/// Panics if the keychain cache lock is poisoned.
 #[cfg(not(test))]
 pub fn store_api_key(provider: &str, api_key: &str) -> anyhow::Result<()> {
     use keyring::Entry;
@@ -22,6 +27,12 @@ pub fn store_api_key(provider: &str, api_key: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Retrieve an API key from the system keychain.
+///
+/// # Panics
+///
+/// Panics if the keychain cache lock is poisoned.
+#[must_use]
 #[cfg(not(test))]
 pub fn get_api_key(provider: &str) -> Option<String> {
     // Check cache first
@@ -45,6 +56,11 @@ pub fn get_api_key(provider: &str) -> Option<String> {
     result
 }
 
+/// Delete an API key from the system keychain.
+///
+/// # Panics
+///
+/// Panics if the keychain cache lock is poisoned.
 #[cfg(not(test))]
 pub fn delete_api_key(provider: &str) -> anyhow::Result<()> {
     use keyring::Entry;

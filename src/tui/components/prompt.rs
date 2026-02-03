@@ -27,13 +27,13 @@ fn format_model_name(model: &str) -> String {
         .replace("llama-", "Llama ")
         .replace("mistral-", "Mistral ")
         .replace("deepseek-", "DeepSeek ")
-        .replace("-", " ");
+        .replace('-', " ");
 
     name.split_whitespace()
         .map(|word| {
-            if word.chars().all(|c| c.is_ascii_digit() || c == '.') {
-                word.to_string()
-            } else if word.chars().all(|c| c.is_uppercase() || c.is_ascii_digit()) {
+            if word.chars().all(|c| c.is_ascii_digit() || c == '.')
+                || word.chars().all(|c| c.is_uppercase() || c.is_ascii_digit())
+            {
                 word.to_string()
             } else {
                 let mut chars = word.chars();
@@ -177,7 +177,7 @@ struct CursorInfo {
     visible_line: usize,
 }
 
-#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_possible_truncation, clippy::too_many_arguments)]
 fn build_prompt_content(
     input: &str,
     cursor: usize,
