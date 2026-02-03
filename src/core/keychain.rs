@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{OnceLock, RwLock};
 
+#[cfg(not(test))]
 const SERVICE_NAME: &str = "omni-cli";
 
 static CACHE: OnceLock<RwLock<HashMap<String, Option<String>>>> = OnceLock::new();

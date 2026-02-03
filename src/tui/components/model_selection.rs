@@ -180,6 +180,47 @@ impl ModelSelectionDialog {
             self.scroll_offset = visual_line.saturating_sub(viewport_height) + 1;
         }
     }
+
+    /// Toggle collapse state for a provider
+    pub fn toggle_provider_collapse(&mut self, provider: &str) {
+        if self.collapsed_providers.contains(provider) {
+            self.collapsed_providers.remove(provider);
+        } else if self.get_expanded_provider_count() > 1 {
+            self.collapsed_providers.insert(provider.to_string());
+            // Adjust selection if we collapsed models under cursor
+            self.clamp_selection();
+        }
+    }
+
+    /// Check if a provider is collapsed
+    pub fn is_provider_collapsed(&self, provider: &str) -> bool {
+        self.collapsed_providers.contains(provider)
+    }
+
+    /// Count how many providers are currently expanded
+    fn get_expanded_provider_count(&self) -> usize {
+        let all_providers: std::collections::HashSet<_> = self
+            .provider_models
+            .iter()
+            .map(|(p, _)| p.as_str())
+            .collect();
+        all_providers.len() - self.collapsed_providers.len()
+    }
+
+    /// Clamp selection index to valid range
+    fn clamp_selection(&mut self) {
+        let max = self.get_selectable_items().len().saturating_sub(1);
+        if self.selected_idx > max {
+            self.selected_idx = max;
+        }
+    }
+
+    /// Get the provider of the currently selected item
+    pub fn get_selected_provider(&self) -> Option<String> {
+        self.get_selectable_items()
+            .get(self.selected_idx)
+            .map(|item| item.provider().to_string())
+    }
 }
 
 pub fn render_model_selection_dialog(
