@@ -1,6 +1,8 @@
 //! CLI command parsing and execution.
 
-use clap::{Parser, Subcommand};
+pub mod auth;
+
+use clap::{Args, Parser, Subcommand};
 
 /// Omni CLI - Agentic CLI for the Omni ecosystem.
 #[derive(Parser)]
@@ -81,6 +83,12 @@ pub enum Commands {
         #[command(subcommand)]
         command: SessionCommands,
     },
+
+    /// Manage authentication and provider credentials.
+    Auth {
+        #[command(subcommand)]
+        command: AuthCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -93,6 +101,26 @@ pub enum ConfigCommands {
 
     /// Generate a new API token for remote access.
     GenerateToken,
+}
+
+#[derive(Subcommand)]
+pub enum AuthCommands {
+    /// Configure credentials for a provider.
+    Login(LoginArgs),
+}
+
+#[derive(Args)]
+pub struct LoginArgs {
+    /// Provider name (e.g., anthropic, openai, groq).
+    pub provider: Option<String>,
+
+    /// API key for the provider.
+    #[arg(long)]
+    pub api_key: Option<String>,
+
+    /// Skip connection verification test.
+    #[arg(long)]
+    pub skip_test: bool,
 }
 
 #[derive(Subcommand)]
@@ -344,6 +372,59 @@ mod tests {
                 _ => panic!("expected Export command"),
             },
             _ => panic!("expected Session command"),
+        }
+    }
+
+    #[test]
+    fn test_auth_login_parses_flags() {
+        let cli = Cli::parse_from([
+            "omni",
+            "auth",
+            "login",
+            "anthropic",
+            "--api-key",
+            "sk-test-key",
+            "--skip-test",
+        ]);
+        match cli.command {
+            Some(Commands::Auth { command }) => match command {
+                AuthCommands::Login(args) => {
+                    assert_eq!(args.provider, Some("anthropic".to_string()));
+                    assert_eq!(args.api_key, Some("sk-test-key".to_string()));
+                    assert!(args.skip_test);
+                }
+            },
+            _ => panic!("expected Auth command"),
+        }
+    }
+
+    #[test]
+    fn test_auth_login_parses_interactive() {
+        let cli = Cli::parse_from(["omni", "auth", "login"]);
+        match cli.command {
+            Some(Commands::Auth { command }) => match command {
+                AuthCommands::Login(args) => {
+                    assert!(args.provider.is_none());
+                    assert!(args.api_key.is_none());
+                    assert!(!args.skip_test);
+                }
+            },
+            _ => panic!("expected Auth command"),
+        }
+    }
+
+    #[test]
+    fn test_auth_login_parses_provider_only() {
+        let cli = Cli::parse_from(["omni", "auth", "login", "openai"]);
+        match cli.command {
+            Some(Commands::Auth { command }) => match command {
+                AuthCommands::Login(args) => {
+                    assert_eq!(args.provider, Some("openai".to_string()));
+                    assert!(args.api_key.is_none());
+                    assert!(!args.skip_test);
+                }
+            },
+            _ => panic!("expected Auth command"),
         }
     }
 }
