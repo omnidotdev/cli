@@ -7,6 +7,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
 };
+use std::collections::HashSet;
 
 use crate::config::ModelInfo;
 use crate::core::agent::AgentMode;
@@ -16,6 +17,26 @@ const PLAN_PURPLE: Color = Color::Rgb(160, 100, 200);
 const DIMMED: Color = Color::Rgb(100, 100, 110);
 const INPUT_BG: Color = Color::Rgb(22, 24, 28);
 const DIALOG_BG: Color = Color::Rgb(30, 32, 38);
+
+/// Represents a navigable item in the model list
+#[derive(Debug, Clone, PartialEq)]
+pub enum SelectableItem {
+    ProviderHeader(String),
+    Model(String, ModelInfo),
+}
+
+impl SelectableItem {
+    pub fn provider(&self) -> &str {
+        match self {
+            SelectableItem::ProviderHeader(p) => p,
+            SelectableItem::Model(p, _) => p,
+        }
+    }
+
+    pub fn is_header(&self) -> bool {
+        matches!(self, SelectableItem::ProviderHeader(_))
+    }
+}
 
 /// Dialog state for model selection.
 #[derive(Debug)]
@@ -28,6 +49,8 @@ pub struct ModelSelectionDialog {
     selected_idx: usize,
     /// Scroll offset for viewport.
     scroll_offset: usize,
+    /// Set of collapsed provider names.
+    collapsed_providers: HashSet<String>,
 }
 
 impl ModelSelectionDialog {
@@ -38,6 +61,7 @@ impl ModelSelectionDialog {
             provider_models,
             selected_idx: 0,
             scroll_offset: 0,
+            collapsed_providers: HashSet::new(),
         }
     }
 
@@ -46,6 +70,7 @@ impl ModelSelectionDialog {
         self.filter = filter.to_lowercase();
         self.selected_idx = 0;
         self.scroll_offset = 0;
+        self.collapsed_providers.clear();
     }
 
     /// Get the flat list of filtered models with their provider names.
@@ -66,19 +91,60 @@ impl ModelSelectionDialog {
         result
     }
 
+    /// Get flat list of all navigable items (headers + models)
+    fn get_selectable_items(&self) -> Vec<SelectableItem> {
+        let mut result = Vec::new();
+
+        for (provider_name, models) in &self.provider_models {
+            let is_collapsed = self.collapsed_providers.contains(provider_name);
+            let mut matching_models = Vec::new();
+
+            if !is_collapsed || !self.filter.is_empty() {
+                for model in models {
+                    let matches_filter = self.filter.is_empty()
+                        || model.id.to_lowercase().contains(&self.filter)
+                        || provider_name.to_lowercase().contains(&self.filter);
+
+                    if matches_filter {
+                        matching_models.push(model.clone());
+                    }
+                }
+            }
+
+            if !matching_models.is_empty() {
+                result.push(SelectableItem::ProviderHeader(provider_name.clone()));
+                for model in matching_models {
+                    result.push(SelectableItem::Model(provider_name.clone(), model));
+                }
+            }
+        }
+
+        result
+    }
+
+    /// Get the currently selected item
+    pub fn get_selected_item(&self) -> Option<SelectableItem> {
+        let items = self.get_selectable_items();
+        items.get(self.selected_idx).cloned()
+    }
+
     /// Move selection to the next item.
     pub fn select_next(&mut self) {
-        let filtered = self.get_filtered_models();
-        if filtered.is_empty() {
+        let items = self.get_selectable_items();
+        if items.is_empty() {
             return;
         }
-        if self.selected_idx < filtered.len().saturating_sub(1) {
+        if self.selected_idx < items.len().saturating_sub(1) {
             self.selected_idx += 1;
         }
     }
 
     /// Move selection to the previous item.
     pub fn select_previous(&mut self) {
+        let items = self.get_selectable_items();
+        if items.is_empty() {
+            return;
+        }
         if self.selected_idx > 0 {
             self.selected_idx -= 1;
         }
@@ -86,8 +152,10 @@ impl ModelSelectionDialog {
 
     /// Get the currently selected model, if any.
     pub fn get_selected_model(&self) -> Option<ModelInfo> {
-        let filtered = self.get_filtered_models();
-        filtered.get(self.selected_idx).map(|(_, m)| m.clone())
+        match self.get_selected_item()? {
+            SelectableItem::ProviderHeader(_) => None,
+            SelectableItem::Model(_, model) => Some(model),
+        }
     }
 
     /// Adjust scroll offset to keep selection visible within viewport.
@@ -351,12 +419,19 @@ mod tests {
         let mut dialog = create_test_dialog();
 
         let model = dialog.get_selected_model();
-        assert!(model.is_some());
+        assert!(model.is_none());
+
+        dialog.select_next();
+        let model = dialog.get_selected_model();
         assert_eq!(model.unwrap().id, "claude-sonnet-4");
 
         dialog.select_next();
         let model = dialog.get_selected_model();
         assert_eq!(model.unwrap().id, "claude-opus-4");
+
+        dialog.select_next();
+        let model = dialog.get_selected_model();
+        assert!(model.is_none());
 
         dialog.select_next();
         let model = dialog.get_selected_model();
@@ -374,6 +449,10 @@ mod tests {
         dialog.set_filter("gpt".to_string());
         assert_eq!(dialog.selected_idx, 0);
 
+        let model = dialog.get_selected_model();
+        assert!(model.is_none());
+
+        dialog.select_next();
         let model = dialog.get_selected_model();
         assert_eq!(model.unwrap().id, "gpt-4o");
     }
@@ -399,18 +478,17 @@ mod tests {
     fn test_navigation_bounds() {
         let mut dialog = create_test_dialog();
 
-        // Can't go below 0
         dialog.select_previous();
         assert_eq!(dialog.selected_idx, 0);
 
-        // Go to end
         dialog.select_next();
         dialog.select_next();
         dialog.select_next();
-        assert_eq!(dialog.selected_idx, 3);
+        dialog.select_next();
+        dialog.select_next();
+        assert_eq!(dialog.selected_idx, 5);
 
-        // Can't go past end
         dialog.select_next();
-        assert_eq!(dialog.selected_idx, 3);
+        assert_eq!(dialog.selected_idx, 5);
     }
 }
