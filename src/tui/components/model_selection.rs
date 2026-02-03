@@ -524,4 +524,71 @@ mod tests {
         dialog.select_next();
         assert_eq!(dialog.selected_idx, 5);
     }
+
+    #[test]
+    fn test_selectable_items_includes_headers() {
+        let dialog = create_test_dialog();
+        let items = dialog.get_selectable_items();
+
+        assert_eq!(items.len(), 6);
+        assert!(matches!(&items[0], SelectableItem::ProviderHeader(p) if p == "anthropic"));
+        assert!(matches!(&items[1], SelectableItem::Model(_, m) if m.id == "claude-sonnet-4"));
+    }
+
+    #[test]
+    fn test_get_selected_model_returns_none_for_header() {
+        let dialog = create_test_dialog();
+        assert!(dialog.get_selected_model().is_none());
+    }
+
+    #[test]
+    fn test_navigation_moves_through_headers_and_models() {
+        let mut dialog = create_test_dialog();
+
+        assert_eq!(dialog.selected_idx, 0);
+        assert!(dialog.get_selected_model().is_none());
+
+        dialog.select_next();
+        assert!(dialog.get_selected_model().is_some());
+        assert_eq!(dialog.get_selected_model().unwrap().id, "claude-sonnet-4");
+    }
+
+    #[test]
+    fn test_toggle_collapse() {
+        let mut dialog = create_test_dialog();
+
+        assert!(!dialog.is_provider_collapsed("anthropic"));
+
+        dialog.toggle_provider_collapse("anthropic");
+        assert!(dialog.is_provider_collapsed("anthropic"));
+
+        let items = dialog.get_selectable_items();
+        assert_eq!(items.len(), 3);
+        assert!(matches!(&items[0], SelectableItem::ProviderHeader(p) if p == "openai"));
+    }
+
+    #[test]
+    fn test_cannot_collapse_last_provider() {
+        let mut dialog = create_test_dialog();
+
+        dialog.toggle_provider_collapse("anthropic");
+        assert!(dialog.is_provider_collapsed("anthropic"));
+
+        dialog.toggle_provider_collapse("openai");
+        assert!(!dialog.is_provider_collapsed("openai"));
+    }
+
+    #[test]
+    fn test_scroll_shows_selected_item() {
+        let mut dialog = create_test_dialog();
+
+        for _ in 0..5 {
+            dialog.select_next();
+        }
+
+        dialog.adjust_scroll(2);
+
+        assert!(dialog.scroll_offset <= dialog.selected_idx);
+        assert!(dialog.selected_idx < dialog.scroll_offset + 2);
+    }
 }
