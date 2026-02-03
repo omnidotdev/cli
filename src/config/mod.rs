@@ -754,7 +754,7 @@ impl AgentConfig {
         providers
     }
 
-    fn resolve_api_key(provider_name: &str, config: &ProviderConfig) -> Option<String> {
+    pub(crate) fn resolve_api_key(provider_name: &str, config: &ProviderConfig) -> Option<String> {
         // Check environment variable first (avoids Keychain prompts during development,
         // since each `cargo build` produces a new binary that macOS sees as untrusted)
         if let Some(env_name) = &config.api_key_env {
@@ -1050,5 +1050,27 @@ api_key_env = "ANTHROPIC_API_KEY"
             providers.contains_key("example"),
             "Should add example provider"
         );
+    }
+
+    #[test]
+    fn test_env_var_takes_precedence_in_resolve_api_key() {
+        // This test verifies the resolution order is env -> keychain
+        // The keychain is mocked in tests (returns None), so we only test env var path
+        // We use HOME which is guaranteed to be set in test environments
+        let config = ProviderConfig {
+            api_type: ProviderApiType::Anthropic,
+            base_url: None,
+            api_key_env: Some("HOME".to_string()),
+        };
+
+        // resolve_api_key should return the HOME env var value
+        let result = AgentConfig::resolve_api_key("test-provider", &config);
+
+        // HOME should be set in test environment, so result should be Some
+        assert!(result.is_some(), "HOME env var should be set");
+
+        // Verify it matches the actual HOME value
+        let home_value = std::env::var("HOME").ok();
+        assert_eq!(result, home_value);
     }
 }
