@@ -15,7 +15,8 @@ pub async fn fetch_provider_models(
     let mut results: HashMap<String, Vec<ModelInfo>> = HashMap::new();
 
     for (provider_name, provider_config) in &config.providers {
-        let has_keychain_key = keychain::get_api_key(provider_name).is_some();
+        let keychain_key = keychain::get_api_key(provider_name);
+        let has_keychain_key = keychain_key.is_some();
         let has_env_key = provider_config
             .api_key_env
             .as_ref()
@@ -26,7 +27,7 @@ pub async fn fetch_provider_models(
             continue;
         }
 
-        let api_key = keychain::get_api_key(provider_name).or_else(|| {
+        let api_key = keychain_key.or_else(|| {
             provider_config
                 .api_key_env
                 .as_ref()
