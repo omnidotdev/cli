@@ -11,7 +11,7 @@ use crate::core::agent::{
     AgentMode, AnthropicProvider, LlmProvider, OpenAiProvider, UnifiedProvider,
 };
 
-pub use persona::{Persona, list_personas, load_persona, personas_dir};
+pub use persona::{list_personas, load_persona, personas_dir, Persona};
 
 /// Model information with provider association.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -226,6 +226,16 @@ impl Config {
     ///
     /// Returns an error if the config directory cannot be determined.
     pub fn config_dir() -> anyhow::Result<PathBuf> {
+        if let Ok(xdg_config_home) = std::env::var("XDG_CONFIG_HOME") {
+            return Ok(PathBuf::from(xdg_config_home).join("omni").join("cli"));
+        }
+
+        if cfg!(target_os = "macos") {
+            if let Ok(home) = std::env::var("HOME") {
+                return Ok(PathBuf::from(home).join(".config").join("omni").join("cli"));
+            }
+        }
+
         let base = directories::BaseDirs::new()
             .ok_or_else(|| anyhow::anyhow!("could not determine config directory"))?;
 
