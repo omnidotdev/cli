@@ -28,13 +28,13 @@ pub enum SelectableItem {
 impl SelectableItem {
     pub fn provider(&self) -> &str {
         match self {
-            SelectableItem::ProviderHeader(p) => p,
-            SelectableItem::Model(p, _) => p,
+            Self::ProviderHeader(p) => p,
+            Self::Model(p, _) => p,
         }
     }
 
-    pub fn is_header(&self) -> bool {
-        matches!(self, SelectableItem::ProviderHeader(_))
+    pub const fn is_header(&self) -> bool {
+        matches!(self, Self::ProviderHeader(_))
     }
 }
 
@@ -363,8 +363,9 @@ pub fn render_model_selection_dialog(
             dialog.scroll_offset + 1,
             total_lines.saturating_sub(viewport_height) + 1
         );
-        let indicator_x = list_area.x + list_area.width - scroll_indicator.len() as u16 - 1;
-        let indicator_area = Rect::new(indicator_x, list_area.y, scroll_indicator.len() as u16, 1);
+        let indicator_len = u16::try_from(scroll_indicator.len()).unwrap_or(10);
+        let indicator_x = list_area.x + list_area.width - indicator_len - 1;
+        let indicator_area = Rect::new(indicator_x, list_area.y, indicator_len, 1);
         let indicator = Paragraph::new(scroll_indicator).style(Style::default().fg(DIMMED));
         frame.render_widget(indicator, indicator_area);
     }
