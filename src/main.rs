@@ -157,6 +157,9 @@ fn handle_auth_command(command: AuthCommands) -> anyhow::Result<()> {
         AuthCommands::Login(args) => {
             omni_cli::cli::auth::auth_login(args)?;
         }
+        AuthCommands::Logout(args) => {
+            omni_cli::cli::auth::auth_logout(args)?;
+        }
     }
     Ok(())
 }

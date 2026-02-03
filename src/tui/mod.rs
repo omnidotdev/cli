@@ -38,8 +38,8 @@ pub use app::App;
 use app::{ActiveAskUserDialog, ActiveDialog, ActivePermissionDialog, ChatMessage};
 use components::{
     DropdownMode, MESSAGE_PADDING_X, calculate_content_height, dropdown_mode, filter_commands,
-    filter_models, render_command_dropdown, render_model_dropdown, render_session,
-    render_session_list, render_welcome, should_show_dropdown,
+    filter_models, render_command_dropdown, render_model_dropdown, render_model_selection_dialog,
+    render_session, render_session_list, render_welcome, should_show_dropdown,
 };
 use message::DisplayMessage;
 use state::ViewState;
@@ -133,6 +133,15 @@ pub async fn run_with_target(target: SessionTarget) -> anyhow::Result<()> {
     app.interface_rx = Some(interface_rx);
     app.permission_response_tx = Some(perm_response_tx);
     app.ask_user_response_tx = Some(ask_response_tx);
+
+    // Spawn background task to fetch provider models
+    let (models_tx, models_rx) = mpsc::unbounded_channel();
+    app.models_rx = Some(models_rx);
+    let config_clone = app.agent_config.clone();
+    tokio::spawn(async move {
+        let models = crate::core::models::fetch_provider_models(&config_clone).await;
+        let _ = models_tx.send(models);
+    });
 
     // Set up permission client for agent with current permission presets
     let presets = app.current_permissions();
@@ -265,6 +274,9 @@ async fn run_app(
                     ActiveDialog::Permission(d) => render_permission_dialog(f, d),
                     ActiveDialog::AskUser(d) => render_ask_user_dialog(f, d),
                     ActiveDialog::SessionList(d) => render_session_list(f, d),
+                    ActiveDialog::ModelSelection(d) => {
+                        render_model_selection_dialog(f, d, app.agent_mode);
+                    }
                     ActiveDialog::NoProvider => render_no_provider_dialog(f),
                 }
             }
@@ -420,6 +432,23 @@ async fn run_app(
                     }
                 }
             }
+
+            models = async {
+                if let Some(ref mut rx) = app.models_rx {
+                    rx.recv().await
+                } else {
+                    std::future::pending().await
+                }
+            } => {
+                if let Some(models) = models {
+                    tracing::info!(
+                        providers = models.len(),
+                        "received cached provider models"
+                    );
+                    app.cached_provider_models = Some(models);
+                    app.models_rx = None;
+                }
+            }
         }
     }
 }
@@ -557,21 +586,9 @@ fn handle_key(
                 if trimmed == "/model" || trimmed.starts_with("/model ") {
                     let model_arg = trimmed.strip_prefix("/model").unwrap_or("").trim();
                     if model_arg.is_empty() {
-                        // Show available models (dropdown will appear)
-                        let models_list: String = app
-                            .agent_config
-                            .models
-                            .iter()
-                            .map(|m| format!("  {} ({})", m.id, m.provider))
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        app.messages.push(DisplayMessage::tool(
-                            "model",
-                            "Available models",
-                            format!("{models_list}\n\nUsage: /model <name>"),
-                            false,
-                        ));
-                        app.enter_session();
+                        app.clear_input();
+                        app.show_model_selection_dialog();
+                        return false;
                     } else if let Some(agent) = &mut app.agent {
                         // Check if we need to switch providers
                         let current_provider = agent.provider_name();
@@ -1415,12 +1432,51 @@ fn handle_dialog_key(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> 
                 app.active_dialog = Some(ActiveDialog::SessionList(d));
             }
         },
+        ActiveDialog::ModelSelection(mut d) => match code {
+            KeyCode::Esc => {}
+            KeyCode::Enter => {
+                if let Some(model) = d.get_selected_model() {
+                    if let Some(agent) = &mut app.agent {
+                        let current_provider = agent.provider_name();
+                        if model.provider != current_provider {
+                            if let Ok(new_provider) =
+                                app.agent_config.create_provider_by_name(&model.provider)
+                            {
+                                agent.set_provider(new_provider);
+                            }
+                        }
+                        agent.set_model(&model.id);
+                        app.model = model.id.clone();
+                        app.provider = model.provider.clone();
+                    }
+                }
+            }
+            KeyCode::Up => {
+                d.select_previous();
+                app.active_dialog = Some(ActiveDialog::ModelSelection(d));
+            }
+            KeyCode::Down => {
+                d.select_next();
+                app.active_dialog = Some(ActiveDialog::ModelSelection(d));
+            }
+            KeyCode::Char(c) => {
+                d.filter.push(c);
+                d.set_filter(d.filter.clone());
+                app.active_dialog = Some(ActiveDialog::ModelSelection(d));
+            }
+            KeyCode::Backspace => {
+                d.filter.pop();
+                d.set_filter(d.filter.clone());
+                app.active_dialog = Some(ActiveDialog::ModelSelection(d));
+            }
+            _ => {
+                app.active_dialog = Some(ActiveDialog::ModelSelection(d));
+            }
+        },
         ActiveDialog::NoProvider => {
             if code == KeyCode::Esc {
-                // Just dismiss the dialog, input is preserved
                 return false;
             }
-            // Re-show dialog for any other key
             app.active_dialog = Some(ActiveDialog::NoProvider);
         }
     }

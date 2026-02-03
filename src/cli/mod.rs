@@ -107,6 +107,8 @@ pub enum ConfigCommands {
 pub enum AuthCommands {
     /// Configure credentials for a provider.
     Login(LoginArgs),
+    /// Remove credentials for a provider.
+    Logout(LogoutArgs),
 }
 
 #[derive(Args)]
@@ -121,6 +123,12 @@ pub struct LoginArgs {
     /// Skip connection verification test.
     #[arg(long)]
     pub skip_test: bool,
+}
+
+#[derive(Args)]
+pub struct LogoutArgs {
+    /// Provider name (e.g., anthropic, openai, groq).
+    pub provider: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -393,6 +401,7 @@ mod tests {
                     assert_eq!(args.api_key, Some("sk-test-key".to_string()));
                     assert!(args.skip_test);
                 }
+                _ => panic!("expected Login command"),
             },
             _ => panic!("expected Auth command"),
         }
@@ -408,6 +417,7 @@ mod tests {
                     assert!(args.api_key.is_none());
                     assert!(!args.skip_test);
                 }
+                _ => panic!("expected Login command"),
             },
             _ => panic!("expected Auth command"),
         }
@@ -423,6 +433,35 @@ mod tests {
                     assert!(args.api_key.is_none());
                     assert!(!args.skip_test);
                 }
+                _ => panic!("expected Login command"),
+            },
+            _ => panic!("expected Auth command"),
+        }
+    }
+
+    #[test]
+    fn test_auth_logout_parses() {
+        let cli = Cli::parse_from(["omni", "auth", "logout", "anthropic"]);
+        match cli.command {
+            Some(Commands::Auth { command }) => match command {
+                AuthCommands::Logout(args) => {
+                    assert_eq!(args.provider, Some("anthropic".to_string()));
+                }
+                _ => panic!("expected Logout command"),
+            },
+            _ => panic!("expected Auth command"),
+        }
+    }
+
+    #[test]
+    fn test_auth_logout_parses_interactive() {
+        let cli = Cli::parse_from(["omni", "auth", "logout"]);
+        match cli.command {
+            Some(Commands::Auth { command }) => match command {
+                AuthCommands::Logout(args) => {
+                    assert!(args.provider.is_none());
+                }
+                _ => panic!("expected Logout command"),
             },
             _ => panic!("expected Auth command"),
         }

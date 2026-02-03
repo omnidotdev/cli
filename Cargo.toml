@@ -98,7 +98,16 @@ which = "7"
 dialoguer = "0.12.0"
 
 # Secure credential storage
-keyring = "3"
+# Note: keyring v3 requires explicit platform features for real credential storage
+# Without these, it uses a no-op mock backend
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["linux-native"] }
 
 [dev-dependencies]
 tokio-test = "0.4"

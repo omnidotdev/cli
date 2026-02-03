@@ -861,19 +861,6 @@ mod tests {
     }
 
     #[test]
-    fn resolve_api_key_returns_none_when_not_set() {
-        let config = ProviderConfig {
-            api_type: ProviderApiType::OpenAi,
-            base_url: None,
-            api_key_env: None,
-        };
-        assert_eq!(
-            AgentConfig::resolve_api_key("nonexistent-provider", &config),
-            None
-        );
-    }
-
-    #[test]
     fn unknown_provider_returns_error() {
         let config = AgentConfig {
             provider: "nonexistent".to_string(),

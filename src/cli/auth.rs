@@ -2,7 +2,7 @@ use crate::config::{AgentConfig, Config};
 use crate::core::keychain;
 use dialoguer::{theme::ColorfulTheme, Password, Select};
 
-use super::LoginArgs;
+use super::{LoginArgs, LogoutArgs};
 
 pub fn auth_login(args: LoginArgs) -> anyhow::Result<()> {
     let default_config = AgentConfig::default();
@@ -66,6 +66,69 @@ fn prompt_api_key(provider: &str) -> anyhow::Result<String> {
     }
 
     Ok(api_key)
+}
+
+pub fn auth_logout(args: LogoutArgs) -> anyhow::Result<()> {
+    use dialoguer::Confirm;
+
+    let default_config = AgentConfig::default();
+    let default_providers = &default_config.providers;
+    let provider_names: Vec<&str> = default_providers.keys().map(String::as_str).collect();
+
+    let provider = match args.provider {
+        Some(p) => {
+            if !default_providers.contains_key(&p) {
+                anyhow::bail!(
+                    "Unknown provider '{}'. Available providers: {}",
+                    p,
+                    provider_names.join(", ")
+                );
+            }
+            p
+        }
+        None => {
+            let authenticated: Vec<&str> = provider_names
+                .iter()
+                .filter(|p| keychain::get_api_key(p).is_some())
+                .copied()
+                .collect();
+
+            if authenticated.is_empty() {
+                anyhow::bail!("No providers have stored credentials");
+            }
+
+            let selection = Select::with_theme(&ColorfulTheme::default())
+                .with_prompt("Select provider to logout")
+                .items(&authenticated)
+                .default(0)
+                .interact()?;
+
+            authenticated[selection].to_string()
+        }
+    };
+
+    let confirmed = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt(format!("Remove credentials for {provider}?"))
+        .default(false)
+        .interact()?;
+
+    if !confirmed {
+        println!("Cancelled");
+        return Ok(());
+    }
+
+    keychain::delete_api_key(&provider)?;
+    println!("Removed credentials for '{provider}'");
+
+    if let Some(provider_config) = default_providers.get(&provider) {
+        if let Some(env_var) = &provider_config.api_key_env {
+            if std::env::var(env_var).is_ok() {
+                println!("Note: {env_var} environment variable may still provide access");
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

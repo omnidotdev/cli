@@ -7,6 +7,7 @@ pub mod keychain;
 pub mod lsp;
 pub mod mcp;
 pub mod memory;
+pub mod models;
 pub mod plugin;
 pub mod project;
 pub mod search;

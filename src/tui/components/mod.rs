@@ -3,16 +3,18 @@
 mod command_palette;
 mod markdown;
 mod messages;
+mod model_selection;
 mod prompt;
 mod session;
 mod session_list;
 mod welcome;
 
 pub use command_palette::{
-    DropdownMode, dropdown_mode, filter_commands, filter_models, render_command_dropdown,
-    render_model_dropdown, should_show_dropdown,
+    dropdown_mode, filter_commands, filter_models, render_command_dropdown, render_model_dropdown,
+    should_show_dropdown, DropdownMode,
 };
+pub use model_selection::{render_model_selection_dialog, ModelSelectionDialog};
 pub use prompt::PLACEHOLDERS;
-pub use session::{MESSAGE_PADDING_X, calculate_content_height, render_session};
-pub use session_list::{SessionListDialog, render_session_list};
+pub use session::{calculate_content_height, render_session, MESSAGE_PADDING_X};
+pub use session_list::{render_session_list, SessionListDialog};
 pub use welcome::render_welcome;

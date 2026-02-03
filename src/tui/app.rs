@@ -4,7 +4,7 @@ use rand::prelude::IndexedRandom;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use super::components::SessionListDialog;
+use super::components::{ModelSelectionDialog, SessionListDialog};
 use super::message::{format_tool_invocation, DisplayMessage};
 use super::state::ViewState;
 
@@ -128,6 +128,7 @@ pub enum ActiveDialog {
     Permission(ActivePermissionDialog),
     AskUser(ActiveAskUserDialog),
     SessionList(SessionListDialog),
+    ModelSelection(ModelSelectionDialog),
     NoProvider,
 }
 
@@ -244,6 +245,12 @@ pub struct App {
 
     /// Current provider name.
     pub provider: String,
+
+    /// Cached provider models (fetched at startup).
+    pub cached_provider_models: Option<Vec<(String, Vec<crate::config::ModelInfo>)>>,
+
+    /// Receiver for model fetch results.
+    pub models_rx: Option<mpsc::UnboundedReceiver<Vec<(String, Vec<crate::config::ModelInfo>)>>>,
 }
 
 impl Default for App {
@@ -379,6 +386,8 @@ impl App {
             agent_config: config.agent,
             activity_status: None,
             provider,
+            cached_provider_models: None,
+            models_rx: None,
         }
     }
 
@@ -693,7 +702,83 @@ impl App {
         }
     }
 
-    /// Check if a dialog is active.
+    pub fn show_model_selection_dialog(&mut self) {
+        use crate::core::keychain;
+        use std::collections::HashMap;
+
+        if self.agent.is_none() {
+            self.active_dialog = Some(ActiveDialog::NoProvider);
+            return;
+        }
+
+        if let Some(ref models) = self.cached_provider_models {
+            if !models.is_empty() {
+                let dialog = ModelSelectionDialog::new(models.clone());
+                self.active_dialog = Some(ActiveDialog::ModelSelection(dialog));
+                return;
+            }
+        }
+
+        let mut provider_models: HashMap<String, Vec<crate::config::ModelInfo>> = HashMap::new();
+
+        for model in &self.agent_config.models {
+            let provider_name = &model.provider;
+
+            let has_keychain_key = keychain::get_api_key(provider_name).is_some();
+            let has_env_key = self
+                .agent_config
+                .providers
+                .get(provider_name)
+                .and_then(|p| p.api_key_env.as_ref())
+                .is_some_and(|env| std::env::var(env).is_ok());
+            let is_local_provider = self
+                .agent_config
+                .providers
+                .get(provider_name)
+                .is_some_and(|p| p.base_url.is_some() && p.api_key_env.is_none());
+
+            if has_keychain_key || has_env_key || is_local_provider {
+                provider_models
+                    .entry(provider_name.clone())
+                    .or_default()
+                    .push(model.clone());
+            }
+        }
+
+        if provider_models.is_empty() {
+            let config_provider = &self.agent_config.provider;
+            let has_keychain = keychain::get_api_key(config_provider).is_some();
+            let has_env = self
+                .agent_config
+                .providers
+                .get(config_provider)
+                .and_then(|p| p.api_key_env.as_ref())
+                .is_some_and(|env| std::env::var(env).is_ok());
+
+            if has_keychain || has_env {
+                provider_models.insert(
+                    config_provider.clone(),
+                    vec![crate::config::ModelInfo {
+                        id: self.model.clone(),
+                        provider: config_provider.clone(),
+                    }],
+                );
+            }
+        }
+
+        if provider_models.is_empty() {
+            self.active_dialog = Some(ActiveDialog::NoProvider);
+            return;
+        }
+
+        let mut sorted: Vec<(String, Vec<crate::config::ModelInfo>)> =
+            provider_models.into_iter().collect();
+        sorted.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let dialog = ModelSelectionDialog::new(sorted);
+        self.active_dialog = Some(ActiveDialog::ModelSelection(dialog));
+    }
+
     #[must_use]
     pub const fn has_dialog(&self) -> bool {
         self.active_dialog.is_some()
