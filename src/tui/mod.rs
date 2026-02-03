@@ -1449,6 +1449,9 @@ fn handle_dialog_key(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> 
                         app.model = model.id.clone();
                         app.provider = model.provider.clone();
                     }
+                } else {
+                    // Selected item is a header - stay in dialog
+                    app.active_dialog = Some(ActiveDialog::ModelSelection(d));
                 }
             }
             KeyCode::Up => {
@@ -1457,6 +1460,12 @@ fn handle_dialog_key(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> 
             }
             KeyCode::Down => {
                 d.select_next();
+                app.active_dialog = Some(ActiveDialog::ModelSelection(d));
+            }
+            KeyCode::Tab => {
+                if let Some(provider) = d.get_selected_provider() {
+                    d.toggle_provider_collapse(&provider);
+                }
                 app.active_dialog = Some(ActiveDialog::ModelSelection(d));
             }
             KeyCode::Char(c) => {

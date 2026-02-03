@@ -2,7 +2,7 @@
 
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
@@ -74,6 +74,7 @@ impl ModelSelectionDialog {
     }
 
     /// Get the flat list of filtered models with their provider names.
+    #[cfg(test)]
     fn get_filtered_models(&self) -> Vec<(String, ModelInfo)> {
         let mut result = Vec::new();
 
@@ -290,34 +291,49 @@ pub fn render_model_selection_dialog(
     // Adjust scroll before rendering
     dialog.adjust_scroll(viewport_height);
 
-    let filtered = dialog.get_filtered_models();
+    let items = dialog.get_selectable_items();
     let mut lines: Vec<Line> = Vec::new();
-    let mut current_provider: Option<&str> = None;
 
-    for (idx, (provider, model)) in filtered.iter().enumerate() {
-        // Add provider header if new provider
-        if current_provider != Some(provider.as_str()) {
-            current_provider = Some(provider.as_str());
-            lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled("▼", Style::default().fg(DIMMED)),
-                Span::raw(" "),
-                Span::styled(provider.clone(), Style::default().fg(border_color)),
-            ]));
-        }
-
-        // Add model line
+    for (idx, item) in items.iter().enumerate() {
         let is_selected = idx == dialog.selected_idx;
-        let model_style = if is_selected {
-            Style::default().fg(Color::Black).bg(border_color)
-        } else {
-            Style::default().fg(Color::White)
-        };
 
-        lines.push(Line::from(vec![
-            Span::raw("      "),
-            Span::styled(model.id.clone(), model_style),
-        ]));
+        match item {
+            SelectableItem::ProviderHeader(provider) => {
+                let icon = if dialog.is_provider_collapsed(provider) {
+                    "▶"
+                } else {
+                    "▼"
+                };
+                let header_style = if is_selected {
+                    Style::default()
+                        .fg(border_color)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(border_color)
+                };
+                let mut spans = vec![
+                    Span::raw("  "),
+                    Span::styled(icon, Style::default().fg(DIMMED)),
+                    Span::raw(" "),
+                    Span::styled(provider.clone(), header_style),
+                ];
+                if is_selected {
+                    spans.push(Span::styled(" ◀", Style::default().fg(DIMMED)));
+                }
+                lines.push(Line::from(spans));
+            }
+            SelectableItem::Model(_, model) => {
+                let model_style = if is_selected {
+                    Style::default().fg(Color::Black).bg(border_color)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                lines.push(Line::from(vec![
+                    Span::raw("      "),
+                    Span::styled(model.id.clone(), model_style),
+                ]));
+            }
+        }
     }
 
     // Handle empty state
@@ -339,18 +355,7 @@ pub fn render_model_selection_dialog(
     frame.render_widget(list_para, list_area);
 
     // Render scroll indicator if needed
-    let total_lines = {
-        let filtered = dialog.get_filtered_models();
-        let mut count = 0;
-        let mut seen_providers = std::collections::HashSet::new();
-        for (provider, _) in &filtered {
-            if seen_providers.insert(provider) {
-                count += 1; // Provider header
-            }
-            count += 1; // Model
-        }
-        count
-    };
+    let total_lines = dialog.get_selectable_items().len();
 
     if total_lines > viewport_height {
         let scroll_indicator = format!(
@@ -368,6 +373,8 @@ pub fn render_model_selection_dialog(
     let hints = Line::from(vec![
         Span::styled("↑↓", Style::default().fg(Color::White)),
         Span::styled(" Navigate  ", Style::default().fg(DIMMED)),
+        Span::styled("Tab", Style::default().fg(Color::White)),
+        Span::styled(" Collapse  ", Style::default().fg(DIMMED)),
         Span::styled("Enter", Style::default().fg(Color::White)),
         Span::styled(" Select  ", Style::default().fg(DIMMED)),
         Span::styled("Esc", Style::default().fg(Color::White)),
