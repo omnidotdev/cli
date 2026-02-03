@@ -135,8 +135,7 @@ pub fn render_welcome(
 
     // Only render footer if terminal is wide enough
     if area.width >= MIN_WIDTH_FOR_FOOTER && area.height > 4 {
-        // Render ecosystem tip just below the input box (prompt_y + ~6 for input height + mode indicator)
-        let tip_y = prompt_y + 7;
+        let tip_y = prompt_y + 8;
         let footer_y = area.y + area.height.saturating_sub(1);
 
         // Render ecosystem tip centered with yellow circle

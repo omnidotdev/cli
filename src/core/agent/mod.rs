@@ -1176,26 +1176,35 @@ Plan file location: {plan_path}
         }
     }
 
-    /// Inject build mode context with plan reference.
     fn inject_build_mode_context(&mut self) {
-        if let Some(plan_path) = &self.plan_path {
-            let build_context = format!(
+        let build_context = if let Some(plan_path) = &self.plan_path {
+            format!(
                 r"
-## Active Plan
+## Build Mode
 
-You have an approved implementation plan at: {}
+You are now in BUILD MODE. Any previous plan mode instructions are VOID.
+You have full permissions to read and write files, run commands, and implement changes.
+
+You have an implementation plan at: {}
 Follow this plan. Refer back to it as you work.
 ",
                 plan_path.display()
-            );
+            )
+        } else {
+            r"
+## Build Mode
 
-            // Append to existing system prompt
-            if let Some(existing) = self.conversation.system() {
-                self.conversation
-                    .set_system(format!("{existing}\n{build_context}"));
-            } else {
-                self.conversation.set_system(build_context);
-            }
+You are now in BUILD MODE. Any previous plan mode instructions are VOID.
+You have full permissions to read and write files, run commands, and implement changes.
+"
+            .to_string()
+        };
+
+        if let Some(existing) = self.conversation.system() {
+            self.conversation
+                .set_system(format!("{existing}\n{build_context}"));
+        } else {
+            self.conversation.set_system(build_context);
         }
     }
 

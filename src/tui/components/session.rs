@@ -41,16 +41,13 @@ pub fn render_session(
     selected_text: &mut String,
     _session_cost: f64,
 ) -> ((u16, u16), Rect) {
-    // Calculate dynamic prompt height based on input lines
-    // Height = top padding (1) + input lines + bottom padding (1) + status bar (1)
     let input_lines = input.lines().count().max(1) as u16;
-    // Add 1 for empty input that ends with newline
     let input_lines = if input.ends_with('\n') {
         input_lines + 1
     } else {
         input_lines
     };
-    let prompt_height = (input_lines + 3).clamp(4, 13);
+    let prompt_height = (input_lines + 5).clamp(6, 15);
 
     // Split into message area and prompt area
     let chunks = Layout::default()
