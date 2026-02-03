@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::core::agent::{
     AgentMode, AnthropicProvider, LlmProvider, OpenAiProvider, UnifiedProvider,
 };
+use crate::core::keychain;
 
 pub use persona::{list_personas, load_persona, personas_dir, Persona};
 
@@ -123,21 +124,14 @@ pub struct AgentDefinition {
 /// Individual provider configuration.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderConfig {
-    /// API type (anthropic or openai-compatible).
     #[serde(rename = "type", default)]
     pub api_type: ProviderApiType,
 
-    /// Base URL override (for OpenAI-compatible providers).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
 
-    /// Environment variable name for API key.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub api_key_env: Option<String>,
-
-    /// Direct API key (discouraged, prefer `api_key_env`)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub api_key: Option<String>,
 }
 
 /// Application configuration.
@@ -589,30 +583,33 @@ impl AgentConfig {
             anyhow::anyhow!("unknown provider '{name}', check [agent.providers] config")
         })?;
 
+        let missing_key_error = || {
+            anyhow::anyhow!(
+                "No API key configured for provider '{name}'.\n\n\
+                 Run `omni auth login` to configure your credentials."
+            )
+        };
+
         match config.api_type {
             ProviderApiType::Anthropic => {
-                let key = Self::resolve_api_key(config)
-                    .ok_or_else(|| anyhow::anyhow!("API key not set for provider '{name}'"))?;
+                let key = Self::resolve_api_key(name, config).ok_or_else(missing_key_error)?;
                 Ok(Box::new(AnthropicProvider::new(key)?))
             }
             ProviderApiType::OpenAi => {
-                let api_key = Self::resolve_api_key(config);
+                let api_key = Self::resolve_api_key(name, config);
                 let base_url = config.base_url.clone();
                 Ok(Box::new(OpenAiProvider::with_config(api_key, base_url)?))
             }
             ProviderApiType::Google => {
-                let key = Self::resolve_api_key(config)
-                    .ok_or_else(|| anyhow::anyhow!("API key not set for provider '{name}'"))?;
+                let key = Self::resolve_api_key(name, config).ok_or_else(missing_key_error)?;
                 Ok(Box::new(UnifiedProvider::google(key)?))
             }
             ProviderApiType::Groq => {
-                let key = Self::resolve_api_key(config)
-                    .ok_or_else(|| anyhow::anyhow!("API key not set for provider '{name}'"))?;
+                let key = Self::resolve_api_key(name, config).ok_or_else(missing_key_error)?;
                 Ok(Box::new(UnifiedProvider::groq(key)?))
             }
             ProviderApiType::Mistral => {
-                let key = Self::resolve_api_key(config)
-                    .ok_or_else(|| anyhow::anyhow!("API key not set for provider '{name}'"))?;
+                let key = Self::resolve_api_key(name, config).ok_or_else(missing_key_error)?;
                 Ok(Box::new(UnifiedProvider::mistral(key)?))
             }
         }
@@ -668,7 +665,6 @@ impl AgentConfig {
                 api_type: ProviderApiType::Anthropic,
                 base_url: None,
                 api_key_env: Some("ANTHROPIC_API_KEY".to_string()),
-                api_key: None,
             },
         );
 
@@ -678,7 +674,6 @@ impl AgentConfig {
                 api_type: ProviderApiType::OpenAi,
                 base_url: None,
                 api_key_env: Some("OPENAI_API_KEY".to_string()),
-                api_key: None,
             },
         );
 
@@ -688,7 +683,6 @@ impl AgentConfig {
                 api_type: ProviderApiType::OpenAi,
                 base_url: Some("http://localhost:11434/v1".to_string()),
                 api_key_env: None,
-                api_key: None,
             },
         );
 
@@ -698,7 +692,6 @@ impl AgentConfig {
                 api_type: ProviderApiType::OpenAi,
                 base_url: Some("http://localhost:1234/v1".to_string()),
                 api_key_env: None,
-                api_key: None,
             },
         );
 
@@ -708,7 +701,6 @@ impl AgentConfig {
                 api_type: ProviderApiType::Groq,
                 base_url: None,
                 api_key_env: Some("GROQ_API_KEY".to_string()),
-                api_key: None,
             },
         );
 
@@ -718,7 +710,6 @@ impl AgentConfig {
                 api_type: ProviderApiType::Google,
                 base_url: None,
                 api_key_env: Some("GOOGLE_API_KEY".to_string()),
-                api_key: None,
             },
         );
 
@@ -728,7 +719,6 @@ impl AgentConfig {
                 api_type: ProviderApiType::Mistral,
                 base_url: None,
                 api_key_env: Some("MISTRAL_API_KEY".to_string()),
-                api_key: None,
             },
         );
 
@@ -738,7 +728,6 @@ impl AgentConfig {
                 api_type: ProviderApiType::OpenAi,
                 base_url: Some("https://openrouter.ai/api/v1".to_string()),
                 api_key_env: Some("OPENROUTER_API_KEY".to_string()),
-                api_key: None,
             },
         );
 
@@ -748,7 +737,6 @@ impl AgentConfig {
                 api_type: ProviderApiType::OpenAi,
                 base_url: Some("https://api.together.xyz/v1".to_string()),
                 api_key_env: Some("TOGETHER_API_KEY".to_string()),
-                api_key: None,
             },
         );
 
@@ -758,23 +746,24 @@ impl AgentConfig {
                 api_type: ProviderApiType::OpenAi,
                 base_url: Some("https://api.moonshot.cn/v1".to_string()),
                 api_key_env: Some("MOONSHOT_API_KEY".to_string()),
-                api_key: None,
             },
         );
 
         providers
     }
 
-    /// Resolve API key for a provider config.
-    fn resolve_api_key(config: &ProviderConfig) -> Option<String> {
-        // First try env var
+    fn resolve_api_key(provider_name: &str, config: &ProviderConfig) -> Option<String> {
+        if let Some(key) = keychain::get_api_key(provider_name) {
+            return Some(key);
+        }
+
         if let Some(env_name) = &config.api_key_env {
             if let Ok(key) = std::env::var(env_name) {
                 return Some(key);
             }
         }
-        // Fall back to direct key
-        config.api_key.clone()
+
+        None
     }
 
     /// Create the configured LLM provider.
@@ -790,34 +779,38 @@ impl AgentConfig {
             )
         })?;
 
+        let provider_name = &self.provider;
+        let missing_key_error = || {
+            anyhow::anyhow!(
+                "No API key configured for provider '{provider_name}'.\n\n\
+                 Run `omni auth login` to configure your credentials."
+            )
+        };
+
         match config.api_type {
             ProviderApiType::Anthropic => {
-                let key = Self::resolve_api_key(config).ok_or_else(|| {
-                    anyhow::anyhow!("API key not set for provider '{}'", self.provider)
-                })?;
+                let key =
+                    Self::resolve_api_key(provider_name, config).ok_or_else(missing_key_error)?;
                 Ok(Box::new(AnthropicProvider::new(key)?))
             }
             ProviderApiType::OpenAi => {
-                let api_key = Self::resolve_api_key(config);
+                let api_key = Self::resolve_api_key(provider_name, config);
                 let base_url = config.base_url.clone();
                 Ok(Box::new(OpenAiProvider::with_config(api_key, base_url)?))
             }
             ProviderApiType::Google => {
-                let key = Self::resolve_api_key(config).ok_or_else(|| {
-                    anyhow::anyhow!("API key not set for provider '{}'", self.provider)
-                })?;
+                let key =
+                    Self::resolve_api_key(provider_name, config).ok_or_else(missing_key_error)?;
                 Ok(Box::new(UnifiedProvider::google(key)?))
             }
             ProviderApiType::Groq => {
-                let key = Self::resolve_api_key(config).ok_or_else(|| {
-                    anyhow::anyhow!("API key not set for provider '{}'", self.provider)
-                })?;
+                let key =
+                    Self::resolve_api_key(provider_name, config).ok_or_else(missing_key_error)?;
                 Ok(Box::new(UnifiedProvider::groq(key)?))
             }
             ProviderApiType::Mistral => {
-                let key = Self::resolve_api_key(config).ok_or_else(|| {
-                    anyhow::anyhow!("API key not set for provider '{}'", self.provider)
-                })?;
+                let key =
+                    Self::resolve_api_key(provider_name, config).ok_or_else(missing_key_error)?;
                 Ok(Box::new(UnifiedProvider::mistral(key)?))
             }
         }
@@ -868,16 +861,15 @@ mod tests {
     }
 
     #[test]
-    fn resolve_api_key_from_direct_value() {
+    fn resolve_api_key_returns_none_when_not_set() {
         let config = ProviderConfig {
             api_type: ProviderApiType::OpenAi,
             base_url: None,
             api_key_env: None,
-            api_key: Some("sk-direct".to_string()),
         };
         assert_eq!(
-            AgentConfig::resolve_api_key(&config),
-            Some("sk-direct".to_string())
+            AgentConfig::resolve_api_key("nonexistent-provider", &config),
+            None
         );
     }
 
@@ -968,7 +960,6 @@ mod tests {
             api_type: ProviderApiType::Anthropic,
             base_url: None,
             api_key_env: Some("TEST_API_KEY".to_string()),
-            api_key: Some("sk-test-key".to_string()),
         };
 
         Config::save_provider_to_path("test_provider", &provider_config, &config_path).unwrap();
@@ -1016,7 +1007,6 @@ api_key_env = "ANTHROPIC_API_KEY"
             api_type: ProviderApiType::OpenAi,
             base_url: Some("https://api.example.com".to_string()),
             api_key_env: Some("EXAMPLE_API_KEY".to_string()),
-            api_key: None,
         };
 
         Config::save_provider_to_path("example", &new_provider, &config_path).unwrap();
