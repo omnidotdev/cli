@@ -321,7 +321,7 @@ impl Config {
         Self::save_provider_to_path(name, config, &Self::config_path()?)
     }
 
-    fn save_provider_to_path(
+    pub fn save_provider_to_path(
         name: &str,
         config: &ProviderConfig,
         path: &PathBuf,
