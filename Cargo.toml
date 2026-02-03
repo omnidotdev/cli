@@ -95,6 +95,7 @@ ulid = "1"
 
 # LSP integration
 which = "7"
+dialoguer = "0.12.0"
 
 [dev-dependencies]
 tokio-test = "0.4"
