@@ -139,7 +139,7 @@ pub fn auth_status() -> anyhow::Result<()> {
 
     println!(
         "{:<14} {:<10} {:<20} {}",
-        "Provider", "Keychain", "Env Var", "Status"
+        "Provider", "Keychain", "Env Var", "Active"
     );
     println!("{}", "─".repeat(58));
 
@@ -159,10 +159,14 @@ pub fn auth_status() -> anyhow::Result<()> {
         } else {
             "-"
         };
-        let status = if has_keychain {
+        let status = if has_env {
+            if has_keychain {
+                "env var (priority)"
+            } else {
+                "env var"
+            }
+        } else if has_keychain {
             "keychain"
-        } else if has_env {
-            "env var"
         } else if is_local {
             "local"
         } else {
