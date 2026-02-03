@@ -311,6 +311,55 @@ impl Config {
             _ => AgentMode::Build,
         }
     }
+
+    /// Save a provider configuration to the config file
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the config file cannot be written.
+    pub fn save_provider(name: &str, config: &ProviderConfig) -> anyhow::Result<()> {
+        Self::save_provider_to_path(name, config, &Self::config_path()?)
+    }
+
+    fn save_provider_to_path(
+        name: &str,
+        config: &ProviderConfig,
+        path: &PathBuf,
+    ) -> anyhow::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let mut config_value = if path.exists() {
+            let contents = std::fs::read_to_string(path)?;
+            toml::from_str::<toml::Value>(&contents)?
+        } else {
+            toml::Value::Table(toml::map::Map::new())
+        };
+
+        let config_table = config_value
+            .as_table_mut()
+            .ok_or_else(|| anyhow::anyhow!("config root must be a table"))?;
+
+        let agent_table = config_table
+            .entry("agent")
+            .or_insert_with(|| toml::Value::Table(toml::map::Map::new()))
+            .as_table_mut()
+            .ok_or_else(|| anyhow::anyhow!("agent section must be a table"))?;
+
+        let providers_table = agent_table
+            .entry("providers")
+            .or_insert_with(|| toml::Value::Table(toml::map::Map::new()))
+            .as_table_mut()
+            .ok_or_else(|| anyhow::anyhow!("providers section must be a table"))?;
+
+        let provider_value = toml::Value::try_from(config)?;
+        providers_table.insert(name.to_string(), provider_value);
+
+        let toml_string = toml::to_string_pretty(&config_value)?;
+        std::fs::write(path, toml_string)?;
+        Ok(())
+    }
 }
 
 /// API server configuration.
@@ -906,5 +955,118 @@ mod tests {
         assert_eq!(config.provider_for_model("kimi-k2.5"), Some("kimi"));
         assert_eq!(config.provider_for_model("moonshot-v1-128k"), Some("kimi"));
         assert_eq!(config.provider_for_model("KIMI-K2.5"), Some("kimi"));
+    }
+
+    #[test]
+    fn test_save_provider_creates_config() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        let provider_config = ProviderConfig {
+            api_type: ProviderApiType::Anthropic,
+            base_url: None,
+            api_key_env: Some("TEST_API_KEY".to_string()),
+            api_key: Some("sk-test-key".to_string()),
+        };
+
+        Config::save_provider_to_path("test_provider", &provider_config, &config_path).unwrap();
+
+        assert!(config_path.exists(), "Config file should be created");
+
+        let contents = std::fs::read_to_string(&config_path).unwrap();
+        let loaded: toml::Value = toml::from_str(&contents).unwrap();
+
+        let providers = loaded
+            .get("agent")
+            .and_then(|a| a.get("providers"))
+            .and_then(|p| p.as_table())
+            .expect("Should have agent.providers table");
+
+        assert!(
+            providers.contains_key("test_provider"),
+            "Should contain test_provider"
+        );
+    }
+
+    #[test]
+    fn test_save_provider_preserves_existing() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        let initial_config = r#"
+[agent]
+model = "claude-sonnet-4-20250514"
+provider = "anthropic"
+
+[tui]
+mouse = true
+tips = false
+
+[agent.providers.anthropic]
+type = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+"#;
+        std::fs::write(&config_path, initial_config).unwrap();
+
+        let new_provider = ProviderConfig {
+            api_type: ProviderApiType::OpenAi,
+            base_url: Some("https://api.example.com".to_string()),
+            api_key_env: Some("EXAMPLE_API_KEY".to_string()),
+            api_key: None,
+        };
+
+        Config::save_provider_to_path("example", &new_provider, &config_path).unwrap();
+
+        let contents = std::fs::read_to_string(&config_path).unwrap();
+        let loaded: toml::Value = toml::from_str(&contents).unwrap();
+
+        assert_eq!(
+            loaded
+                .get("agent")
+                .and_then(|a| a.get("model"))
+                .and_then(|m| m.as_str()),
+            Some("claude-sonnet-4-20250514")
+        );
+        assert_eq!(
+            loaded
+                .get("agent")
+                .and_then(|a| a.get("provider"))
+                .and_then(|p| p.as_str()),
+            Some("anthropic")
+        );
+
+        assert_eq!(
+            loaded
+                .get("tui")
+                .and_then(|t| t.get("mouse"))
+                .and_then(|m| m.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            loaded
+                .get("tui")
+                .and_then(|t| t.get("tips"))
+                .and_then(|t| t.as_bool()),
+            Some(false)
+        );
+
+        let providers = loaded
+            .get("agent")
+            .and_then(|a| a.get("providers"))
+            .and_then(|p| p.as_table())
+            .expect("Should have agent.providers table");
+
+        assert!(
+            providers.contains_key("anthropic"),
+            "Should preserve anthropic provider"
+        );
+        assert!(
+            providers.contains_key("example"),
+            "Should add example provider"
+        );
     }
 }
