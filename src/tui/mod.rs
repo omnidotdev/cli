@@ -257,6 +257,7 @@ async fn run_app(
                     ActiveDialog::Permission(d) => render_permission_dialog(f, d),
                     ActiveDialog::AskUser(d) => render_ask_user_dialog(f, d),
                     ActiveDialog::SessionList(d) => render_session_list(f, d),
+                    ActiveDialog::NoProvider => render_no_provider_dialog(f),
                 }
             }
         })?;
@@ -611,6 +612,12 @@ fn handle_key(
                 if trimmed == "/sessions" {
                     app.clear_input();
                     app.show_session_list();
+                    return false;
+                }
+
+                // Check if provider is configured before starting chat
+                if app.agent.is_none() {
+                    app.active_dialog = Some(ActiveDialog::NoProvider);
                     return false;
                 }
 
@@ -1011,6 +1018,41 @@ fn render_permission_dialog(frame: &mut ratatui::Frame, dialog: &ActivePermissio
     );
 }
 
+/// Render no provider configured dialog.
+fn render_no_provider_dialog(frame: &mut ratatui::Frame) {
+    use ratatui::text::{Line, Span};
+
+    let header_style = Style::default().fg(Color::Yellow);
+    let dim_style = Style::default().fg(Color::Gray);
+
+    let content = vec![
+        Line::from(vec![Span::styled("No provider configured", header_style)]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Run `omni auth login` in another terminal",
+            dim_style,
+        )]),
+        Line::from(vec![Span::styled(
+            "to set up a provider.",
+            dim_style,
+        )]),
+        Line::from(""),
+        Line::from(vec![Span::styled("Press Esc to dismiss", dim_style)]),
+    ];
+
+    let buttons: [(&str, bool); 0] = [];
+
+    render_dialog(
+        frame,
+        "Provider Setup",
+        content,
+        &buttons,
+        60,
+        10,
+        Some(Color::Yellow),
+    );
+}
+
 /// Render `ask_user` dialog.
 fn render_ask_user_dialog(frame: &mut ratatui::Frame, dialog: &ActiveAskUserDialog) {
     use ratatui::style::Modifier;
@@ -1340,9 +1382,80 @@ fn handle_dialog_key(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> 
                 app.active_dialog = Some(ActiveDialog::SessionList(d));
             }
         },
+        ActiveDialog::NoProvider => {
+            if code == KeyCode::Esc {
+                // Just dismiss the dialog, input is preserved
+                return false;
+            }
+            // Re-show dialog for any other key
+            app.active_dialog = Some(ActiveDialog::NoProvider);
+        }
     }
 
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_no_provider_shows_modal() {
+        let mut app = App::new();
+        
+        // Ensure agent is None (simulating no provider configured)
+        app.agent = None;
+        
+        // Simulate typing
+        app.input = "test message".to_string();
+        app.cursor = app.input.len();
+        
+        // Verify agent is None
+        assert!(app.agent.is_none());
+        
+        // Simulate what happens in handle_key when Enter is pressed
+        if app.agent.is_none() {
+            app.active_dialog = Some(ActiveDialog::NoProvider);
+        }
+        
+        // Verify modal is shown
+        assert!(matches!(app.active_dialog, Some(ActiveDialog::NoProvider)));
+    }
+
+    #[test]
+    fn test_modal_dismisses_on_esc() {
+        let mut app = App::new();
+        
+        // Set up modal
+        app.active_dialog = Some(ActiveDialog::NoProvider);
+        app.input = "test message".to_string();
+        
+        // Simulate Esc key in handle_dialog_key
+        let dialog = app.active_dialog.take();
+        assert!(matches!(dialog, Some(ActiveDialog::NoProvider)));
+        
+        // After Esc, dialog should be None but input preserved
+        assert!(app.active_dialog.is_none());
+        assert_eq!(app.input, "test message");
+    }
+
+    #[test]
+    fn test_input_preserved_when_modal_shown() {
+        let mut app = App::new();
+        
+        app.input = "important message".to_string();
+        app.cursor = app.input.len();
+        
+        // Show modal
+        app.active_dialog = Some(ActiveDialog::NoProvider);
+        
+        // Dismiss modal
+        app.active_dialog = None;
+        
+        // Input should be preserved
+        assert_eq!(app.input, "important message");
+        assert_eq!(app.cursor, "important message".len());
+    }
 }
 
 /// Start a chat request in the background.

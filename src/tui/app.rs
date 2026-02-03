@@ -5,7 +5,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use super::components::SessionListDialog;
-use super::message::{DisplayMessage, format_tool_invocation};
+use super::message::{format_tool_invocation, DisplayMessage};
 use super::state::ViewState;
 
 /// ASCII art logo lines (main text).
@@ -44,12 +44,12 @@ pub const ECOSYSTEM_TIPS: &[&str] = &[
 ];
 
 use crate::config::{AgentConfig, AgentPermissions, Config};
-use crate::core::Agent;
 use crate::core::agent::{
     AgentMode, AskUserResponse, InterfaceMessage, PermissionAction, PermissionContext,
     PermissionResponse,
 };
 use crate::core::session::{SessionManager, SessionTarget};
+use crate::core::Agent;
 
 /// Active text selection state.
 #[derive(Debug, Clone)]
@@ -128,6 +128,7 @@ pub enum ActiveDialog {
     Permission(ActivePermissionDialog),
     AskUser(ActiveAskUserDialog),
     SessionList(SessionListDialog),
+    NoProvider,
 }
 
 /// Application state for the TUI.
