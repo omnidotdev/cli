@@ -362,8 +362,6 @@ pub fn calculate_content_height(
         total = total.saturating_add(streaming_height).saturating_add(1);
     }
 
-    total = total.saturating_add(1);
-
     total
 }
 
@@ -420,14 +418,14 @@ mod tests {
     #[test]
     fn calculate_content_height_empty() {
         let height = calculate_content_height(&[], "", "", 80);
-        assert_eq!(height, 2);
+        assert_eq!(height, 1);
     }
 
     #[test]
     fn calculate_content_height_single_message() {
         let messages = vec![user_message("hello")];
         let height = calculate_content_height(&messages, "", "", 80);
-        assert_eq!(height, 6);
+        assert_eq!(height, 5);
     }
 
     #[test]
@@ -438,7 +436,7 @@ mod tests {
             user_message("third"),
         ];
         let height = calculate_content_height(&messages, "", "", 80);
-        assert_eq!(height, 12);
+        assert_eq!(height, 11);
     }
 
     #[test]
@@ -446,13 +444,13 @@ mod tests {
         let messages = vec![user_message("hello")];
         let streaming = "streaming text";
         let height = calculate_content_height(&messages, "", streaming, 80);
-        assert_eq!(height, 8);
+        assert_eq!(height, 7);
     }
 
     #[test]
     fn calculate_content_height_streaming_multiline() {
         let streaming = "line one\nline two";
         let height = calculate_content_height(&[], "", streaming, 80);
-        assert_eq!(height, 5);
+        assert_eq!(height, 4);
     }
 }

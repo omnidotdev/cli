@@ -1022,10 +1022,7 @@ impl App {
             (self.input.lines().count().max(wrapped_lines)).min(6) as u16
         };
         let prompt_height = (input_lines + 5).clamp(6, 11);
-        let gap_height: u16 = 1; // Gap between messages and prompt
-        let visible_height = height
-            .saturating_sub(prompt_height)
-            .saturating_sub(gap_height);
+        let visible_height = height.saturating_sub(prompt_height);
         self.max_message_scroll = content_height.saturating_sub(visible_height);
 
         // Auto-scroll to bottom when enabled
