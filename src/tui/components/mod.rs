@@ -4,6 +4,7 @@ mod command_palette;
 mod diff;
 mod edit_buffer;
 mod editor_view;
+pub mod file_picker;
 pub mod highlighting;
 mod input_action;
 mod markdown;
