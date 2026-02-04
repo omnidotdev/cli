@@ -1,16 +1,16 @@
 //! Session screen component.
 
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
+    Frame,
 };
 
 use super::markdown::parse_markdown_line;
 use super::messages::{render_message_with_scroll, wrapped_line_height};
-use super::prompt::{PromptMode, render_prompt};
+use super::prompt::{render_prompt, PromptMode};
 use super::text_layout::TextLayout;
 use crate::core::agent::AgentMode;
 use crate::tui::app::Selection;
@@ -306,10 +306,10 @@ mod tests {
 
     #[test]
     fn estimate_height_wrapping() {
-        // 20 chars on width 10 should wrap to 2 lines (ceil(20/10) = 2) + 2 padding = 4
+        // 20 chars on width 10: text_width = 10 - 2 = 8, wraps to 3 lines + 2 padding = 5
         let msg = user_message("12345678901234567890");
         let height = estimate_message_height(&msg, 10);
-        assert_eq!(height, 4);
+        assert_eq!(height, 5);
     }
 
     #[test]

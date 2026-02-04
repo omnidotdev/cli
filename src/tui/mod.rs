@@ -780,7 +780,12 @@ fn handle_key(
             } else if app.view_state == ViewState::Session {
                 let old_cursor = app.cursor;
                 app.move_up();
-                if app.cursor == old_cursor {
+                // Only scroll messages if prompt is empty or single-line
+                let is_multiline_prompt = !app.input.is_empty() && {
+                    let layout = TextLayout::new(&app.input, app.prompt_text_width);
+                    layout.total_lines > 1
+                };
+                if app.cursor == old_cursor && !is_multiline_prompt {
                     app.scroll_messages_up(1);
                 }
             } else {
@@ -804,7 +809,12 @@ fn handle_key(
             } else if app.view_state == ViewState::Session {
                 let old_cursor = app.cursor;
                 app.move_down();
-                if app.cursor == old_cursor {
+                // Only scroll messages if prompt is empty or single-line
+                let is_multiline_prompt = !app.input.is_empty() && {
+                    let layout = TextLayout::new(&app.input, app.prompt_text_width);
+                    layout.total_lines > 1
+                };
+                if app.cursor == old_cursor && !is_multiline_prompt {
                     app.scroll_messages_down(1);
                 }
             } else {

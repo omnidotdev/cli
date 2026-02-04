@@ -9,6 +9,7 @@ use ratatui::{
 };
 
 use super::markdown::parse_markdown_line;
+use super::text_layout::TextLayout;
 use crate::tui::message::{DisplayMessage, icons, tool_icon};
 
 /// Brand colors
@@ -108,23 +109,20 @@ fn render_user_message_with_scroll(
     selection: Option<(u16, u16)>,
     selected_text: &mut String,
 ) {
-    // Calculate actual height needed, accounting for line wrapping
-    // Subtract 1 for the left border
-    let width = area.width.saturating_sub(1).max(1) as usize;
-    let content_height: u16 = text
-        .lines()
-        .map(|line| wrapped_line_height(line.chars().count(), width))
-        .sum::<u16>()
-        .max(1);
-    // Add 2 for top and bottom padding, subtract scroll offset for visible portion
-    let total_height = content_height + 2;
+    const LEFT_BORDER_AND_PADDING: u16 = 2;
+    const VERTICAL_PADDING: u16 = 2;
+
+    let text_width = area.width.saturating_sub(LEFT_BORDER_AND_PADDING).max(1) as usize;
+    let layout = TextLayout::new(text, text_width);
+    let content_height = layout.total_lines as u16;
+    let total_height = content_height + VERTICAL_PADDING;
     let visible_height = total_height.saturating_sub(scroll_offset).min(area.height);
 
-    // Build lines with selection highlighting, adding vertical and horizontal padding
     let mut lines: Vec<Line> = vec![Line::from("")]; // Top padding
-    for (i, line_text) in text.lines().enumerate() {
+
+    for (i, wrapped_line) in layout.lines.iter().enumerate() {
         #[allow(clippy::cast_possible_truncation)]
-        let line_y = area.y + 1 + i as u16; // +1 for top padding
+        let line_y = area.y + 1 + i as u16;
         let is_selected =
             selection.is_some_and(|(min_y, max_y)| line_y >= min_y && line_y <= max_y);
 
@@ -132,24 +130,23 @@ fn render_user_message_with_scroll(
             if !selected_text.is_empty() {
                 selected_text.push('\n');
             }
-            selected_text.push_str(line_text);
+            selected_text.push_str(&wrapped_line.text);
             lines.push(Line::from(vec![
-                Span::raw(" "), // Left padding
+                Span::raw(" "),
                 Span::styled(
-                    line_text,
+                    wrapped_line.text.clone(),
                     Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
                 ),
             ]));
         } else {
             lines.push(Line::from(vec![
-                Span::raw(" "), // Left padding
-                Span::raw(line_text),
+                Span::raw(" "),
+                Span::raw(wrapped_line.text.clone()),
             ]));
         }
     }
     lines.push(Line::from("")); // Bottom padding
 
-    // Skip lines according to scroll offset
     let visible_lines: Vec<Line> = lines.into_iter().skip(scroll_offset as usize).collect();
 
     let block = Block::default()
@@ -157,11 +154,8 @@ fn render_user_message_with_scroll(
         .border_style(Style::default().fg(BRAND_TEAL))
         .style(Style::default().bg(PANEL_BG));
 
-    let para = Paragraph::new(visible_lines)
-        .block(block)
-        .wrap(Wrap { trim: false });
+    let para = Paragraph::new(visible_lines).block(block);
 
-    // Use calculated height, not full area
     let render_area = Rect::new(area.x, area.y, area.width, visible_height);
     frame.render_widget(para, render_area);
 }
@@ -176,11 +170,14 @@ fn render_assistant_message_with_scroll(
     selection: Option<(u16, u16)>,
     selected_text: &mut String,
 ) {
-    // Build lines with selection highlighting and markdown parsing
-    let all_lines: Vec<Line> = text
-        .lines()
+    let text_width = area.width.max(1) as usize;
+    let layout = TextLayout::new(text, text_width);
+
+    let all_lines: Vec<Line> = layout
+        .lines
+        .iter()
         .enumerate()
-        .map(|(i, line_text)| {
+        .map(|(i, wrapped_line)| {
             #[allow(clippy::cast_possible_truncation)]
             let line_y = area.y + i as u16;
             let is_selected =
@@ -190,22 +187,20 @@ fn render_assistant_message_with_scroll(
                 if !selected_text.is_empty() {
                     selected_text.push('\n');
                 }
-                selected_text.push_str(line_text);
+                selected_text.push_str(&wrapped_line.text);
                 Line::from(Span::styled(
-                    line_text,
+                    wrapped_line.text.clone(),
                     Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
                 ))
             } else {
-                // Parse markdown formatting for non-selected lines
-                Line::from(parse_markdown_line(line_text))
+                Line::from(parse_markdown_line(&wrapped_line.text))
             }
         })
         .collect();
 
-    // Skip lines according to scroll offset
     let visible_lines: Vec<Line> = all_lines.into_iter().skip(scroll_offset as usize).collect();
 
-    let para = Paragraph::new(visible_lines).wrap(Wrap { trim: false });
+    let para = Paragraph::new(visible_lines);
     frame.render_widget(para, area);
 }
 
@@ -341,34 +336,27 @@ pub fn message_height(message: &DisplayMessage, width: u16) -> u16 {
     let width = width.max(1) as usize;
     match message {
         DisplayMessage::User { text, .. } => {
-            // User messages have top and bottom padding (+2)
-            let content_height: u16 = text
-                .lines()
-                .map(|line| wrapped_line_height(line.chars().count(), width))
-                .sum::<u16>()
-                .max(1);
-            content_height + 2
+            let text_width = width.saturating_sub(2).max(1);
+            let layout = TextLayout::new(text, text_width);
+            layout.total_lines as u16 + 2
         }
-        DisplayMessage::Assistant { text } => text
-            .lines()
-            .map(|line| wrapped_line_height(line.chars().count(), width))
-            .sum::<u16>()
-            .max(1),
+        DisplayMessage::Assistant { text } => {
+            let layout = TextLayout::new(text, width);
+            (layout.total_lines as u16).max(1)
+        }
         DisplayMessage::Tool { output, .. } => {
             let max_output_lines = 12;
             let output_line_count = output.lines().count();
             let truncated = output_line_count > max_output_lines;
-            let prefix_len = 5; // "  ⎿  " or "     "
+            let prefix_len = 5;
             let effective_width = width.saturating_sub(prefix_len).max(1);
 
-            // Calculate wrapped height for each output line
             let output_height: u16 = output
                 .lines()
                 .take(max_output_lines)
                 .map(|line| wrapped_line_height(line.chars().count(), effective_width))
                 .sum();
 
-            // 1 for header + wrapped output lines + optional truncation line
             1 + output_height + u16::from(truncated)
         }
     }
