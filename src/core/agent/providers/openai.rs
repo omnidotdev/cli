@@ -104,12 +104,21 @@ struct StreamOptions {
     include_usage: bool,
 }
 
+/// Reasoning configuration for `OpenRouter`'s Claude models.
+///
+/// Per the `OpenRouter` `OpenAPI` spec, the `reasoning` object supports:
+/// - `effort`: Controls reasoning depth ("xhigh", "high", "medium", "low", "minimal", "none")
+/// - `summary`: Optional summarization mode ("auto", "concise", "detailed")
+///
+/// Note: `max_tokens` is NOT supported by `OpenRouter`'s reasoning API.
 #[derive(Debug, Serialize)]
 struct ReasoningConfig {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    max_tokens: Option<u32>,
+    /// Reasoning effort level: "xhigh", "high", "medium", "low", "minimal", "none"
     #[serde(skip_serializing_if = "Option::is_none")]
     effort: Option<String>,
+    /// Optional reasoning summary mode: "auto", "concise", "detailed"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    summary: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -424,7 +433,17 @@ impl LlmProvider for OpenAiProvider {
 
         let openai_tools = request.tools.as_ref().map(|t| convert_tools(t));
 
-        let reasoning: Option<ReasoningConfig> = None;
+        let model_lower = request.model.to_lowercase();
+        let reasoning = if self.provider_name == "openrouter"
+            && (model_lower.contains("claude") || model_lower.contains("anthropic"))
+        {
+            Some(ReasoningConfig {
+                effort: Some("high".to_string()),
+                summary: None,
+            })
+        } else {
+            None
+        };
 
         let openai_request = OpenAiRequest {
             model: request.model,
