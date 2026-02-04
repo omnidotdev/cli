@@ -269,6 +269,9 @@ pub fn calculate_content_height(
         total = total.saturating_add(streaming_height);
     }
 
+    // Add 1 line bottom padding for visual separation from prompt
+    total = total.saturating_add(1);
+
     total
 }
 
@@ -280,6 +283,7 @@ mod tests {
         DisplayMessage::User {
             text: text.to_string(),
             timestamp: None,
+            mode: AgentMode::Build,
         }
     }
 
@@ -324,15 +328,15 @@ mod tests {
     #[test]
     fn calculate_content_height_empty() {
         let height = calculate_content_height(&[], "", 80);
-        assert_eq!(height, 1); // 1 for top padding
+        assert_eq!(height, 2); // 1 top + 1 bottom padding
     }
 
     #[test]
     fn calculate_content_height_single_message() {
         let messages = vec![user_message("hello")];
         let height = calculate_content_height(&messages, "", 80);
-        // 1 (top padding) + 3 (user message with padding) + 1 (spacing) = 5
-        assert_eq!(height, 5);
+        // 1 (top) + 3 (user message) + 1 (spacing) + 1 (bottom) = 6
+        assert_eq!(height, 6);
     }
 
     #[test]
@@ -343,8 +347,8 @@ mod tests {
             user_message("third"),
         ];
         let height = calculate_content_height(&messages, "", 80);
-        // 1 (top padding) + (3 + 1) + (1 + 1) + (3 + 1) = 11
-        assert_eq!(height, 11);
+        // 1 (top) + (3 + 1) + (1 + 1) + (3 + 1) + 1 (bottom) = 12
+        assert_eq!(height, 12);
     }
 
     #[test]
@@ -352,14 +356,15 @@ mod tests {
         let messages = vec![user_message("hello")];
         let streaming = "streaming text";
         let height = calculate_content_height(&messages, streaming, 80);
-        // 1 (top padding) + 3 (user message) + 1 (spacing) + 1 (streaming) = 6
-        assert_eq!(height, 6);
+        // 1 (top) + 3 (user message) + 1 (spacing) + 1 (streaming) + 1 (bottom) = 7
+        assert_eq!(height, 7);
     }
 
     #[test]
     fn calculate_content_height_streaming_multiline() {
         let streaming = "line one\nline two";
         let height = calculate_content_height(&[], streaming, 80);
-        assert_eq!(height, 3); // 1 (top padding) + 2 (streaming lines)
+        // 1 (top) + 2 (streaming lines) + 1 (bottom) = 4
+        assert_eq!(height, 4);
     }
 }

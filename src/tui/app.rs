@@ -907,16 +907,23 @@ impl App {
     pub fn update_dimensions(&mut self, width: u16, height: u16, content_height: u16) {
         self.term_width = width;
         self.term_height = height;
-        // Calculate visible message area height (subtract prompt area)
-        // Must match render_session: (input_lines + 3).clamp(4, 13)
-        let input_lines = self.input.lines().count().max(1) as u16;
-        let input_lines = if self.input.ends_with('\n') {
-            input_lines + 1
+        // Calculate visible message area height (subtract prompt area + gap)
+        // Must match render_session layout: prompt_height = (input_lines + 5).clamp(6, 11)
+        // Plus 1-line gap between messages and prompt
+        let estimated_width = width.saturating_sub(3).max(1) as usize;
+        let input_lines = if self.input.is_empty() {
+            1
         } else {
-            input_lines
+            // Approximate wrapped line count (simple heuristic)
+            let char_count = self.input.chars().count();
+            let wrapped_lines = (char_count / estimated_width.max(1)) + 1;
+            (self.input.lines().count().max(wrapped_lines)).min(6) as u16
         };
-        let prompt_height = (input_lines + 3).clamp(4, 13);
-        let visible_height = height.saturating_sub(prompt_height);
+        let prompt_height = (input_lines + 5).clamp(6, 11);
+        let gap_height: u16 = 1; // Gap between messages and prompt
+        let visible_height = height
+            .saturating_sub(prompt_height)
+            .saturating_sub(gap_height);
         self.max_message_scroll = content_height.saturating_sub(visible_height);
 
         // Auto-scroll to bottom when enabled
