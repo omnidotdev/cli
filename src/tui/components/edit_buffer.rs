@@ -48,6 +48,11 @@ impl EditBuffer {
         self.preferred_column
     }
 
+    /// Set the preferred column for vertical navigation.
+    pub const fn set_preferred_column(&mut self, col: Option<usize>) {
+        self.preferred_column = col;
+    }
+
     /// Get the length of the text in bytes.
     #[must_use]
     pub fn len(&self) -> usize {

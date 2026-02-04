@@ -3,6 +3,7 @@
 mod command_palette;
 mod diff;
 mod edit_buffer;
+mod editor_view;
 pub mod highlighting;
 mod input_action;
 mod markdown;
@@ -19,6 +20,7 @@ pub use command_palette::{
     should_show_dropdown, DropdownMode,
 };
 pub use edit_buffer::EditBuffer;
+pub use editor_view::{EditorView, VisualCursor};
 
 #[allow(unused_imports)]
 pub use input_action::{build_keybinding_map, default_keybindings, InputAction, KeyBinding};
