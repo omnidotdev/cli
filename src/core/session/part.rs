@@ -5,6 +5,15 @@ use serde_json::Value;
 
 use super::new_part_id;
 
+/// Reference to a file included in a message.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FileReference {
+    /// Path to the file.
+    pub path: String,
+    /// Optional hash of the file content for verification.
+    pub content_hash: Option<String>,
+}
+
 /// Part of a message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
@@ -65,6 +74,9 @@ pub struct TextPart {
     pub synthetic: bool,
     /// Timestamps.
     pub time: Option<PartTime>,
+    /// File references included in this message.
+    #[serde(default)]
+    pub file_references: Vec<FileReference>,
 }
 
 impl TextPart {
@@ -82,6 +94,7 @@ impl TextPart {
                 start: now,
                 end: Some(now),
             }),
+            file_references: Vec::new(),
         }
     }
 

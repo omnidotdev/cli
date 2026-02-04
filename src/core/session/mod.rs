@@ -16,15 +16,15 @@ use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
 pub use compaction::{
-    CompactionResult, DEFAULT_COMPACTION_THRESHOLD, MIN_MESSAGES_TO_KEEP, compaction_prompt,
+    compaction_prompt, CompactionResult, DEFAULT_COMPACTION_THRESHOLD, MIN_MESSAGES_TO_KEEP,
 };
 pub use export::{ExportFormat, ExportedMessage, ExportedSession};
 pub use message::{
     AssistantMessage, Message, MessageSummary, MessageTime, TokenUsage, UserMessage,
 };
-pub use part::{Part, PartTime, ReasoningPart, TextPart, ToolPart, ToolState};
+pub use part::{FileReference, Part, PartTime, ReasoningPart, TextPart, ToolPart, ToolState};
 pub use share::{ShareOptions, ShareToken};
-pub use titling::{MAX_TITLE_LENGTH, extract_title, titling_prompt};
+pub use titling::{extract_title, titling_prompt, MAX_TITLE_LENGTH};
 
 use super::project::Project;
 

@@ -3,6 +3,7 @@
 use std::time::SystemTime;
 
 use crate::core::agent::AgentMode;
+use crate::core::session::FileReference;
 
 /// Tool icons by category
 pub mod icons {
@@ -38,6 +39,7 @@ pub enum DisplayMessage {
         text: String,
         timestamp: Option<SystemTime>,
         mode: AgentMode,
+        files: Vec<FileReference>,
     },
     /// Assistant response without border
     Assistant {
@@ -69,6 +71,7 @@ impl DisplayMessage {
             text: text.into(),
             timestamp: Some(SystemTime::now()),
             mode,
+            files: Vec::new(),
         }
     }
 

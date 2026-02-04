@@ -8,7 +8,7 @@ use uuid::Uuid;
 use super::components::{
     EditBuffer, EditorView, InputAction, ModelSelectionDialog, SessionListDialog,
 };
-use super::message::{format_tool_invocation, DisplayMessage};
+use super::message::{DisplayMessage, format_tool_invocation};
 use super::state::ViewState;
 
 /// Type alias for model fetch results receiver.
@@ -50,12 +50,12 @@ pub const ECOSYSTEM_TIPS: &[&str] = &[
 ];
 
 use crate::config::{AgentConfig, AgentPermissions, Config};
+use crate::core::Agent;
 use crate::core::agent::{
     AgentMode, AskUserResponse, InterfaceMessage, PermissionAction, PermissionContext,
     PermissionResponse, ReasoningEffort,
 };
 use crate::core::session::{SessionManager, SessionTarget};
-use crate::core::Agent;
 
 /// Active text selection state.
 #[derive(Debug, Clone)]
@@ -1000,7 +1000,7 @@ impl App {
 
             match msg {
                 SessionMessage::User(user_msg) => {
-                    // Collect text parts into user message
+                    // Collect text parts and file references into user message
                     let text: String = parts
                         .iter()
                         .filter_map(|p| match p {
@@ -1009,6 +1009,15 @@ impl App {
                         })
                         .collect::<Vec<_>>()
                         .join("\n");
+
+                    let files: Vec<_> = parts
+                        .iter()
+                        .filter_map(|p| match p {
+                            Part::Text(t) => Some(t.file_references.clone()),
+                            _ => None,
+                        })
+                        .flatten()
+                        .collect();
 
                     if !text.is_empty() {
                         let mode = if user_msg.agent == "plan" {
@@ -1020,6 +1029,7 @@ impl App {
                             text,
                             timestamp: None,
                             mode,
+                            files,
                         });
                     }
                 }
