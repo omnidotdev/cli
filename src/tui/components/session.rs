@@ -11,7 +11,6 @@ use ratatui::{
 use super::markdown::parse_markdown_line;
 use super::messages::{render_message_with_scroll, wrapped_line_height};
 use super::prompt::{render_prompt, PromptMode};
-use super::text_layout::TextLayout;
 use crate::core::agent::{AgentMode, ReasoningEffort};
 use crate::tui::app::Selection;
 use crate::tui::message::DisplayMessage;
@@ -44,14 +43,8 @@ pub fn render_session(
     tool_message_areas: &mut Vec<(Rect, usize)>,
     reasoning_effort: ReasoningEffort,
 ) -> ((u16, u16), Rect) {
-    let estimated_width = area.width.saturating_sub(4).max(1) as usize;
-    let input_lines = if input.is_empty() {
-        1
-    } else {
-        let layout = TextLayout::new(input, estimated_width);
-        layout.total_lines.min(6)
-    };
-    let prompt_height = (input_lines as u16 + 5).clamp(6, 11);
+    // Use fixed height to prevent layout shifts when text wraps
+    let prompt_height = 11;
 
     let padded_width = area.width.saturating_sub(MESSAGE_PADDING_X * 2);
     let queued_total_height: u16 = queued_messages
