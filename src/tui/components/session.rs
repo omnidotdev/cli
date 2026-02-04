@@ -41,6 +41,7 @@ pub fn render_session(
     selection: Option<&Selection>,
     selected_text: &mut String,
     _session_cost: f64,
+    prompt_scroll_offset: usize,
 ) -> ((u16, u16), Rect) {
     let estimated_width = area.width.saturating_sub(3).max(1) as usize;
     let input_lines = if input.is_empty() {
@@ -90,6 +91,7 @@ pub fn render_session(
         provider,
         None,
         agent_mode,
+        prompt_scroll_offset,
     )
 }
 

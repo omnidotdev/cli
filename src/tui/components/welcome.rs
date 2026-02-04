@@ -42,6 +42,7 @@ pub fn render_welcome(
     agent_mode: AgentMode,
     model: &str,
     provider: &str,
+    prompt_scroll_offset: usize,
 ) -> ((u16, u16), Rect) {
     // Early return for tiny terminals
     if area.width < 10 || area.height < 5 {
@@ -185,6 +186,7 @@ pub fn render_welcome(
         provider,
         Some(placeholder),
         agent_mode,
+        prompt_scroll_offset,
     )
 }
 

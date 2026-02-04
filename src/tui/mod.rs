@@ -37,7 +37,7 @@ use crate::core::session::SessionTarget;
 pub use app::App;
 use app::{ActiveAskUserDialog, ActiveDialog, ActivePermissionDialog, ChatMessage};
 use components::{
-    DropdownMode, MESSAGE_PADDING_X, calculate_content_height, dropdown_mode, filter_commands,
+    DropdownMode, MESSAGE_PADDING_X, TextLayout, calculate_content_height, dropdown_mode, filter_commands,
     filter_models, render_command_dropdown, render_model_dropdown, render_model_selection_dialog,
     render_session, render_session_list, render_welcome, should_show_dropdown,
 };
@@ -217,6 +217,7 @@ async fn run_app(
                         app.agent_mode,
                         &app.model,
                         &app.provider,
+                        app.prompt_scroll_offset,
                     )
                 }
                 ViewState::Session => {
@@ -242,9 +243,12 @@ async fn run_app(
                         app.selection.as_ref(),
                         &mut app.selected_text,
                         app.session_cost,
+                        app.prompt_scroll_offset,
                     )
                 }
             };
+
+            app.set_prompt_area(prompt_area);
 
             // Set cursor position
             f.set_cursor_position(Position::new(cursor_pos.0, cursor_pos.1));
@@ -320,14 +324,24 @@ async fn run_app(
                                 match mouse.kind {
                                     MouseEventKind::ScrollUp => {
                                         if app.view_state == ViewState::Session {
-                                            app.scroll_messages_up(3);
+                                            if app.is_in_prompt_area(mouse.row, mouse.column) {
+                                                app.scroll_prompt_up(3);
+                                            } else {
+                                                app.scroll_messages_up(3);
+                                            }
                                         } else {
                                             app.scroll_up(3);
                                         }
                                     }
                                     MouseEventKind::ScrollDown => {
                                         if app.view_state == ViewState::Session {
-                                            app.scroll_messages_down(3);
+                                            if app.is_in_prompt_area(mouse.row, mouse.column) {
+                                                let layout = TextLayout::new(&app.input, app.prompt_text_width);
+                                                let max_scroll = layout.total_lines.saturating_sub(6);
+                                                app.scroll_prompt_down(3, max_scroll);
+                                            } else {
+                                                app.scroll_messages_down(3);
+                                            }
                                         } else {
                                             app.scroll_down(3, 1000);
                                         }

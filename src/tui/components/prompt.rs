@@ -99,6 +99,7 @@ pub fn render_prompt(
     provider: &str,
     placeholder: Option<&str>,
     agent_mode: AgentMode,
+    scroll_offset: usize,
 ) -> ((u16, u16), Rect) {
     if area.width < 5 || area.height < 3 {
         return ((area.x, area.y), area);
@@ -155,6 +156,7 @@ pub fn render_prompt(
         provider,
         text_width,
         box_area.height,
+        scroll_offset,
     );
 
     let block = Block::default()
@@ -191,6 +193,7 @@ fn build_prompt_content(
     provider: &str,
     text_width: usize,
     box_height: u16,
+    scroll_offset: usize,
 ) -> (Vec<Line<'static>>, CursorInfo) {
     let border_color = match agent_mode {
         AgentMode::Build => BRAND_TEAL,
@@ -210,11 +213,14 @@ fn build_prompt_content(
         (wrapped, visual_line, cursor_col)
     };
 
-    let scroll_offset = if visual_line >= max_visible_lines {
-        visual_line - max_visible_lines + 1
-    } else {
-        0
-    };
+    let mut scroll_offset = scroll_offset;
+
+    // Auto-scroll to keep cursor visible
+    if visual_line < scroll_offset {
+        scroll_offset = visual_line;
+    } else if visual_line >= scroll_offset + max_visible_lines {
+        scroll_offset = visual_line - max_visible_lines + 1;
+    }
 
     let text_style = if input.is_empty() {
         Style::default().fg(DIMMED)

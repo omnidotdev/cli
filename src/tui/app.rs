@@ -1,6 +1,7 @@
 //! TUI application state.
 
 use rand::prelude::IndexedRandom;
+use ratatui::layout::Rect;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -260,6 +261,12 @@ pub struct App {
 
     /// Preferred column position when navigating up/down
     pub preferred_column: Option<usize>,
+
+    /// Scroll offset for prompt content
+    pub prompt_scroll_offset: usize,
+
+    /// Prompt area bounds for mouse detection
+    pub prompt_area: Option<Rect>,
 }
 
 impl Default for App {
@@ -399,6 +406,8 @@ impl App {
             models_rx: None,
             prompt_text_width: 80,
             preferred_column: None,
+            prompt_scroll_offset: 0,
+            prompt_area: None,
         }
     }
 
@@ -851,6 +860,32 @@ impl App {
         if self.message_scroll >= self.max_message_scroll {
             self.auto_scroll = true;
         }
+    }
+
+    /// Scroll the prompt up by the given number of lines.
+    pub fn scroll_prompt_up(&mut self, lines: usize) {
+        self.prompt_scroll_offset = self.prompt_scroll_offset.saturating_sub(lines);
+    }
+
+    /// Scroll the prompt down by the given number of lines.
+    pub fn scroll_prompt_down(&mut self, lines: usize, max_scroll: usize) {
+        self.prompt_scroll_offset = (self.prompt_scroll_offset + lines).min(max_scroll);
+    }
+
+    /// Set the prompt area bounds for mouse detection.
+    pub fn set_prompt_area(&mut self, area: Rect) {
+        self.prompt_area = Some(area);
+    }
+
+    /// Check if a point is within the prompt area.
+    #[must_use]
+    pub fn is_in_prompt_area(&self, row: u16, col: u16) -> bool {
+        self.prompt_area.map_or(false, |area| {
+            row >= area.y
+                && row < area.y + area.height
+                && col >= area.x
+                && col < area.x + area.width
+        })
     }
 
     /// Update terminal dimensions and recalculate max scroll.

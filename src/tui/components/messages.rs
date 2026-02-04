@@ -1,15 +1,15 @@
 //! Message rendering components.
 
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
+    Frame,
 };
 
 use super::markdown::parse_markdown_line;
-use crate::tui::message::{DisplayMessage, icons, tool_icon};
+use crate::tui::message::{icons, tool_icon, DisplayMessage};
 
 /// Brand colors
 const BRAND_TEAL: Color = Color::Rgb(77, 201, 176);
