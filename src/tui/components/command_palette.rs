@@ -137,8 +137,8 @@ pub fn render_command_dropdown(
     selected: usize,
 ) -> (u16, Rect) {
     let filtered = filter_commands(input);
-    // Inner width available for content (minus borders)
-    let inner_width = prompt_area.width.saturating_sub(2) as usize;
+
+    let inner_width = prompt_area.width as usize;
 
     // Build content lines
     let lines: Vec<Line> = if filtered.is_empty() {
@@ -228,7 +228,7 @@ pub fn render_model_dropdown(
     models: &[ModelInfo],
 ) -> (u16, Rect) {
     let filtered = filter_models(input, models);
-    let inner_width = prompt_area.width.saturating_sub(2) as usize;
+    let inner_width = prompt_area.width as usize;
 
     let lines: Vec<Line> = if filtered.is_empty() {
         let query = input.strip_prefix("/model ").unwrap_or("").trim();
