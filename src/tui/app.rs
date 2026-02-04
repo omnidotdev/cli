@@ -143,8 +143,6 @@ pub struct ExpandedToolDialog {
     pub scroll_offset: u16,
     /// Total rendered line count (calculated once for scroll bounds).
     pub total_lines: usize,
-    /// Whether output is a diff (cached to avoid re-detection).
-    pub is_diff: bool,
     /// Cached rendered lines (avoids re-parsing/highlighting on every frame).
     pub cached_lines: Vec<ratatui::text::Line<'static>>,
     /// Width at which lines were cached (for invalidation on resize).
@@ -1236,7 +1234,6 @@ mod tests {
             output: "line\n".repeat(100),
             scroll_offset: 0,
             total_lines: 100,
-            is_diff: false,
             cached_lines: vec![],
             cached_width: 80,
             visible_height: 20,
@@ -1254,7 +1251,6 @@ mod tests {
             output: "line\n".repeat(10),
             scroll_offset: 0,
             total_lines: 10,
-            is_diff: false,
             cached_lines: vec![],
             cached_width: 80,
             visible_height: 20,
