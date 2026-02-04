@@ -1,19 +1,21 @@
 //! Message rendering components.
 
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
+    Frame,
 };
 
 use super::markdown::parse_markdown_line;
 use super::text_layout::TextLayout;
-use crate::tui::message::{DisplayMessage, icons, tool_icon};
+use crate::core::agent::AgentMode;
+use crate::tui::message::{icons, tool_icon, DisplayMessage};
 
 /// Brand colors
 const BRAND_TEAL: Color = Color::Rgb(77, 201, 176);
+const PLAN_PURPLE: Color = Color::Rgb(160, 100, 200);
 /// Lighter panel background for "previous" user messages
 const PANEL_BG: Color = Color::Rgb(28, 30, 35);
 const DIMMED: Color = Color::Rgb(100, 100, 110);
@@ -58,11 +60,12 @@ pub fn render_message_with_scroll(
     selected_text: &mut String,
 ) {
     match message {
-        DisplayMessage::User { text, .. } => {
+        DisplayMessage::User { text, mode, .. } => {
             render_user_message_with_scroll(
                 frame,
                 area,
                 text,
+                *mode,
                 scroll_offset,
                 selection,
                 selected_text,
@@ -105,6 +108,7 @@ fn render_user_message_with_scroll(
     frame: &mut Frame,
     area: Rect,
     text: &str,
+    mode: AgentMode,
     scroll_offset: u16,
     selection: Option<(u16, u16)>,
     selected_text: &mut String,
@@ -151,9 +155,14 @@ fn render_user_message_with_scroll(
 
     let visible_lines: Vec<Line> = lines.into_iter().skip(scroll_offset as usize).collect();
 
+    let border_color = match mode {
+        AgentMode::Build => BRAND_TEAL,
+        AgentMode::Plan => PLAN_PURPLE,
+    };
+
     let block = Block::default()
         .borders(Borders::LEFT)
-        .border_style(Style::default().fg(BRAND_TEAL))
+        .border_style(Style::default().fg(border_color))
         .style(Style::default().bg(PANEL_BG));
 
     let para = Paragraph::new(visible_lines).block(block);
@@ -337,7 +346,7 @@ pub const fn wrapped_line_height(chars: usize, width: usize) -> u16 {
 pub fn message_height(message: &DisplayMessage, width: u16) -> u16 {
     let width = width.max(1) as usize;
     match message {
-        DisplayMessage::User { text, .. } => {
+        DisplayMessage::User { text, mode: _, .. } => {
             let text_width = width.saturating_sub(3).max(1);
             let layout = TextLayout::new(text, text_width);
             layout.total_lines as u16 + 2
