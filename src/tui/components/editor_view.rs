@@ -51,11 +51,11 @@ impl EditorView {
 
     /// Returns visual cursor position - ALWAYS BOUNDED to line width.
     #[must_use]
-    pub fn get_visual_cursor(&self, buffer: &EditBuffer) -> VisualCursor {
+    #[allow(clippy::unused_self)]
+    pub fn get_visual_cursor(&self, buffer: &EditBuffer, layout: &TextLayout) -> VisualCursor {
         if buffer.is_empty() {
             return VisualCursor::default();
         }
-        let layout = TextLayout::new(buffer.text(), self.width);
         let cursor_char = buffer.byte_to_char_index(buffer.cursor());
         let (row, col) = layout.cursor_to_visual(cursor_char);
 
@@ -63,18 +63,15 @@ impl EditorView {
     }
 
     #[must_use]
-    pub fn get_visual_line_count(&self, buffer: &EditBuffer) -> usize {
-        if buffer.is_empty() {
-            return 1;
-        }
-        let layout = TextLayout::new(buffer.text(), self.width);
+    #[allow(clippy::unused_self)]
+    pub fn get_visual_line_count(&self, _buffer: &EditBuffer, layout: &TextLayout) -> usize {
         layout.total_lines
     }
 
     /// Character index at start of current visual line.
     #[must_use]
-    pub fn get_visual_sol(&self, buffer: &EditBuffer) -> usize {
-        let layout = TextLayout::new(buffer.text(), self.width);
+    #[allow(clippy::unused_self)]
+    pub fn get_visual_sol(&self, buffer: &EditBuffer, layout: &TextLayout) -> usize {
         let cursor_char = buffer.byte_to_char_index(buffer.cursor());
         let (row, _) = layout.cursor_to_visual(cursor_char);
         layout.row_start(row)
@@ -82,8 +79,8 @@ impl EditorView {
 
     /// Character index at end of current visual line.
     #[must_use]
-    pub fn get_visual_eol(&self, buffer: &EditBuffer) -> usize {
-        let layout = TextLayout::new(buffer.text(), self.width);
+    #[allow(clippy::unused_self)]
+    pub fn get_visual_eol(&self, buffer: &EditBuffer, layout: &TextLayout) -> usize {
         let cursor_char = buffer.byte_to_char_index(buffer.cursor());
         let (row, _) = layout.cursor_to_visual(cursor_char);
         layout.row_end(row)
@@ -91,11 +88,11 @@ impl EditorView {
 
     /// Move cursor up one visual line, preserving column.
     /// Ported from app.rs:631-650
-    pub fn move_up_visual(&self, buffer: &mut EditBuffer) {
+    #[allow(clippy::unused_self)]
+    pub fn move_up_visual(&self, buffer: &mut EditBuffer, layout: &TextLayout) {
         if buffer.is_empty() {
             return;
         }
-        let layout = TextLayout::new(buffer.text(), self.width);
         let cursor_char = buffer.byte_to_char_index(buffer.cursor());
         let (row, col) = layout.cursor_to_visual(cursor_char);
 
@@ -114,11 +111,11 @@ impl EditorView {
 
     /// Move cursor down one visual line, preserving column.
     /// Ported from app.rs:653-672
-    pub fn move_down_visual(&self, buffer: &mut EditBuffer) {
+    #[allow(clippy::unused_self)]
+    pub fn move_down_visual(&self, buffer: &mut EditBuffer, layout: &TextLayout) {
         if buffer.is_empty() {
             return;
         }
-        let layout = TextLayout::new(buffer.text(), self.width);
         let cursor_char = buffer.byte_to_char_index(buffer.cursor());
         let (row, col) = layout.cursor_to_visual(cursor_char);
 
@@ -136,8 +133,13 @@ impl EditorView {
     }
 
     /// Adjust `scroll_offset` to keep cursor visible within `max_visible` lines.
-    pub fn ensure_cursor_visible(&mut self, buffer: &EditBuffer, max_visible: usize) {
-        let visual = self.get_visual_cursor(buffer);
+    pub fn ensure_cursor_visible(
+        &mut self,
+        buffer: &EditBuffer,
+        layout: &TextLayout,
+        max_visible: usize,
+    ) {
+        let visual = self.get_visual_cursor(buffer, layout);
 
         if visual.row < self.scroll_offset {
             self.scroll_offset = visual.row;
@@ -155,7 +157,8 @@ mod tests {
     fn test_visual_cursor_empty_buffer() {
         let view = EditorView::new(80);
         let buffer = EditBuffer::new();
-        let cursor = view.get_visual_cursor(&buffer);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        let cursor = view.get_visual_cursor(&buffer, &layout);
         assert_eq!(cursor, VisualCursor { row: 0, col: 0 });
     }
 
@@ -164,7 +167,8 @@ mod tests {
         let view = EditorView::new(80);
         let mut buffer = EditBuffer::with_text("hello");
         buffer.set_cursor(2);
-        let cursor = view.get_visual_cursor(&buffer);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        let cursor = view.get_visual_cursor(&buffer, &layout);
         assert_eq!(cursor, VisualCursor { row: 0, col: 2 });
     }
 
@@ -174,7 +178,8 @@ mod tests {
         let mut buffer = EditBuffer::with_text("hello world");
         // "hello" on line 0, "world" on line 1
         buffer.set_cursor(8); // 'r' in "world" (after "hello w")
-        let cursor = view.get_visual_cursor(&buffer);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        let cursor = view.get_visual_cursor(&buffer, &layout);
         assert_eq!(cursor.row, 1);
         assert_eq!(cursor.col, 2); // "wo[r]ld" -> col 2
     }
@@ -184,7 +189,8 @@ mod tests {
         // Test that cursor col is bounded to actual line width
         let view = EditorView::new(8);
         let buffer = EditBuffer::with_text("hello     "); // trailing spaces get trimmed in wrap
-        let cursor = view.get_visual_cursor(&buffer);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        let cursor = view.get_visual_cursor(&buffer, &layout);
         // The actual wrapped text will have col bounded
         assert!(cursor.col <= 8, "col {} should be <= width 8", cursor.col);
     }
@@ -193,14 +199,16 @@ mod tests {
     fn test_visual_line_count_empty() {
         let view = EditorView::new(80);
         let buffer = EditBuffer::new();
-        assert_eq!(view.get_visual_line_count(&buffer), 1);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        assert_eq!(view.get_visual_line_count(&buffer, &layout), 1);
     }
 
     #[test]
     fn test_visual_line_count_wrapped() {
         let view = EditorView::new(7);
         let buffer = EditBuffer::with_text("hello world");
-        assert_eq!(view.get_visual_line_count(&buffer), 2);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        assert_eq!(view.get_visual_line_count(&buffer, &layout), 2);
     }
 
     #[test]
@@ -209,9 +217,11 @@ mod tests {
         let mut buffer = EditBuffer::with_text("hello world");
         buffer.set_cursor(8); // 'r' in "world"
 
-        view.move_up_visual(&mut buffer);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        view.move_up_visual(&mut buffer, &layout);
 
-        let cursor = view.get_visual_cursor(&buffer);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        let cursor = view.get_visual_cursor(&buffer, &layout);
         assert_eq!(cursor.row, 0);
         // Preferred column should be preserved
         assert_eq!(cursor.col, 2); // Same col as before
@@ -224,7 +234,8 @@ mod tests {
         buffer.set_cursor(2);
         let original_cursor = buffer.cursor();
 
-        view.move_up_visual(&mut buffer);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        view.move_up_visual(&mut buffer, &layout);
 
         assert_eq!(buffer.cursor(), original_cursor); // No change
     }
@@ -236,7 +247,8 @@ mod tests {
         buffer.set_cursor(2);
         let original_cursor = buffer.cursor();
 
-        view.move_down_visual(&mut buffer);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        view.move_down_visual(&mut buffer, &layout);
 
         assert_eq!(buffer.cursor(), original_cursor); // No change
     }
@@ -247,9 +259,11 @@ mod tests {
         let mut buffer = EditBuffer::with_text("hello world");
         buffer.set_cursor(2); // 'l' in "hello"
 
-        view.move_down_visual(&mut buffer);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        view.move_down_visual(&mut buffer, &layout);
 
-        let cursor = view.get_visual_cursor(&buffer);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        let cursor = view.get_visual_cursor(&buffer, &layout);
         assert_eq!(cursor.row, 1);
         // Preferred column 2 preserved
         assert_eq!(cursor.col, 2);
@@ -262,7 +276,8 @@ mod tests {
         let mut buffer = EditBuffer::with_text("a\nb\nc\nd"); // 4 lines
         buffer.set_cursor(0); // At start (row 0)
 
-        view.ensure_cursor_visible(&buffer, 3);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        view.ensure_cursor_visible(&buffer, &layout, 3);
 
         assert_eq!(view.scroll_offset(), 0); // Scrolled up to show cursor
     }
@@ -274,7 +289,8 @@ mod tests {
         let mut buffer = EditBuffer::with_text("a\nb\nc\nd\ne\nf");
         buffer.set_cursor(buffer.len()); // At end (last line)
 
-        view.ensure_cursor_visible(&buffer, 3);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        view.ensure_cursor_visible(&buffer, &layout, 3);
 
         // Cursor at row 5, max_visible 3 -> scroll to show rows 3,4,5
         assert!(view.scroll_offset() >= 3);
@@ -286,13 +302,14 @@ mod tests {
         let mut buffer = EditBuffer::with_text("hello world");
         // Line 0: "hello" (chars 0-5), Line 1: "world" (chars 6-11)
 
+        let layout = TextLayout::new(buffer.text(), view.width());
         buffer.set_cursor(8); // In "world"
-        assert_eq!(view.get_visual_sol(&buffer), 6);
-        assert_eq!(view.get_visual_eol(&buffer), 11);
+        assert_eq!(view.get_visual_sol(&buffer, &layout), 6);
+        assert_eq!(view.get_visual_eol(&buffer, &layout), 11);
 
         buffer.set_cursor(2); // In "hello"
-        assert_eq!(view.get_visual_sol(&buffer), 0);
-        assert_eq!(view.get_visual_eol(&buffer), 5);
+        assert_eq!(view.get_visual_sol(&buffer, &layout), 0);
+        assert_eq!(view.get_visual_eol(&buffer, &layout), 5);
     }
 
     #[test]
@@ -305,20 +322,24 @@ mod tests {
         // Line 2: "abcdefghij" (10 chars)
 
         buffer.set_cursor(5); // Col 5 on line 0
-        view.move_down_visual(&mut buffer);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        view.move_down_visual(&mut buffer, &layout);
 
         // Line 1 only has 2 chars, so cursor moves to col 2 (end)
-        let cursor1 = view.get_visual_cursor(&buffer);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        let cursor1 = view.get_visual_cursor(&buffer, &layout);
         assert_eq!(cursor1.row, 1);
         assert_eq!(cursor1.col, 2);
 
         // But preferred column should still be 5
         assert_eq!(buffer.preferred_column(), Some(5));
 
-        view.move_down_visual(&mut buffer);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        view.move_down_visual(&mut buffer, &layout);
 
         // Line 2 has 10 chars, preferred col 5 should be restored
-        let cursor2 = view.get_visual_cursor(&buffer);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        let cursor2 = view.get_visual_cursor(&buffer, &layout);
         assert_eq!(cursor2.row, 2);
         assert_eq!(cursor2.col, 5);
     }
@@ -327,7 +348,8 @@ mod tests {
     fn test_move_up_visual_empty_buffer() {
         let view = EditorView::new(80);
         let mut buffer = EditBuffer::new();
-        view.move_up_visual(&mut buffer);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        view.move_up_visual(&mut buffer, &layout);
         assert_eq!(buffer.cursor(), 0);
     }
 
@@ -335,7 +357,8 @@ mod tests {
     fn test_move_down_visual_empty_buffer() {
         let view = EditorView::new(80);
         let mut buffer = EditBuffer::new();
-        view.move_down_visual(&mut buffer);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        view.move_down_visual(&mut buffer, &layout);
         assert_eq!(buffer.cursor(), 0);
     }
 
@@ -344,7 +367,8 @@ mod tests {
         let view = EditorView::new(80);
         let mut buffer = EditBuffer::with_text("hello\nworld");
         buffer.set_cursor(8); // 'r' in "world"
-        let cursor = view.get_visual_cursor(&buffer);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        let cursor = view.get_visual_cursor(&buffer, &layout);
         assert_eq!(cursor.row, 1);
         assert_eq!(cursor.col, 2);
     }
@@ -353,7 +377,8 @@ mod tests {
     fn test_visual_line_count_multiline() {
         let view = EditorView::new(80);
         let buffer = EditBuffer::with_text("a\nb\nc");
-        assert_eq!(view.get_visual_line_count(&buffer), 3);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        assert_eq!(view.get_visual_line_count(&buffer, &layout), 3);
     }
 
     #[test]
@@ -363,7 +388,8 @@ mod tests {
         let mut buffer = EditBuffer::with_text("a\nb\nc\nd\ne");
         buffer.set_cursor(4); // Line 2
 
-        view.ensure_cursor_visible(&buffer, 3);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        view.ensure_cursor_visible(&buffer, &layout, 3);
 
         assert_eq!(view.scroll_offset(), 2); // No change
     }
@@ -375,7 +401,8 @@ mod tests {
         let mut buffer = EditBuffer::with_text("a\nb\nc");
         buffer.set_cursor(4); // Last line
 
-        view.ensure_cursor_visible(&buffer, 2);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        view.ensure_cursor_visible(&buffer, &layout, 2);
 
         assert!(view.scroll_offset() <= 1);
     }
@@ -385,7 +412,8 @@ mod tests {
         let view = EditorView::new(80);
         let mut buffer = EditBuffer::with_text("hello\nworld");
         buffer.set_cursor(8); // In "world"
-        assert_eq!(view.get_visual_sol(&buffer), 6);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        assert_eq!(view.get_visual_sol(&buffer, &layout), 6);
     }
 
     #[test]
@@ -393,7 +421,8 @@ mod tests {
         let view = EditorView::new(80);
         let mut buffer = EditBuffer::with_text("hello\nworld");
         buffer.set_cursor(8); // In "world"
-        assert_eq!(view.get_visual_eol(&buffer), 11);
+        let layout = TextLayout::new(buffer.text(), view.width());
+        assert_eq!(view.get_visual_eol(&buffer, &layout), 11);
     }
 
     #[test]

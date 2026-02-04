@@ -550,12 +550,18 @@ impl App {
 
     pub fn move_up(&mut self) {
         self.editor_view.set_width(self.prompt_text_width);
-        self.editor_view.move_up_visual(&mut self.edit_buffer);
+        let layout =
+            super::components::TextLayout::new(self.edit_buffer.text(), self.prompt_text_width);
+        self.editor_view
+            .move_up_visual(&mut self.edit_buffer, &layout);
     }
 
     pub fn move_down(&mut self) {
         self.editor_view.set_width(self.prompt_text_width);
-        self.editor_view.move_down_visual(&mut self.edit_buffer);
+        let layout =
+            super::components::TextLayout::new(self.edit_buffer.text(), self.prompt_text_width);
+        self.editor_view
+            .move_down_visual(&mut self.edit_buffer, &layout);
     }
 
     pub fn insert_char(&mut self, c: char) {
