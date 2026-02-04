@@ -295,6 +295,12 @@ pub struct App {
     /// Prompt area bounds for mouse detection
     pub prompt_area: Option<Rect>,
 
+    /// Command dropdown area bounds for mouse detection
+    pub command_dropdown_area: Option<Rect>,
+
+    /// Number of items currently visible in the command dropdown
+    pub command_dropdown_item_count: usize,
+
     /// Tool message areas for click detection (Rect, `message_index`)
     pub tool_message_areas: Vec<(Rect, usize)>,
 
@@ -450,6 +456,8 @@ impl App {
             prompt_text_width: 80,
             prompt_scroll_offset: 0,
             prompt_area: None,
+            command_dropdown_area: None,
+            command_dropdown_item_count: 0,
             tool_message_areas: Vec::new(),
             reasoning_effort: ReasoningEffort::default(),
             esc_pressed_once: false,
@@ -889,6 +897,12 @@ impl App {
         self.prompt_area = Some(area);
     }
 
+    /// Set the command dropdown area bounds and item count for mouse detection.
+    pub const fn set_dropdown_area(&mut self, area: Option<Rect>, item_count: usize) {
+        self.command_dropdown_area = area;
+        self.command_dropdown_item_count = item_count;
+    }
+
     /// Check if a point is within the prompt area.
     #[must_use]
     pub fn is_in_prompt_area(&self, row: u16, col: u16) -> bool {
@@ -897,6 +911,29 @@ impl App {
                 && row < area.y + area.height
                 && col >= area.x
                 && col < area.x + area.width
+        })
+    }
+
+    /// Check if a point is within the command dropdown area.
+    /// Returns the item index if clicked on a dropdown item, None otherwise.
+    /// Accounts for the top border when calculating item index.
+    #[must_use]
+    pub fn is_in_dropdown_area(&self, row: u16, col: u16) -> Option<usize> {
+        self.command_dropdown_area.and_then(|area| {
+            if row >= area.y
+                && row < area.y + area.height
+                && col >= area.x
+                && col < area.x + area.width
+            {
+                let item_index = (row - area.y - 1) as usize;
+                if item_index < self.command_dropdown_item_count {
+                    Some(item_index)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         })
     }
 
