@@ -827,21 +827,14 @@ fn handle_key(
             if app.loading {
                 // Double-Esc to cancel
                 if app.esc_pressed_once {
-                    // Second Esc - full cancellation
-                    // 1. Abort the spawned task
-                    if let Some(handle) = app.chat_handle.take() {
-                        handle.abort();
-                    }
-                    // 2. Clear the queue
+                    // Cancel streaming (don't abort task - agent must return via Done)
+                    app.chat_rx = None;
                     app.pending_messages.clear();
-                    // 3. Finalize streaming with cancelled marker
                     app.finalize_streaming(true);
-                    // 4. Reset state
                     app.loading = false;
                     app.esc_pressed_once = false;
                     app.backspace_on_empty_once = false;
                     app.activity_status = None;
-                    app.chat_rx = None;
                 } else {
                     // First Esc - set flag (hint shown via status)
                     app.esc_pressed_once = true;
