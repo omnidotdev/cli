@@ -115,20 +115,23 @@ pub fn render_prompt(
             let input_lines = if input.is_empty() {
                 1
             } else {
-                input.lines().count().max(1)
+                let layout = TextLayout::new(input, text_width);
+                layout.total_lines.min(6)
             };
-            let box_height = (input_lines as u16 + 4).min(14);
+            let box_height = (input_lines as u16 + 4).clamp(5, 10);
             let box_area = Rect::new(prompt_x, prompt_y, prompt_width, box_height);
             let hints_area = Rect::new(prompt_x, prompt_y + box_height, prompt_width, 1);
             (box_area, hints_area, text_width)
         }
         PromptMode::FullWidth => {
+            let estimated_width = area.width.saturating_sub(3).max(1) as usize;
             let input_lines = if input.is_empty() {
                 1
             } else {
-                input.lines().count().max(1)
+                let layout = TextLayout::new(input, estimated_width);
+                layout.total_lines.min(6)
             };
-            let box_height = (input_lines as u16 + 4).clamp(5, 14);
+            let box_height = (input_lines as u16 + 4).clamp(5, 10);
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Length(box_height), Constraint::Length(1)])

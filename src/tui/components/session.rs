@@ -11,6 +11,7 @@ use ratatui::{
 use super::markdown::parse_markdown_line;
 use super::messages::{render_message_with_scroll, wrapped_line_height};
 use super::prompt::{render_prompt, PromptMode};
+use super::text_layout::TextLayout;
 use crate::core::agent::AgentMode;
 use crate::tui::app::Selection;
 use crate::tui::message::DisplayMessage;
@@ -41,13 +42,14 @@ pub fn render_session(
     selected_text: &mut String,
     _session_cost: f64,
 ) -> ((u16, u16), Rect) {
-    let input_lines = input.lines().count().max(1) as u16;
-    let input_lines = if input.ends_with('\n') {
-        input_lines + 1
+    let estimated_width = area.width.saturating_sub(3).max(1) as usize;
+    let input_lines = if input.is_empty() {
+        1
     } else {
-        input_lines
+        let layout = TextLayout::new(input, estimated_width);
+        layout.total_lines.min(6)
     };
-    let prompt_height = (input_lines + 5).clamp(6, 15);
+    let prompt_height = (input_lines as u16 + 5).clamp(6, 11);
 
     // Split into message area and prompt area
     let chunks = Layout::default()
