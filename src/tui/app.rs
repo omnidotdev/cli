@@ -5,7 +5,7 @@ use ratatui::layout::Rect;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use super::components::{ModelSelectionDialog, SessionListDialog, TextLayout};
+use super::components::{EditBuffer, EditorView, ModelSelectionDialog, SessionListDialog};
 use super::message::{format_tool_invocation, DisplayMessage};
 use super::state::ViewState;
 
@@ -164,11 +164,11 @@ pub enum ActiveDialog {
 /// Application state for the TUI.
 #[allow(clippy::struct_excessive_bools)]
 pub struct App {
-    /// Current input buffer.
-    pub input: String,
+    /// Text input buffer with cursor management.
+    pub edit_buffer: EditBuffer,
 
-    /// Cursor position (byte offset).
-    pub cursor: usize,
+    /// Editor view for visual cursor and scrolling.
+    pub editor_view: EditorView,
 
     /// Current output display (legacy, for streaming text).
     pub output: String,
@@ -286,9 +286,6 @@ pub struct App {
 
     /// Width of prompt text area for visual line navigation
     pub prompt_text_width: usize,
-
-    /// Preferred column position when navigating up/down
-    pub preferred_column: Option<usize>,
 
     /// Scroll offset for prompt content
     pub prompt_scroll_offset: usize,
@@ -411,8 +408,8 @@ impl App {
             .unwrap_or_default();
 
         Self {
-            input: String::new(),
-            cursor: 0,
+            edit_buffer: EditBuffer::new(),
+            editor_view: EditorView::new(80),
             output,
             scroll_offset: 0,
             auto_scroll: true,
@@ -449,7 +446,6 @@ impl App {
             cached_provider_models: None,
             models_rx: None,
             prompt_text_width: 80,
-            preferred_column: None,
             prompt_scroll_offset: 0,
             prompt_area: None,
             tool_message_areas: Vec::new(),
@@ -485,216 +481,91 @@ impl App {
         }
     }
 
-    /// Delete from cursor to beginning of line.
+    #[must_use]
+    pub fn input(&self) -> &str {
+        self.edit_buffer.text()
+    }
+
+    #[must_use]
+    pub fn cursor(&self) -> usize {
+        self.edit_buffer.cursor()
+    }
+
+    pub fn set_cursor(&mut self, pos: usize) {
+        self.edit_buffer.set_cursor(pos);
+    }
+
+    pub fn set_input(&mut self, text: impl Into<String>) {
+        let text = text.into();
+        let len = text.len();
+        self.edit_buffer = EditBuffer::with_text(text);
+        self.edit_buffer.set_cursor(len);
+    }
+
+    pub fn take_input(&mut self) -> String {
+        let text = self.edit_buffer.text().to_string();
+        self.edit_buffer.clear();
+        text
+    }
+
     pub fn delete_to_start(&mut self) {
-        self.input.drain(..self.cursor);
-        self.cursor = 0;
+        self.edit_buffer.delete_to_start();
     }
 
-    /// Delete from cursor to end of line.
     pub fn delete_to_end(&mut self) {
-        self.input.truncate(self.cursor);
+        self.edit_buffer.delete_to_end();
     }
 
-    /// Delete word before cursor.
     pub fn delete_word(&mut self) {
-        if self.cursor == 0 {
-            return;
-        }
-
-        // Find start of word (skip trailing spaces, then skip word chars)
-        let before = &self.input[..self.cursor];
-        let trimmed = before.trim_end();
-
-        let word_start = trimmed
-            .rfind(|c: char| c.is_whitespace())
-            .map_or(0, |i| i + 1);
-
-        self.input.drain(word_start..self.cursor);
-        self.cursor = word_start;
+        self.edit_buffer.delete_word();
     }
 
-    /// Move cursor left by one character.
     pub fn move_left(&mut self) {
-        if self.cursor > 0 {
-            // Find previous char boundary
-            self.cursor = self.input[..self.cursor]
-                .char_indices()
-                .next_back()
-                .map_or(0, |(i, _)| i);
-        }
-        self.preferred_column = None;
+        self.edit_buffer.move_left();
     }
 
-    /// Move cursor right by one character.
     pub fn move_right(&mut self) {
-        if self.cursor < self.input.len() {
-            // Find next char boundary
-            self.cursor = self.input[self.cursor..]
-                .char_indices()
-                .nth(1)
-                .map_or(self.input.len(), |(i, _)| self.cursor + i);
-        }
-        self.preferred_column = None;
+        self.edit_buffer.move_right();
     }
 
-    /// Move cursor left by one word.
     pub fn move_word_left(&mut self) {
-        if self.cursor == 0 {
-            return;
-        }
-
-        let before = &self.input[..self.cursor];
-        let mut chars: Vec<(usize, char)> = before.char_indices().collect();
-        chars.reverse();
-
-        // Skip whitespace
-        while let Some(&(_, c)) = chars.first() {
-            if !c.is_whitespace() {
-                break;
-            }
-            chars.remove(0);
-        }
-
-        // Skip word characters
-        while let Some(&(i, c)) = chars.first() {
-            if c.is_whitespace() {
-                self.cursor = i + c.len_utf8();
-                return;
-            }
-            chars.remove(0);
-        }
-
-        self.cursor = 0;
+        self.edit_buffer.move_word_left();
     }
 
-    /// Move cursor right by one word.
     pub fn move_word_right(&mut self) {
-        if self.cursor >= self.input.len() {
-            return;
-        }
-
-        let after = &self.input[self.cursor..];
-        let mut chars = after.char_indices().peekable();
-
-        // Skip current word characters
-        while let Some(&(_, c)) = chars.peek() {
-            if c.is_whitespace() {
-                break;
-            }
-            chars.next();
-        }
-
-        // Skip whitespace
-        while let Some(&(_, c)) = chars.peek() {
-            if !c.is_whitespace() {
-                break;
-            }
-            chars.next();
-        }
-
-        self.cursor = chars
-            .peek()
-            .map_or(self.input.len(), |&(i, _)| self.cursor + i);
+        self.edit_buffer.move_word_right();
     }
 
-    /// Get the current cursor position as (`line_index`, `column`)
-    ///
-    /// Line index is 0-based, column is the character count from line start
     #[must_use]
     pub fn cursor_line_col(&self) -> (usize, usize) {
-        let before_cursor = &self.input[..self.cursor];
-        let line_index = before_cursor.matches('\n').count();
-        let line_start = before_cursor.rfind('\n').map_or(0, |i| i + 1);
-        let column = before_cursor[line_start..].chars().count();
-        (line_index, column)
+        self.edit_buffer.cursor_line_col()
     }
 
-    /// Check if input contains multiple lines.
     #[must_use]
     pub fn is_multiline(&self) -> bool {
-        self.input.contains('\n')
+        self.edit_buffer.is_multiline()
     }
 
-    fn byte_to_char_index(&self, byte_idx: usize) -> usize {
-        self.input[..byte_idx.min(self.input.len())].chars().count()
-    }
-
-    fn char_to_byte_index(&self, char_idx: usize) -> usize {
-        self.input
-            .char_indices()
-            .nth(char_idx)
-            .map_or(self.input.len(), |(i, _)| i)
-    }
-
-    /// Move cursor up one line, preserving column position.
     pub fn move_up(&mut self) {
-        if self.input.is_empty() {
-            return;
-        }
-        let layout = TextLayout::new(&self.input, self.prompt_text_width);
-        let cursor_char = self.byte_to_char_index(self.cursor);
-        let (row, col) = layout.cursor_to_visual(cursor_char);
-
-        if self.preferred_column.is_none() {
-            self.preferred_column = Some(col);
-        }
-
-        if row == 0 {
-            return;
-        }
-
-        let target_col = self.preferred_column.unwrap_or(col);
-        let new_char_idx = layout.visual_to_cursor(row - 1, target_col);
-        self.cursor = self.char_to_byte_index(new_char_idx);
+        self.editor_view.set_width(self.prompt_text_width);
+        self.editor_view.move_up_visual(&mut self.edit_buffer);
     }
 
-    /// Move cursor down one line, preserving column position.
     pub fn move_down(&mut self) {
-        if self.input.is_empty() {
-            return;
-        }
-        let layout = TextLayout::new(&self.input, self.prompt_text_width);
-        let cursor_char = self.byte_to_char_index(self.cursor);
-        let (row, col) = layout.cursor_to_visual(cursor_char);
-
-        if self.preferred_column.is_none() {
-            self.preferred_column = Some(col);
-        }
-
-        if row >= layout.total_lines - 1 {
-            return;
-        }
-
-        let target_col = self.preferred_column.unwrap_or(col);
-        let new_char_idx = layout.visual_to_cursor(row + 1, target_col);
-        self.cursor = self.char_to_byte_index(new_char_idx);
+        self.editor_view.set_width(self.prompt_text_width);
+        self.editor_view.move_down_visual(&mut self.edit_buffer);
     }
 
-    /// Insert character at cursor.
     pub fn insert_char(&mut self, c: char) {
-        self.input.insert(self.cursor, c);
-        self.cursor += c.len_utf8();
-        self.preferred_column = None;
+        self.edit_buffer.insert_char(c);
     }
 
-    /// Delete character before cursor.
     pub fn delete_char(&mut self) {
-        if self.cursor > 0 {
-            let prev = self.input[..self.cursor]
-                .char_indices()
-                .next_back()
-                .map_or(0, |(i, _)| i);
-            self.input.drain(prev..self.cursor);
-            self.cursor = prev;
-        }
-        self.preferred_column = None;
+        self.edit_buffer.delete_char_before();
     }
 
-    /// Clear input and reset cursor.
     pub fn clear_input(&mut self) {
-        self.input.clear();
-        self.cursor = 0;
+        self.edit_buffer.clear();
     }
 
     /// Show a permission dialog.
@@ -1019,13 +890,14 @@ impl App {
         // Must match render_session layout: prompt_height = (input_lines + 5).clamp(6, 11)
         // Plus 1-line gap between messages and prompt
         let estimated_width = width.saturating_sub(3).max(1) as usize;
-        let input_lines = if self.input.is_empty() {
+        let input_text = self.edit_buffer.text();
+        let input_lines = if input_text.is_empty() {
             1
         } else {
             // Approximate wrapped line count (simple heuristic)
-            let char_count = self.input.chars().count();
+            let char_count = input_text.chars().count();
             let wrapped_lines = (char_count / estimated_width.max(1)) + 1;
-            (self.input.lines().count().max(wrapped_lines)).min(6) as u16
+            (input_text.lines().count().max(wrapped_lines)).min(6) as u16
         };
         let prompt_height = (input_lines + 5).clamp(6, 11);
         let visible_height = height.saturating_sub(prompt_height);

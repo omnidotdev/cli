@@ -210,8 +210,8 @@ async fn run_app(
                         area,
                         app.tagline,
                         app.tip,
-                        &app.input,
-                        app.cursor,
+                        app.input(),
+                        app.cursor(),
                         app.placeholder,
                         app.agent_mode,
                         &app.model,
@@ -237,6 +237,8 @@ async fn run_app(
                     };
                     let status = status.as_deref();
                     let queued_messages = app.pending_messages.clone();
+                    let input_text = app.input().to_string();
+                    let cursor_pos_val = app.cursor();
                     render_session(
                         f,
                         area,
@@ -244,8 +246,8 @@ async fn run_app(
                         &queued_messages,
                         &app.streaming_thinking,
                         &app.streaming_text,
-                        &app.input,
-                        app.cursor,
+                        &input_text,
+                        cursor_pos_val,
                         app.message_scroll,
                         status,
                         &app.model,
@@ -268,16 +270,16 @@ async fn run_app(
             f.set_cursor_position(Position::new(cursor_pos.0, cursor_pos.1));
 
             // Render dropdown if visible - use the exact prompt area returned
-            if app.show_command_dropdown && should_show_dropdown(&app.input) {
-                match dropdown_mode(&app.input) {
+            if app.show_command_dropdown && should_show_dropdown(app.input()) {
+                match dropdown_mode(app.input()) {
                     DropdownMode::Commands => {
-                        render_command_dropdown(f, prompt_area, &app.input, app.command_selection);
+                        render_command_dropdown(f, prompt_area, app.input(), app.command_selection);
                     }
                     DropdownMode::Models => {
                         render_model_dropdown(
                             f,
                             prompt_area,
-                            &app.input,
+                            app.input(),
                             app.command_selection,
                             &app.agent_config.models,
                         );
@@ -348,7 +350,7 @@ async fn run_app(
                                     }
                                     MouseEventKind::ScrollDown => {
                                         if app.is_in_prompt_area(mouse.row, mouse.column) {
-                                            let layout = TextLayout::new(&app.input, app.prompt_text_width);
+                                            let layout = TextLayout::new(app.input(), app.prompt_text_width);
                                             let max_scroll = layout.total_lines.saturating_sub(6);
                                             app.scroll_prompt_down(3, max_scroll);
                                         } else if app.view_state == ViewState::Session {
@@ -445,7 +447,7 @@ async fn run_app(
 
                         // Process next queued message if any
                         if let Some(next_prompt) = app.activate_first_queued_message() {
-                            app.input = next_prompt;
+                            app.set_input(next_prompt);
                             start_chat(app, permission_tx.clone());
                         } else {
                             app.loading = false;
@@ -465,7 +467,7 @@ async fn run_app(
 
                         // Process next queued message if any
                         if let Some(next_prompt) = app.activate_first_queued_message() {
-                            app.input = next_prompt;
+                            app.set_input(next_prompt);
                             start_chat(app, permission_tx.clone());
                         } else {
                             app.loading = false;
@@ -556,30 +558,30 @@ fn handle_key(
                     app.chat_rx = None;
                     app.finalize_streaming(true);
                     app.loading = false;
-                } else if app.input.is_empty() {
+                } else if app.input().is_empty() {
                     return true; // Exit.
                 } else {
                     app.clear_input();
                     app.show_command_dropdown = false;
                 }
             }
-            KeyCode::Char('a') => app.cursor = 0,
-            KeyCode::Char('e') => app.cursor = app.input.len(),
+            KeyCode::Char('a') => app.set_cursor(0),
+            KeyCode::Char('e') => app.set_cursor(app.edit_buffer.len()),
             KeyCode::Left => app.move_word_left(),
             KeyCode::Right => app.move_word_right(),
             KeyCode::Char('u') => {
                 app.delete_to_start();
-                app.show_command_dropdown = should_show_dropdown(&app.input);
+                app.show_command_dropdown = should_show_dropdown(app.input());
                 app.command_selection = 0;
             }
             KeyCode::Char('k') => {
                 app.delete_to_end();
-                app.show_command_dropdown = should_show_dropdown(&app.input);
+                app.show_command_dropdown = should_show_dropdown(app.input());
                 app.command_selection = 0;
             }
             KeyCode::Char('w') => {
                 app.delete_word();
-                app.show_command_dropdown = should_show_dropdown(&app.input);
+                app.show_command_dropdown = should_show_dropdown(app.input());
                 app.command_selection = 0;
             }
             KeyCode::Char('l') => {
@@ -619,28 +621,28 @@ fn handle_key(
     match code {
         KeyCode::Enter => {
             // Queue message if loading
-            if !app.input.is_empty() && app.loading {
+            if !app.input().is_empty() && app.loading {
                 if app.queued_message_count() < 10 {
-                    app.add_queued_message(app.input.clone());
+                    app.add_queued_message(app.input().to_string());
                     app.clear_input();
                     app.esc_pressed_once = false;
                     app.backspace_on_empty_once = false;
                 }
-            } else if !app.input.is_empty() && !app.loading {
+            } else if !app.input().is_empty() && !app.loading {
                 // If dropdown is visible, execute selected item
                 if app.show_command_dropdown {
-                    match dropdown_mode(&app.input) {
+                    match dropdown_mode(app.input()) {
                         DropdownMode::Commands => {
-                            let filtered = filter_commands(&app.input);
+                            let filtered = filter_commands(app.input());
                             if let Some(cmd) = filtered.get(app.command_selection) {
-                                app.input = cmd.name.to_string();
+                                app.set_input(cmd.name.to_string());
                                 app.show_command_dropdown = false;
                             }
                         }
                         DropdownMode::Models => {
-                            let filtered = filter_models(&app.input, &app.agent_config.models);
+                            let filtered = filter_models(app.input(), &app.agent_config.models);
                             if let Some(model) = filtered.get(app.command_selection) {
-                                app.input = format!("/model {}", model.id);
+                                app.set_input(format!("/model {}", model.id));
                                 app.show_command_dropdown = false;
                             }
                         }
@@ -648,7 +650,7 @@ fn handle_key(
                     }
                 }
 
-                let trimmed = app.input.trim();
+                let trimmed = app.input().trim().to_string();
 
                 // Handle exit commands
                 if trimmed == "/exit" || trimmed == "/quit" || trimmed == "exit" {
@@ -675,7 +677,7 @@ fn handle_key(
 
                 // Handle model switch command
                 if trimmed == "/model" || trimmed.starts_with("/model ") {
-                    let model_arg = trimmed.strip_prefix("/model").unwrap_or("").trim();
+                    let model_arg = trimmed.strip_prefix("/model").unwrap_or("").trim().to_string();
                     if model_arg.is_empty() {
                         app.clear_input();
                         app.show_model_selection_dialog();
@@ -683,7 +685,7 @@ fn handle_key(
                     } else if let Some(agent) = &mut app.agent {
                         // Check if we need to switch providers
                         let current_provider = agent.provider_name();
-                        let target_provider = app.agent_config.provider_for_model(model_arg);
+                        let target_provider = app.agent_config.provider_for_model(&model_arg);
 
                         if let Some(provider_name) = target_provider {
                             if provider_name != current_provider {
@@ -710,8 +712,8 @@ fn handle_key(
                             }
                         }
 
-                        agent.set_model(model_arg);
-                        app.model = model_arg.to_string();
+                        agent.set_model(&model_arg);
+                        app.model = model_arg.clone();
                         app.provider = agent.provider_name().to_string();
                         let provider_info = &app.provider;
                         app.messages.push(DisplayMessage::tool(
@@ -731,8 +733,7 @@ fn handle_key(
                     if let Some(agent) = &mut app.agent {
                         agent.switch_mode(crate::core::agent::AgentMode::Plan, None);
                         app.sync_agent_mode();
-                        app.input.clear();
-                        app.cursor = 0;
+                        app.clear_input();
                     }
                     return false;
                 }
@@ -740,8 +741,7 @@ fn handle_key(
                     if let Some(agent) = &mut app.agent {
                         agent.switch_mode(crate::core::agent::AgentMode::Build, None);
                         app.sync_agent_mode();
-                        app.input.clear();
-                        app.cursor = 0;
+                        app.clear_input();
                     }
                     return false;
                 }
@@ -755,8 +755,7 @@ fn handle_key(
 
                 if trimmed == "/init" {
                     let init_prompt = crate::cli::init::get_init_prompt(None);
-                    app.input = init_prompt;
-                    app.cursor = app.input.len();
+                    app.set_input(init_prompt);
                     start_chat(app, permission_tx.clone());
                     return false;
                 }
@@ -774,19 +773,17 @@ fn handle_key(
             if !app.loading {
                 // Autocomplete if dropdown visible, otherwise toggle mode
                 if app.show_command_dropdown {
-                    match dropdown_mode(&app.input) {
+                    match dropdown_mode(app.input()) {
                         DropdownMode::Commands => {
-                            let filtered = filter_commands(&app.input);
+                            let filtered = filter_commands(app.input());
                             if let Some(cmd) = filtered.get(app.command_selection) {
-                                app.input = cmd.name.to_string();
-                                app.cursor = app.input.len();
+                                app.set_input(cmd.name.to_string());
                             }
                         }
                         DropdownMode::Models => {
-                            let filtered = filter_models(&app.input, &app.agent_config.models);
+                            let filtered = filter_models(app.input(), &app.agent_config.models);
                             if let Some(model) = filtered.get(app.command_selection) {
-                                app.input = format!("/model {}", model.id);
-                                app.cursor = app.input.len();
+                                app.set_input(format!("/model {}", model.id));
                             }
                         }
                         DropdownMode::None => {}
@@ -812,13 +809,13 @@ fn handle_key(
             // Allow typing while agent is responding
             app.insert_char(c);
             // Update dropdown visibility
-            app.show_command_dropdown = should_show_dropdown(&app.input);
+            app.show_command_dropdown = should_show_dropdown(app.input());
             if app.show_command_dropdown {
                 app.command_selection = 0;
             }
         }
         KeyCode::Backspace => {
-            if app.input.is_empty() && app.queued_message_count() > 0 {
+            if app.input().is_empty() && app.queued_message_count() > 0 {
                 if app.backspace_on_empty_once {
                     app.remove_last_queued_message();
                     app.backspace_on_empty_once = false;
@@ -829,7 +826,7 @@ fn handle_key(
                 app.delete_char();
                 app.backspace_on_empty_once = false;
             }
-            app.show_command_dropdown = should_show_dropdown(&app.input);
+            app.show_command_dropdown = should_show_dropdown(app.input());
             if app.show_command_dropdown {
                 app.command_selection = 0;
             }
@@ -860,8 +857,8 @@ fn handle_key(
         }
         KeyCode::Left => app.move_left(),
         KeyCode::Right => app.move_right(),
-        KeyCode::Home => app.cursor = 0,
-        KeyCode::End => app.cursor = app.input.len(),
+        KeyCode::Home => app.set_cursor(0),
+        KeyCode::End => app.set_cursor(app.edit_buffer.len()),
         // Scrolling - use message scroll in session view
         KeyCode::PageUp => {
             if app.view_state == ViewState::Session {
@@ -880,9 +877,9 @@ fn handle_key(
         KeyCode::Up => {
             if app.show_command_dropdown {
                 // Navigate dropdown selection up (wrap to bottom)
-                let max_idx = match dropdown_mode(&app.input) {
-                    DropdownMode::Commands => filter_commands(&app.input).len().saturating_sub(1),
-                    DropdownMode::Models => filter_models(&app.input, &app.agent_config.models)
+                let max_idx = match dropdown_mode(app.input()) {
+                    DropdownMode::Commands => filter_commands(app.input()).len().saturating_sub(1),
+                    DropdownMode::Models => filter_models(app.input(), &app.agent_config.models)
                         .len()
                         .saturating_sub(1),
                     DropdownMode::None => 0,
@@ -893,14 +890,14 @@ fn handle_key(
                     app.command_selection - 1
                 };
             } else if app.view_state == ViewState::Session {
-                let old_cursor = app.cursor;
+                let old_cursor = app.cursor();
                 app.move_up();
                 // Only scroll messages if prompt is empty or single-line
-                let is_multiline_prompt = !app.input.is_empty() && {
-                    let layout = TextLayout::new(&app.input, app.prompt_text_width);
+                let is_multiline_prompt = !app.input().is_empty() && {
+                    let layout = TextLayout::new(app.input(), app.prompt_text_width);
                     layout.total_lines > 1
                 };
-                if app.cursor == old_cursor && !is_multiline_prompt {
+                if app.cursor() == old_cursor && !is_multiline_prompt {
                     app.scroll_messages_up(1);
                 }
             } else {
@@ -909,9 +906,9 @@ fn handle_key(
         }
         KeyCode::Down => {
             if app.show_command_dropdown {
-                let max_idx = match dropdown_mode(&app.input) {
-                    DropdownMode::Commands => filter_commands(&app.input).len().saturating_sub(1),
-                    DropdownMode::Models => filter_models(&app.input, &app.agent_config.models)
+                let max_idx = match dropdown_mode(app.input()) {
+                    DropdownMode::Commands => filter_commands(app.input()).len().saturating_sub(1),
+                    DropdownMode::Models => filter_models(app.input(), &app.agent_config.models)
                         .len()
                         .saturating_sub(1),
                     DropdownMode::None => 0,
@@ -922,14 +919,14 @@ fn handle_key(
                     app.command_selection + 1
                 };
             } else if app.view_state == ViewState::Session {
-                let old_cursor = app.cursor;
+                let old_cursor = app.cursor();
                 app.move_down();
                 // Only scroll messages if prompt is empty or single-line
-                let is_multiline_prompt = !app.input.is_empty() && {
-                    let layout = TextLayout::new(&app.input, app.prompt_text_width);
+                let is_multiline_prompt = !app.input().is_empty() && {
+                    let layout = TextLayout::new(app.input(), app.prompt_text_width);
                     layout.total_lines > 1
                 };
-                if app.cursor == old_cursor && !is_multiline_prompt {
+                if app.cursor() == old_cursor && !is_multiline_prompt {
                     app.scroll_messages_down(1);
                 }
             } else {
@@ -1765,8 +1762,7 @@ fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMess
     );
     agent.set_permission_client(client);
 
-    let prompt = std::mem::take(&mut app.input);
-    app.cursor = 0;
+    let prompt = app.take_input();
 
     // Transition to session view on first message
     app.enter_session();
@@ -1859,8 +1855,7 @@ mod tests {
         app.agent = None;
 
         // Simulate typing
-        app.input = "test message".to_string();
-        app.cursor = app.input.len();
+        app.set_input("test message");
 
         // Verify agent is None
         assert!(app.agent.is_none());
@@ -1880,7 +1875,7 @@ mod tests {
 
         // Set up modal
         app.active_dialog = Some(ActiveDialog::NoProvider);
-        app.input = "test message".to_string();
+        app.set_input("test message");
 
         // Simulate Esc key in handle_dialog_key
         let dialog = app.active_dialog.take();
@@ -1888,15 +1883,14 @@ mod tests {
 
         // After Esc, dialog should be None but input preserved
         assert!(app.active_dialog.is_none());
-        assert_eq!(app.input, "test message");
+        assert_eq!(app.input(), "test message");
     }
 
     #[test]
     fn test_input_preserved_when_modal_shown() {
         let mut app = App::new();
 
-        app.input = "important message".to_string();
-        app.cursor = app.input.len();
+        app.set_input("important message");
 
         // Show modal
         app.active_dialog = Some(ActiveDialog::NoProvider);
@@ -1905,7 +1899,7 @@ mod tests {
         app.active_dialog = None;
 
         // Input should be preserved
-        assert_eq!(app.input, "important message");
-        assert_eq!(app.cursor, "important message".len());
+        assert_eq!(app.input(), "important message");
+        assert_eq!(app.cursor(), "important message".len());
     }
 }
