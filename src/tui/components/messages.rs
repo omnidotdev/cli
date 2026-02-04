@@ -238,7 +238,6 @@ pub fn render_queued_user_message(
 }
 
 #[allow(clippy::cast_possible_truncation)]
-#[allow(clippy::cast_possible_truncation)]
 fn render_assistant_message_with_scroll(
     frame: &mut Frame,
     area: Rect,

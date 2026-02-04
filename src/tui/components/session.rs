@@ -19,8 +19,66 @@ use crate::tui::message::DisplayMessage;
 /// Horizontal padding for message area.
 pub const MESSAGE_PADDING_X: u16 = 2;
 
+const BRAND_TEAL: Color = Color::Rgb(77, 201, 176);
+const PLAN_PURPLE: Color = Color::Rgb(160, 100, 200);
 const DIMMED: Color = Color::Rgb(100, 100, 110);
 const THINKING_PREFIX: Color = Color::Rgb(100, 160, 150);
+
+fn format_model_name(model: &str) -> String {
+    let name = model
+        .rsplit('/')
+        .next()
+        .unwrap_or(model)
+        .replace("claude-", "Claude ")
+        .replace("gpt-", "GPT-")
+        .replace("gemini-", "Gemini ")
+        .replace("llama-", "Llama ")
+        .replace("mistral-", "Mistral ")
+        .replace("deepseek-", "DeepSeek ")
+        .replace('-', " ");
+
+    name.split_whitespace()
+        .map(|word| {
+            if word.chars().all(|c| c.is_ascii_digit() || c == '.')
+                || word.chars().all(|c| c.is_uppercase() || c.is_ascii_digit())
+            {
+                word.to_string()
+            } else {
+                let mut chars = word.chars();
+                match chars.next() {
+                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                    None => String::new(),
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn format_provider_name(provider: &str) -> String {
+    match provider.to_lowercase().as_str() {
+        "openai" => "OpenAI".to_string(),
+        "anthropic" => "Anthropic".to_string(),
+        "openrouter" => "OpenRouter".to_string(),
+        "google" => "Google".to_string(),
+        "azure" => "Azure".to_string(),
+        "aws" | "bedrock" => "AWS Bedrock".to_string(),
+        "mistral" => "Mistral".to_string(),
+        "groq" => "Groq".to_string(),
+        "together" => "Together".to_string(),
+        "fireworks" => "Fireworks".to_string(),
+        "deepseek" => "DeepSeek".to_string(),
+        "ollama" => "Ollama".to_string(),
+        "local" => "Local".to_string(),
+        other => {
+            let mut chars = other.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        }
+    }
+}
 
 #[allow(clippy::cast_possible_truncation, clippy::too_many_arguments)]
 pub fn render_session(
@@ -59,22 +117,27 @@ pub fn render_session(
         .map(|text| super::messages::queued_message_height(text, padded_width) + 1)
         .sum();
 
-    let (chunks, prompt_idx, queued_idx) = if queued_total_height > 0 {
+    let (chunks, prompt_idx, queued_idx, info_idx) = if queued_total_height > 0 {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(1),
+                Constraint::Length(1),
                 Constraint::Length(queued_total_height),
                 Constraint::Length(prompt_height),
             ])
             .split(area);
-        (chunks, 2, Some(1))
+        (chunks, 3, Some(2), 1)
     } else {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(prompt_height)])
+            .constraints([
+                Constraint::Min(1),
+                Constraint::Length(1),
+                Constraint::Length(prompt_height),
+            ])
             .split(area);
-        (chunks, 1, None)
+        (chunks, 2, None, 1)
     };
 
     render_message_list(
@@ -87,6 +150,15 @@ pub fn render_session(
         selection,
         selected_text,
         tool_message_areas,
+    );
+
+    render_info_bar(
+        frame,
+        chunks[info_idx],
+        model,
+        provider,
+        agent_mode,
+        reasoning_effort,
     );
 
     if let Some(idx) = queued_idx {
@@ -116,6 +188,73 @@ pub fn render_session(
         prompt_scroll_offset,
         reasoning_effort,
     )
+}
+
+fn render_info_bar(
+    frame: &mut Frame,
+    area: Rect,
+    model: &str,
+    provider: &str,
+    agent_mode: AgentMode,
+    reasoning_effort: ReasoningEffort,
+) {
+    let padded_area = Rect::new(
+        area.x + MESSAGE_PADDING_X,
+        area.y,
+        area.width.saturating_sub(MESSAGE_PADDING_X * 2),
+        area.height,
+    );
+
+    let mode_str = match agent_mode {
+        AgentMode::Build => "Build",
+        AgentMode::Plan => "Plan",
+    };
+    let mode_color = match agent_mode {
+        AgentMode::Build => BRAND_TEAL,
+        AgentMode::Plan => PLAN_PURPLE,
+    };
+
+    let display_model = format_model_name(model);
+    let display_provider = format_provider_name(provider);
+
+    // Left side: mode + model + provider + effort
+    let left_spans = vec![
+        Span::styled(mode_str.to_string(), Style::default().fg(mode_color)),
+        Span::raw("  "),
+        Span::styled(display_model, Style::default().fg(Color::White)),
+        Span::raw("  "),
+        Span::styled(display_provider, Style::default().fg(DIMMED)),
+        Span::styled(" · ", Style::default().fg(DIMMED)),
+        Span::styled(reasoning_effort.to_string(), Style::default().fg(DIMMED)),
+    ];
+
+    // Right side: keyboard hints
+    let right_spans = vec![
+        Span::styled("ctrl+t", Style::default().fg(Color::White)),
+        Span::raw(" "),
+        Span::styled("effort", Style::default().fg(DIMMED)),
+        Span::raw("  "),
+        Span::styled("tab", Style::default().fg(Color::White)),
+        Span::raw(" "),
+        Span::styled("mode", Style::default().fg(DIMMED)),
+    ];
+
+    // Calculate space needed for right side
+    let right_text = "ctrl+t effort  tab mode";
+    let right_width = right_text.len() as u16;
+    let left_width = left_spans.iter().map(|s| s.content.len()).sum::<usize>() as u16;
+    let available_width = padded_area.width.saturating_sub(left_width + right_width);
+
+    // Create line with left and right content
+    let mut line_spans = left_spans;
+    if available_width > 0 {
+        line_spans.push(Span::raw(" ".repeat(available_width as usize)));
+    }
+    line_spans.extend(right_spans);
+
+    let line = Line::from(line_spans);
+    let para = Paragraph::new(line);
+    frame.render_widget(para, padded_area);
 }
 
 fn render_queued_area(
