@@ -1,5 +1,7 @@
 //! Diff widget for displaying file changes in collapsed/expanded view.
 
+#![allow(dead_code)]
+
 use std::fmt;
 
 use super::highlighting;
