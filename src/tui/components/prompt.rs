@@ -114,7 +114,7 @@ pub fn render_prompt(
             let prompt_width = CENTERED_MAX_WIDTH.min(area.width.saturating_sub(4));
             let prompt_x = area.x + (area.width.saturating_sub(prompt_width)) / 2;
             let prompt_y = (area.y + 2).min(area.y + area.height.saturating_sub(1));
-            let text_width = prompt_width.saturating_sub(3).max(1) as usize;
+            let text_width = prompt_width.saturating_sub(4).max(1) as usize;
             let input_lines = if input.is_empty() {
                 1
             } else {
@@ -127,7 +127,7 @@ pub fn render_prompt(
             (box_area, hints_area, text_width)
         }
         PromptMode::FullWidth => {
-            let estimated_width = area.width.saturating_sub(3).max(1) as usize;
+            let estimated_width = area.width.saturating_sub(4).max(1) as usize;
             let input_lines = if input.is_empty() {
                 1
             } else {
@@ -139,7 +139,7 @@ pub fn render_prompt(
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Length(box_height), Constraint::Length(1)])
                 .split(area);
-            let text_width = chunks[0].width.saturating_sub(3).max(1) as usize;
+            let text_width = chunks[0].width.saturating_sub(4).max(1) as usize;
             (chunks[0], chunks[1], text_width)
         }
     };
@@ -176,7 +176,7 @@ pub fn render_prompt(
     render_hints(frame, hints_area, status_left);
 
     let cursor_x = (box_area.x + 2 + cursor_info.col as u16)
-        .min(box_area.x + box_area.width.saturating_sub(1));
+        .min(box_area.x + box_area.width.saturating_sub(2));
     let cursor_y = (box_area.y + 1 + cursor_info.visible_line as u16)
         .min(box_area.y + box_area.height.saturating_sub(1));
 

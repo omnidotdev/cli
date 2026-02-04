@@ -44,7 +44,7 @@ pub fn render_session(
     tool_message_areas: &mut Vec<(Rect, usize)>,
     reasoning_effort: ReasoningEffort,
 ) -> ((u16, u16), Rect) {
-    let estimated_width = area.width.saturating_sub(3).max(1) as usize;
+    let estimated_width = area.width.saturating_sub(4).max(1) as usize;
     let input_lines = if input.is_empty() {
         1
     } else {
