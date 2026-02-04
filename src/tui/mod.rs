@@ -60,6 +60,24 @@ fn find_at_mention_span_ending_at(text: &str, cursor_pos: usize) -> Option<(usiz
         .find(|&(_, end)| end == cursor_pos)
 }
 
+fn find_at_position(input: &str, cursor_pos: usize) -> Option<usize> {
+    let bytes = input.as_bytes();
+    let mut pos = cursor_pos;
+    while pos > 0 {
+        pos -= 1;
+        if bytes[pos] == b'@' {
+            if pos == 0 || bytes[pos - 1].is_ascii_whitespace() {
+                return Some(pos);
+            }
+            return None;
+        }
+        if bytes[pos].is_ascii_whitespace() {
+            return None;
+        }
+    }
+    None
+}
+
 /// Run the TUI application.
 ///
 /// # Errors
@@ -293,8 +311,18 @@ async fn run_app(
             // Set cursor position
             f.set_cursor_position(Position::new(cursor_pos.0, cursor_pos.1));
 
-            // Render dropdown if visible - use the exact prompt area returned
-            if app.show_command_dropdown && should_show_dropdown(app.input()) {
+            if app.show_file_dropdown {
+                let query = file_picker::extract_file_query(app.input(), app.cursor());
+                let filtered = file_picker::fuzzy_filter_files(&query, &app.cached_project_files);
+                let (_, area) = file_picker::render_file_dropdown(
+                    f,
+                    prompt_area,
+                    &query,
+                    &app.cached_project_files,
+                    app.file_selection,
+                );
+                app.set_file_dropdown_area(Some(area), filtered.len().min(10));
+            } else if app.show_command_dropdown && should_show_dropdown(app.input()) {
                 match dropdown_mode(app.input()) {
                     DropdownMode::Commands => {
                         let (_, area) = render_command_dropdown(
@@ -394,13 +422,35 @@ async fn run_app(
                                         }
                                     }
                                     MouseEventKind::Down(_button) => {
-                                        // Handle dropdown clicks first (if dropdown is visible)
-                                        if app.show_command_dropdown {
+                                        if app.show_file_dropdown {
+                                            if let Some(item_index) = app.is_in_file_dropdown_area(mouse.row, mouse.column) {
+                                                app.file_selection = item_index;
+                                                let query = file_picker::extract_file_query(app.input(), app.cursor());
+                                                let filtered = file_picker::fuzzy_filter_files(&query, &app.cached_project_files);
+                                                if let Some(selected_file) = filtered.get(app.file_selection) {
+                                                    let path_str = selected_file.to_string_lossy();
+                                                    let path_str = path_str.strip_prefix("./").unwrap_or(&path_str);
+                                                    let input = app.input().to_string();
+                                                    let cursor = app.cursor();
+                                                    if let Some(at_pos) = find_at_position(&input, cursor) {
+                                                        let new_input = format!(
+                                                            "{}@{} {}",
+                                                            &input[..at_pos],
+                                                            path_str,
+                                                            &input[cursor..]
+                                                        );
+                                                        let new_cursor = at_pos + 1 + path_str.len() + 1;
+                                                        app.set_input(new_input);
+                                                        app.set_cursor(new_cursor);
+                                                    }
+                                                }
+                                            }
+                                            app.show_file_dropdown = false;
+                                            app.file_selection = 0;
+                                            app.set_file_dropdown_area(None, 0);
+                                        } else if app.show_command_dropdown {
                                             if let Some(item_index) = app.is_in_dropdown_area(mouse.row, mouse.column) {
-                                                // Click inside dropdown - select and execute
                                                 app.command_selection = item_index;
-
-                                                // Execute command (same logic as Enter key)
                                                 match dropdown_mode(app.input()) {
                                                     DropdownMode::Commands => {
                                                         let filtered = filter_commands(app.input());
@@ -417,7 +467,6 @@ async fn run_app(
                                                     DropdownMode::None => {}
                                                 }
                                             }
-                                            // Click anywhere (inside or outside) closes dropdown
                                             app.show_command_dropdown = false;
                                             app.set_dropdown_area(None, 0);
                                         } else {
@@ -454,12 +503,14 @@ async fn run_app(
                                         }
                                     }
                                     MouseEventKind::Moved => {
-                                        // Only process hover when dropdown is visible (performance guard)
-                                        if app.show_command_dropdown {
+                                        if app.show_file_dropdown {
+                                            if let Some(item_index) = app.is_in_file_dropdown_area(mouse.row, mouse.column) {
+                                                app.file_selection = item_index;
+                                            }
+                                        } else if app.show_command_dropdown {
                                             if let Some(item_index) = app.is_in_dropdown_area(mouse.row, mouse.column) {
                                                 app.command_selection = item_index;
                                             }
-                                            // If outside dropdown area, selection sticks to last hovered item
                                         }
                                     }
                                     _ => {}
@@ -847,8 +898,29 @@ fn handle_key(
         }
         KeyCode::Tab => {
             if !app.loading {
-                // Autocomplete if dropdown visible, otherwise toggle mode
-                if app.show_command_dropdown {
+                if app.show_file_dropdown {
+                    let query = file_picker::extract_file_query(app.input(), app.cursor());
+                    let filtered = file_picker::fuzzy_filter_files(&query, &app.cached_project_files);
+                    if let Some(selected_file) = filtered.get(app.file_selection) {
+                        let path_str = selected_file.to_string_lossy();
+                        let path_str = path_str.strip_prefix("./").unwrap_or(&path_str);
+                        let input = app.input().to_string();
+                        let cursor = app.cursor();
+                        if let Some(at_pos) = find_at_position(&input, cursor) {
+                            let new_input = format!(
+                                "{}@{} {}",
+                                &input[..at_pos],
+                                path_str,
+                                &input[cursor..]
+                            );
+                            let new_cursor = at_pos + 1 + path_str.len() + 1;
+                            app.set_input(new_input);
+                            app.set_cursor(new_cursor);
+                        }
+                    }
+                    app.show_file_dropdown = false;
+                    app.file_selection = 0;
+                } else if app.show_command_dropdown {
                     match dropdown_mode(app.input()) {
                         DropdownMode::Commands => {
                             let filtered = filter_commands(app.input());
@@ -924,9 +996,7 @@ fn handle_key(
         }
         KeyCode::Esc => {
             if app.loading {
-                // Double-Esc to cancel
                 if app.esc_pressed_once {
-                    // Cancel streaming (don't abort task - agent must return via Done)
                     app.chat_rx = None;
                     app.clear_queued_messages();
                     app.finalize_streaming(true);
@@ -935,15 +1005,14 @@ fn handle_key(
                     app.backspace_on_empty_once = false;
                     app.activity_status = None;
                 } else {
-                    // First Esc - set flag (hint shown via status)
                     app.esc_pressed_once = true;
                 }
-            } else {
-                // Not loading - existing behavior
-                if app.show_command_dropdown {
-                    app.show_command_dropdown = false;
-                    app.clear_input();
-                }
+            } else if app.show_file_dropdown {
+                app.show_file_dropdown = false;
+                app.file_selection = 0;
+            } else if app.show_command_dropdown {
+                app.show_command_dropdown = false;
+                app.clear_input();
             }
         }
         KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End => {
@@ -967,8 +1036,16 @@ fn handle_key(
             }
         }
         KeyCode::Up => {
-            if app.show_command_dropdown {
-                // Navigate dropdown selection up (wrap to bottom)
+            if app.show_file_dropdown {
+                let query = file_picker::extract_file_query(app.input(), app.cursor());
+                let filtered = file_picker::fuzzy_filter_files(&query, &app.cached_project_files);
+                let max_idx = filtered.len().min(10).saturating_sub(1);
+                app.file_selection = if app.file_selection == 0 {
+                    max_idx
+                } else {
+                    app.file_selection - 1
+                };
+            } else if app.show_command_dropdown {
                 let max_idx = match dropdown_mode(app.input()) {
                     DropdownMode::Commands => filter_commands(app.input()).len().saturating_sub(1),
                     DropdownMode::Models => filter_models(app.input(), &app.agent_config.models)
@@ -984,7 +1061,6 @@ fn handle_key(
             } else if app.view_state == ViewState::Session {
                 let old_cursor = app.cursor();
                 app.move_up();
-                // Only scroll messages if prompt is empty or single-line
                 let is_multiline_prompt = !app.input().is_empty() && {
                     let layout = TextLayout::new(app.input(), app.prompt_text_width);
                     layout.total_lines > 1
@@ -997,7 +1073,16 @@ fn handle_key(
             }
         }
         KeyCode::Down => {
-            if app.show_command_dropdown {
+            if app.show_file_dropdown {
+                let query = file_picker::extract_file_query(app.input(), app.cursor());
+                let filtered = file_picker::fuzzy_filter_files(&query, &app.cached_project_files);
+                let max_idx = filtered.len().min(10).saturating_sub(1);
+                app.file_selection = if app.file_selection >= max_idx {
+                    0
+                } else {
+                    app.file_selection + 1
+                };
+            } else if app.show_command_dropdown {
                 let max_idx = match dropdown_mode(app.input()) {
                     DropdownMode::Commands => filter_commands(app.input()).len().saturating_sub(1),
                     DropdownMode::Models => filter_models(app.input(), &app.agent_config.models)
@@ -1013,7 +1098,6 @@ fn handle_key(
             } else if app.view_state == ViewState::Session {
                 let old_cursor = app.cursor();
                 app.move_down();
-                // Only scroll messages if prompt is empty or single-line
                 let is_multiline_prompt = !app.input().is_empty() && {
                     let layout = TextLayout::new(app.input(), app.prompt_text_width);
                     layout.total_lines > 1
