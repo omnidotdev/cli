@@ -249,6 +249,7 @@ async fn run_app(
             };
 
             app.set_prompt_area(prompt_area);
+            app.prompt_text_width = prompt_area.width.saturating_sub(3).max(1) as usize;
 
             // Set cursor position
             f.set_cursor_position(Position::new(cursor_pos.0, cursor_pos.1));

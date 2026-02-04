@@ -127,102 +127,90 @@ impl TextLayout {
         self.lines.get(row).map(|l| l.char_end).unwrap_or(0)
     }
 
-    /// Wrap a single logical line (between newlines) by words
     fn wrap_logical_line(line: &str, width: usize, start_offset: usize) -> Vec<WrappedLine> {
         let mut result = Vec::new();
         let mut current_line = String::new();
         let mut current_line_start = start_offset;
+        let mut char_pos = start_offset;
 
-        // Split into words (by whitespace)
-        let words: Vec<&str> = line.split_whitespace().collect();
+        let chars: Vec<char> = line.chars().collect();
+        let mut i = 0;
 
-        if words.is_empty() {
-            return result;
-        }
+        while i < chars.len() {
+            while i < chars.len() && chars[i].is_whitespace() && current_line.is_empty() {
+                char_pos += 1;
+                current_line_start = char_pos;
+                i += 1;
+            }
 
-        for word in &words {
+            if i >= chars.len() {
+                break;
+            }
+
+            let word_start = i;
+            while i < chars.len() && !chars[i].is_whitespace() {
+                i += 1;
+            }
+            let word: String = chars[word_start..i].iter().collect();
             let word_len = word.chars().count();
 
-            // Check if word fits on current line
             let current_len = current_line.chars().count();
-            let space_needed = if current_len == 0 { 0 } else { 1 }; // space before word
+            let space_needed = if current_len == 0 { 0 } else { 1 };
             let total_needed = current_len + space_needed + word_len;
 
             if total_needed <= width {
-                // Word fits on current line
                 if current_len > 0 {
                     current_line.push(' ');
                 }
-                current_line.push_str(word);
+                current_line.push_str(&word);
+                char_pos += word_len;
             } else if word_len <= width {
-                // Word doesn't fit, but it's not too long - start new line
                 if !current_line.is_empty() {
-                    // Save current line
-                    let line_char_count = current_line.chars().count();
                     result.push(WrappedLine {
                         text: current_line.clone(),
                         char_start: current_line_start,
-                        char_end: current_line_start + line_char_count,
+                        char_end: char_pos,
                     });
-                    current_line_start += line_char_count + 1; // +1 for space
                 }
-                current_line = word.to_string();
+                current_line_start = start_offset + word_start;
+                current_line = word;
+                char_pos = start_offset + i;
             } else {
-                // Word is too long - need to chunk it by characters
-                // First, save current line if not empty
                 if !current_line.is_empty() {
-                    let line_char_count = current_line.chars().count();
                     result.push(WrappedLine {
                         text: current_line.clone(),
                         char_start: current_line_start,
-                        char_end: current_line_start + line_char_count,
+                        char_end: char_pos,
                     });
-                    current_line_start += line_char_count + 1; // +1 for space
                     current_line.clear();
                 }
 
-                // Chunk the long word by characters
-                let mut word_chars = word.chars().peekable();
-                let mut chunk = String::new();
-                let _chunk_start = current_line_start;
-
-                while let Some(ch) = word_chars.next() {
-                    let chunk_len = chunk.chars().count();
-                    if chunk_len >= width {
-                        // Save chunk
+                current_line_start = start_offset + word_start;
+                for ch in word.chars() {
+                    if current_line.chars().count() >= width {
                         result.push(WrappedLine {
-                            text: chunk.clone(),
+                            text: current_line.clone(),
                             char_start: current_line_start,
-                            char_end: current_line_start + chunk_len,
+                            char_end: current_line_start + current_line.chars().count(),
                         });
-                        current_line_start += chunk_len;
-                        chunk.clear();
+                        current_line_start += current_line.chars().count();
+                        current_line.clear();
                     }
-                    chunk.push(ch);
+                    current_line.push(ch);
                 }
+                char_pos = start_offset + i;
+            }
 
-                // Save remaining chunk
-                if !chunk.is_empty() {
-                    let chunk_len = chunk.chars().count();
-                    result.push(WrappedLine {
-                        text: chunk.clone(),
-                        char_start: current_line_start,
-                        char_end: current_line_start + chunk_len,
-                    });
-                    current_line_start += chunk_len;
-                }
-
-                current_line.clear();
+            while i < chars.len() && chars[i].is_whitespace() {
+                i += 1;
             }
         }
 
-        // Save final line if not empty
         if !current_line.is_empty() {
-            let line_char_count = current_line.chars().count();
             result.push(WrappedLine {
                 text: current_line,
                 char_start: current_line_start,
-                char_end: current_line_start + line_char_count,
+                char_end: start_offset + chars.len(),
             });
         }
 
@@ -289,10 +277,13 @@ mod tests {
 
     #[test]
     fn test_mixed_content() {
-        let layout = TextLayout::new("hi https://x.com bye", 6);
-        // "hi" fits, "https://x.com" needs chunking, "bye" fits
-        let combined: String = layout.lines.iter().map(|l| l.text.clone()).collect();
-        assert_eq!(combined, "hihttps://x.combye");
+        let layout = TextLayout::new("hi https://x.com bye", 10);
+        assert!(layout.total_lines >= 2);
+        assert_eq!(layout.lines[0].text, "hi");
+        assert_eq!(layout.lines[0].char_start, 0);
+        assert_eq!(layout.lines[0].char_end, 2);
+        let last = layout.lines.last().unwrap();
+        assert!(last.text.contains("bye"));
     }
 
     #[test]

@@ -567,25 +567,37 @@ impl App {
         self.input.contains('\n')
     }
 
+    fn byte_to_char_index(&self, byte_idx: usize) -> usize {
+        self.input[..byte_idx.min(self.input.len())].chars().count()
+    }
+
+    fn char_to_byte_index(&self, char_idx: usize) -> usize {
+        self.input
+            .char_indices()
+            .nth(char_idx)
+            .map_or(self.input.len(), |(i, _)| i)
+    }
+
     /// Move cursor up one line, preserving column position.
     pub fn move_up(&mut self) {
         if self.input.is_empty() {
             return;
         }
         let layout = TextLayout::new(&self.input, self.prompt_text_width);
-        let (row, col) = layout.cursor_to_visual(self.cursor);
+        let cursor_char = self.byte_to_char_index(self.cursor);
+        let (row, col) = layout.cursor_to_visual(cursor_char);
 
-        // Store preferred column on first vertical move
         if self.preferred_column.is_none() {
             self.preferred_column = Some(col);
         }
 
         if row == 0 {
-            return; // Already at top
+            return;
         }
 
         let target_col = self.preferred_column.unwrap_or(col);
-        self.cursor = layout.visual_to_cursor(row - 1, target_col);
+        let new_char_idx = layout.visual_to_cursor(row - 1, target_col);
+        self.cursor = self.char_to_byte_index(new_char_idx);
     }
 
     /// Move cursor down one line, preserving column position.
@@ -594,19 +606,20 @@ impl App {
             return;
         }
         let layout = TextLayout::new(&self.input, self.prompt_text_width);
-        let (row, col) = layout.cursor_to_visual(self.cursor);
+        let cursor_char = self.byte_to_char_index(self.cursor);
+        let (row, col) = layout.cursor_to_visual(cursor_char);
 
-        // Store preferred column on first vertical move
         if self.preferred_column.is_none() {
             self.preferred_column = Some(col);
         }
 
         if row >= layout.total_lines - 1 {
-            return; // Already at bottom
+            return;
         }
 
         let target_col = self.preferred_column.unwrap_or(col);
-        self.cursor = layout.visual_to_cursor(row + 1, target_col);
+        let new_char_idx = layout.visual_to_cursor(row + 1, target_col);
+        self.cursor = self.char_to_byte_index(new_char_idx);
     }
 
     /// Insert character at cursor.
