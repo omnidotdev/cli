@@ -372,3 +372,29 @@ pub fn message_height(message: &DisplayMessage, width: u16) -> u16 {
         DisplayMessage::Tool { .. } => 1,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_line_badge_empty() {
+        assert_eq!(format_line_badge(0), "[no output]");
+    }
+
+    #[test]
+    fn test_format_line_badge_singular() {
+        assert_eq!(format_line_badge(1), "[1 line]");
+    }
+
+    #[test]
+    fn test_format_line_badge_plural() {
+        assert_eq!(format_line_badge(5), "[5 lines]");
+        assert_eq!(format_line_badge(247), "[247 lines]");
+    }
+
+    #[test]
+    fn test_format_line_badge_large() {
+        assert_eq!(format_line_badge(1000), "[1000 lines]");
+    }
+}

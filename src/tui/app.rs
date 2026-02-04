@@ -1098,3 +1098,58 @@ impl App {
         Ok(display_messages)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_tool_message_at_hit() {
+        let mut app = App::new();
+        app.tool_message_areas.push((Rect::new(0, 10, 80, 1), 5));
+        assert_eq!(app.is_tool_message_at(10, 40), Some(5));
+    }
+
+    #[test]
+    fn test_is_tool_message_at_hit_exact_bounds() {
+        let mut app = App::new();
+        app.tool_message_areas.push((Rect::new(10, 20, 50, 3), 7));
+        // Top-left corner
+        assert_eq!(app.is_tool_message_at(20, 10), Some(7));
+        // Bottom-right corner (exclusive)
+        assert_eq!(app.is_tool_message_at(22, 59), Some(7));
+    }
+
+    #[test]
+    fn test_is_tool_message_at_miss_outside() {
+        let mut app = App::new();
+        app.tool_message_areas.push((Rect::new(0, 10, 80, 1), 5));
+        // Above
+        assert_eq!(app.is_tool_message_at(9, 40), None);
+        // Below
+        assert_eq!(app.is_tool_message_at(11, 40), None);
+        // Left edge (x=0 is inside [0, 80))
+        assert!(app.is_tool_message_at(10, 0).is_some());
+        // Right
+        assert_eq!(app.is_tool_message_at(10, 80), None);
+    }
+
+    #[test]
+    fn test_is_tool_message_at_miss_empty() {
+        let app = App::new();
+        assert_eq!(app.is_tool_message_at(10, 10), None);
+    }
+
+    #[test]
+    fn test_is_tool_message_at_multiple_areas() {
+        let mut app = App::new();
+        app.tool_message_areas.push((Rect::new(0, 10, 80, 1), 5));
+        app.tool_message_areas.push((Rect::new(0, 20, 80, 1), 8));
+        app.tool_message_areas.push((Rect::new(0, 30, 80, 1), 12));
+
+        assert_eq!(app.is_tool_message_at(10, 40), Some(5));
+        assert_eq!(app.is_tool_message_at(20, 40), Some(8));
+        assert_eq!(app.is_tool_message_at(30, 40), Some(12));
+        assert_eq!(app.is_tool_message_at(15, 40), None);
+    }
+}
