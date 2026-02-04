@@ -2,6 +2,7 @@
 
 mod command_palette;
 mod diff;
+mod edit_buffer;
 pub mod highlighting;
 mod input_action;
 mod markdown;
@@ -17,6 +18,7 @@ pub use command_palette::{
     dropdown_mode, filter_commands, filter_models, render_command_dropdown, render_model_dropdown,
     should_show_dropdown, DropdownMode,
 };
+pub use edit_buffer::EditBuffer;
 
 #[allow(unused_imports)]
 pub use input_action::{build_keybinding_map, default_keybindings, InputAction, KeyBinding};
