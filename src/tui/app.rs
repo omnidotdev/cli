@@ -141,6 +141,16 @@ pub struct ExpandedToolDialog {
     pub output: String,
     /// Current scroll offset for viewing large outputs.
     pub scroll_offset: u16,
+    /// Total rendered line count (calculated once for scroll bounds).
+    pub total_lines: usize,
+    /// Whether output is a diff (cached to avoid re-detection).
+    pub is_diff: bool,
+    /// Cached rendered lines (avoids re-parsing/highlighting on every frame).
+    pub cached_lines: Vec<ratatui::text::Line<'static>>,
+    /// Width at which lines were cached (for invalidation on resize).
+    pub cached_width: u16,
+    /// Visible height for scroll calculations (updated on render).
+    pub visible_height: u16,
 }
 
 /// Currently active dialog, if any.
@@ -1216,5 +1226,66 @@ mod tests {
         } else {
             panic!("Expected Assistant message");
         }
+    }
+
+    #[test]
+    fn test_tool_dialog_scroll_bounds_normal() {
+        let dialog = ExpandedToolDialog {
+            tool_name: "test".to_string(),
+            invocation: "test".to_string(),
+            output: "line\n".repeat(100),
+            scroll_offset: 0,
+            total_lines: 100,
+            is_diff: false,
+            cached_lines: vec![],
+            cached_width: 80,
+            visible_height: 20,
+        };
+
+        let max_scroll = (dialog.total_lines as u16).saturating_sub(dialog.visible_height);
+        assert_eq!(max_scroll, 80);
+    }
+
+    #[test]
+    fn test_tool_dialog_scroll_bounds_content_smaller_than_visible() {
+        let dialog = ExpandedToolDialog {
+            tool_name: "test".to_string(),
+            invocation: "test".to_string(),
+            output: "line\n".repeat(10),
+            scroll_offset: 0,
+            total_lines: 10,
+            is_diff: false,
+            cached_lines: vec![],
+            cached_width: 80,
+            visible_height: 20,
+        };
+
+        let max_scroll = (dialog.total_lines as u16).saturating_sub(dialog.visible_height);
+        assert_eq!(max_scroll, 0);
+    }
+
+    #[test]
+    fn test_tool_dialog_scroll_clamp_down() {
+        let mut scroll_offset: u16 = 75;
+        let total_lines: u16 = 100;
+        let visible_height: u16 = 20;
+        let max_scroll = total_lines.saturating_sub(visible_height);
+
+        scroll_offset = scroll_offset.saturating_add(10).min(max_scroll);
+        assert_eq!(scroll_offset, 80);
+
+        scroll_offset = scroll_offset.saturating_add(10).min(max_scroll);
+        assert_eq!(scroll_offset, 80);
+    }
+
+    #[test]
+    fn test_tool_dialog_scroll_clamp_up() {
+        let mut scroll_offset: u16 = 5;
+
+        scroll_offset = scroll_offset.saturating_sub(10);
+        assert_eq!(scroll_offset, 0);
+
+        scroll_offset = scroll_offset.saturating_sub(1);
+        assert_eq!(scroll_offset, 0);
     }
 }

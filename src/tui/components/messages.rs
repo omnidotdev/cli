@@ -8,7 +8,6 @@ use ratatui::{
     Frame,
 };
 
-use super::diff::{render_diff, DiffView};
 use super::markdown::MarkdownStreamParser;
 use super::text_layout::TextLayout;
 use crate::core::agent::AgentMode;
@@ -25,8 +24,8 @@ const SELECTION_BG: Color = Color::Rgb(60, 80, 100);
 const SELECTION_FG: Color = Color::White;
 const THINKING_PREFIX: Color = Color::Rgb(100, 160, 150);
 
-pub const DIFF_ADD: Color = Color::Rgb(80, 160, 80);
-pub const DIFF_DEL: Color = Color::Rgb(180, 80, 80);
+pub const DIFF_ADD: Color = Color::Rgb(100, 180, 100);
+pub const DIFF_DEL: Color = Color::Rgb(220, 100, 100);
 pub const DIFF_HUNK: Color = Color::Rgb(80, 140, 180);
 
 fn format_line_badge(count: usize) -> String {
@@ -303,9 +302,6 @@ fn render_tool_message_with_scroll(
         tool_icon(name)
     };
     let icon_color = if is_error { ERROR_COLOR } else { SUCCESS_COLOR };
-
-    let is_diff = output.contains("--- ") && output.contains("+++ ") && output.contains("@@");
-
     let line_count = output.lines().count();
     let badge = format_line_badge(line_count);
 
@@ -345,19 +341,8 @@ fn render_tool_message_with_scroll(
         ])
     };
 
-    if is_diff {
-        let diff_view = DiffView::new(output);
-        let diff_lines = render_diff(&diff_view.diff, area.width);
-
-        let mut all_lines = vec![line];
-        all_lines.extend(diff_lines);
-
-        let para = Paragraph::new(all_lines);
-        frame.render_widget(para, area);
-    } else {
-        let para = Paragraph::new(vec![line]);
-        frame.render_widget(para, area);
-    }
+    let para = Paragraph::new(vec![line]);
+    frame.render_widget(para, area);
 }
 
 /// Calculate how many rows a line of text takes when wrapped to a given width

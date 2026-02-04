@@ -13,14 +13,21 @@ use ratatui::{
 #[allow(dead_code)]
 pub const SPLIT_THRESHOLD: u16 = 100;
 
-/// Color for added lines (green)
-pub const DIFF_ADD: Color = Color::Rgb(80, 160, 80);
-/// Color for deleted lines (red)
-pub const DIFF_DEL: Color = Color::Rgb(180, 80, 80);
+/// Foreground color for added line markers (+)
+pub const DIFF_ADD_FG: Color = Color::Rgb(100, 180, 100);
+/// Foreground color for deleted line markers (-)
+pub const DIFF_DEL_FG: Color = Color::Rgb(220, 100, 100);
+/// Background color for added lines (subtle green tint)
+const DIFF_ADD_BG: Color = Color::Rgb(35, 50, 35);
+/// Background color for deleted lines (subtle red tint)
+const DIFF_DEL_BG: Color = Color::Rgb(55, 35, 35);
+
 /// Color for hunk headers (blue)
 pub const DIFF_HUNK: Color = Color::Rgb(80, 140, 180);
 /// Color for line numbers in gutter (dimmed)
 const DIMMED: Color = Color::Rgb(100, 100, 110);
+/// Color for file path headers
+const FILE_PATH_FG: Color = Color::Rgb(200, 200, 220);
 
 fn diff_extension(diff: &ParsedDiff) -> Option<&str> {
     diff.file_path
@@ -30,8 +37,8 @@ fn diff_extension(diff: &ParsedDiff) -> Option<&str> {
 
 const fn diff_background(tag: DiffTag) -> Option<Color> {
     match tag {
-        DiffTag::Add => Some(DIFF_ADD),
-        DiffTag::Delete => Some(DIFF_DEL),
+        DiffTag::Add => Some(DIFF_ADD_BG),
+        DiffTag::Delete => Some(DIFF_DEL_BG),
         _ => None,
     }
 }
@@ -64,14 +71,6 @@ fn apply_background(spans: Vec<Span<'static>>, background: Option<Color>) -> Vec
         .into_iter()
         .map(|span| Span::styled(span.content, span.style.bg(background)))
         .collect()
-}
-
-fn combine_split_spans(left: Vec<Span<'static>>, right: Vec<Span<'static>>) -> Line<'static> {
-    let mut spans = Vec::new();
-    spans.extend(left);
-    spans.push(Span::raw(" | "));
-    spans.extend(right);
-    Line::from(spans)
 }
 
 /// Tag indicating the type of diff line
@@ -257,8 +256,8 @@ pub fn render_unified_line(line: &DiffLine, extension: Option<&str>) -> Line<'st
         .map_or("    ".to_string(), |n| format!("{n:>4}"));
 
     let (prefix, prefix_style) = match line.tag {
-        DiffTag::Add => ("+", Style::default().fg(DIFF_ADD)),
-        DiffTag::Delete => ("-", Style::default().fg(DIFF_DEL)),
+        DiffTag::Add => ("+", Style::default().fg(DIFF_ADD_FG)),
+        DiffTag::Delete => ("-", Style::default().fg(DIFF_DEL_FG)),
         DiffTag::Equal => (" ", Style::default()),
         DiffTag::Header => ("", Style::default().fg(DIFF_HUNK)),
     };
@@ -292,9 +291,9 @@ pub fn render_split_line(
     extension: Option<&str>,
 ) -> Line<'static> {
     let (line_num, prefix_style) = match (side, line.tag) {
-        (SplitSide::Left, DiffTag::Delete) => (line.old_line_num, Style::default().fg(DIFF_DEL)),
+        (SplitSide::Left, DiffTag::Delete) => (line.old_line_num, Style::default().fg(DIFF_DEL_FG)),
         (SplitSide::Left, DiffTag::Equal) => (line.old_line_num, Style::default()),
-        (SplitSide::Right, DiffTag::Add) => (line.new_line_num, Style::default().fg(DIFF_ADD)),
+        (SplitSide::Right, DiffTag::Add) => (line.new_line_num, Style::default().fg(DIFF_ADD_FG)),
         (SplitSide::Right, DiffTag::Equal) => (line.new_line_num, Style::default()),
         _ => (None, Style::default()),
     };
@@ -352,35 +351,71 @@ pub fn render_diff(diff: &ParsedDiff, width: u16) -> Vec<Line<'static>> {
 }
 
 fn render_unified_view(diff: &ParsedDiff, extension: Option<&str>) -> Vec<Line<'static>> {
-    diff.lines
-        .iter()
-        .map(|line| {
-            let (prefix, prefix_style) = match line.tag {
-                DiffTag::Add => ("+", Style::default().fg(DIFF_ADD)),
-                DiffTag::Delete => ("-", Style::default().fg(DIFF_DEL)),
-                DiffTag::Equal => (" ", Style::default()),
-                DiffTag::Header => ("", Style::default().fg(DIFF_HUNK)),
-            };
+    let mut result = Vec::new();
 
-            if line.tag == DiffTag::Header {
-                Line::from(Span::styled(line.content.clone(), prefix_style))
-            } else {
-                let content_spans = apply_background(
-                    highlight_line_spans(&line.content, extension),
-                    diff_background(line.tag),
-                );
-                let mut spans = Vec::new();
-                spans.push(Span::styled(prefix, prefix_style));
-                spans.extend(content_spans);
-                Line::from(spans)
-            }
-        })
-        .collect()
+    if let Some(ref path) = diff.file_path {
+        result.push(Line::from(Span::styled(
+            format!(" {path}"),
+            Style::default().fg(FILE_PATH_FG),
+        )));
+    }
+
+    let gutter_style = Style::default().fg(DIMMED);
+
+    for line in &diff.lines {
+        if line.tag == DiffTag::Header {
+            continue;
+        }
+
+        let (prefix, prefix_style) = match line.tag {
+            DiffTag::Add => ("+", Style::default().fg(DIFF_ADD_FG)),
+            DiffTag::Delete => ("-", Style::default().fg(DIFF_DEL_FG)),
+            DiffTag::Equal | DiffTag::Header => (" ", Style::default()),
+        };
+
+        let old_num = line
+            .old_line_num
+            .map_or("    ".to_string(), |n| format!("{n:>4}"));
+        let new_num = line
+            .new_line_num
+            .map_or("    ".to_string(), |n| format!("{n:>4}"));
+
+        let content_spans = apply_background(
+            highlight_line_spans(&line.content, extension),
+            diff_background(line.tag),
+        );
+        let mut spans = vec![
+            Span::styled(old_num, gutter_style),
+            Span::raw(" "),
+            Span::styled(new_num, gutter_style),
+            Span::styled(format!(" {prefix} "), prefix_style),
+        ];
+        spans.extend(content_spans);
+        result.push(Line::from(spans));
+    }
+
+    result
+}
+
+struct SplitLine {
+    content: String,
+    line_num: Option<u32>,
+    line_type: DiffTag,
 }
 
 fn render_split_view(diff: &ParsedDiff, width: u16, extension: Option<&str>) -> Vec<Line<'static>> {
-    let col_width = (width.saturating_sub(3) / 2) as usize;
     let mut lines = Vec::new();
+    let gutter_style = Style::default().fg(DIMMED);
+
+    if let Some(ref path) = diff.file_path {
+        lines.push(Line::from(Span::styled(
+            format!(" {path}"),
+            Style::default().fg(FILE_PATH_FG),
+        )));
+    }
+
+    let mut left_lines: Vec<SplitLine> = Vec::new();
+    let mut right_lines: Vec<SplitLine> = Vec::new();
 
     let mut i = 0;
     while i < diff.lines.len() {
@@ -388,68 +423,157 @@ fn render_split_view(diff: &ParsedDiff, width: u16, extension: Option<&str>) -> 
 
         match line.tag {
             DiffTag::Header => {
-                lines.push(Line::from(Span::styled(
-                    line.content.clone(),
-                    Style::default().fg(DIFF_HUNK),
-                )));
                 i += 1;
             }
             DiffTag::Equal => {
-                let left = truncate_or_pad(&line.content, col_width);
-                let right = truncate_or_pad(&line.content, col_width);
-                let left_spans = highlight_line_spans(&left, extension);
-                let right_spans = highlight_line_spans(&right, extension);
-                lines.push(combine_split_spans(left_spans, right_spans));
+                left_lines.push(SplitLine {
+                    content: line.content.clone(),
+                    line_num: line.old_line_num,
+                    line_type: DiffTag::Equal,
+                });
+                right_lines.push(SplitLine {
+                    content: line.content.clone(),
+                    line_num: line.new_line_num,
+                    line_type: DiffTag::Equal,
+                });
                 i += 1;
             }
-            DiffTag::Delete => {
-                let next = diff.lines.get(i + 1);
-                if let Some(next_line) = next {
-                    if next_line.tag == DiffTag::Add {
-                        let left = truncate_or_pad(&line.content, col_width);
-                        let right = truncate_or_pad(&next_line.content, col_width);
-                        let left_spans = apply_background(
-                            highlight_line_spans(&left, extension),
-                            Some(DIFF_DEL),
-                        );
-                        let right_spans = apply_background(
-                            highlight_line_spans(&right, extension),
-                            Some(DIFF_ADD),
-                        );
-                        lines.push(combine_split_spans(left_spans, right_spans));
-                        i += 2;
-                        continue;
+            DiffTag::Delete | DiffTag::Add => {
+                let mut removes: Vec<(String, Option<u32>)> = Vec::new();
+                let mut adds: Vec<(String, Option<u32>)> = Vec::new();
+
+                while i < diff.lines.len() {
+                    let current = &diff.lines[i];
+                    match current.tag {
+                        DiffTag::Delete => {
+                            removes.push((current.content.clone(), current.old_line_num));
+                            i += 1;
+                        }
+                        DiffTag::Add => {
+                            adds.push((current.content.clone(), current.new_line_num));
+                            i += 1;
+                        }
+                        _ => break,
                     }
                 }
-                let left = truncate_or_pad(&line.content, col_width);
-                let right = " ".repeat(col_width);
-                let left_spans =
-                    apply_background(highlight_line_spans(&left, extension), Some(DIFF_DEL));
-                let right_spans = vec![Span::raw(right)];
-                lines.push(combine_split_spans(left_spans, right_spans));
-                i += 1;
-            }
-            DiffTag::Add => {
-                let left = " ".repeat(col_width);
-                let right = truncate_or_pad(&line.content, col_width);
-                let left_spans = vec![Span::raw(left)];
-                let right_spans =
-                    apply_background(highlight_line_spans(&right, extension), Some(DIFF_ADD));
-                lines.push(combine_split_spans(left_spans, right_spans));
-                i += 1;
+
+                let max_len = removes.len().max(adds.len());
+                for j in 0..max_len {
+                    if j < removes.len() {
+                        left_lines.push(SplitLine {
+                            content: removes[j].0.clone(),
+                            line_num: removes[j].1,
+                            line_type: DiffTag::Delete,
+                        });
+                    } else {
+                        left_lines.push(SplitLine {
+                            content: String::new(),
+                            line_num: None,
+                            line_type: DiffTag::Header,
+                        });
+                    }
+
+                    if j < adds.len() {
+                        right_lines.push(SplitLine {
+                            content: adds[j].0.clone(),
+                            line_num: adds[j].1,
+                            line_type: DiffTag::Add,
+                        });
+                    } else {
+                        right_lines.push(SplitLine {
+                            content: String::new(),
+                            line_num: None,
+                            line_type: DiffTag::Header,
+                        });
+                    }
+                }
             }
         }
+    }
+
+    let gutter_width: u16 = 7;
+    let separator_width: u16 = 3;
+    let total_gutter = gutter_width * 2 + separator_width;
+    let content_width = width.saturating_sub(total_gutter);
+    let col_width = (content_width / 2) as usize;
+
+    for (left, right) in left_lines.iter().zip(right_lines.iter()) {
+        let left_num = left
+            .line_num
+            .map_or("    ".to_string(), |n| format!("{n:>4}"));
+        let right_num = right
+            .line_num
+            .map_or("    ".to_string(), |n| format!("{n:>4}"));
+
+        let (left_marker, left_marker_style) = match left.line_type {
+            DiffTag::Delete => ("-", Style::default().fg(DIFF_DEL_FG)),
+            _ => (" ", Style::default()),
+        };
+        let (right_marker, right_marker_style) = match right.line_type {
+            DiffTag::Add => ("+", Style::default().fg(DIFF_ADD_FG)),
+            _ => (" ", Style::default()),
+        };
+
+        let left_bg = match left.line_type {
+            DiffTag::Delete => Some(DIFF_DEL_BG),
+            _ => None,
+        };
+        let right_bg = match right.line_type {
+            DiffTag::Add => Some(DIFF_ADD_BG),
+            _ => None,
+        };
+
+        let left_content = truncate_to_width(&left.content, col_width);
+        let right_content = truncate_to_width(&right.content, col_width);
+
+        let left_spans = apply_background(highlight_line_spans(&left_content, extension), left_bg);
+        let right_spans =
+            apply_background(highlight_line_spans(&right_content, extension), right_bg);
+
+        let mut spans = Vec::new();
+        spans.push(Span::styled(left_num, gutter_style));
+        spans.push(Span::styled(format!("{left_marker} "), left_marker_style));
+        spans.extend(left_spans);
+
+        let left_rendered_len: usize = left_content.chars().count();
+        if left_rendered_len < col_width {
+            let padding = " ".repeat(col_width - left_rendered_len);
+            if let Some(bg) = left_bg {
+                spans.push(Span::styled(padding, Style::default().bg(bg)));
+            } else {
+                spans.push(Span::raw(padding));
+            }
+        }
+
+        spans.push(Span::styled(" | ", gutter_style));
+        spans.push(Span::styled(right_num, gutter_style));
+        spans.push(Span::styled(format!("{right_marker} "), right_marker_style));
+        spans.extend(right_spans);
+
+        let right_rendered_len: usize = right_content.chars().count();
+        if right_rendered_len < col_width {
+            let padding = " ".repeat(col_width - right_rendered_len);
+            if let Some(bg) = right_bg {
+                spans.push(Span::styled(padding, Style::default().bg(bg)));
+            } else {
+                spans.push(Span::raw(padding));
+            }
+        }
+
+        lines.push(Line::from(spans));
     }
 
     lines
 }
 
-fn truncate_or_pad(s: &str, width: usize) -> String {
-    let len = s.chars().count();
-    if len > width {
-        s.chars().take(width.saturating_sub(1)).collect::<String>() + "…"
+fn truncate_to_width(s: &str, width: usize) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= width {
+        s.to_string()
+    } else if width > 1 {
+        chars[..width - 1].iter().collect::<String>() + "…"
     } else {
-        format!("{s:<width$}")
+        "…".to_string()
     }
 }
 
@@ -663,9 +787,7 @@ mod tests {
         let lines = render_diff(&parsed, 80);
         assert_eq!(lines.len(), 3);
 
-        assert!(lines[0].spans[0].content.contains("@@"));
-        assert!(lines[1].spans[0].content.starts_with('-'));
-        assert!(lines[2].spans[0].content.starts_with('+'));
+        assert!(lines[0].spans[0].content.contains("test.txt"));
     }
 
     #[test]
@@ -676,8 +798,11 @@ mod tests {
         let lines = render_diff(&parsed, 120);
         assert_eq!(lines.len(), 2);
 
-        assert!(lines[0].spans[0].content.contains("@@"));
-        assert!(lines[1].spans.iter().any(|span| span.content == " | "));
+        assert!(lines[0].spans[0].content.contains("test.txt"));
+        assert!(lines[1]
+            .spans
+            .iter()
+            .any(|span| span.content.contains(" | ")));
     }
 
     #[test]
@@ -724,12 +849,5 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect();
         assert!(add_text.contains("added"));
-    }
-
-    #[test]
-    fn test_truncate_or_pad() {
-        assert_eq!(truncate_or_pad("short", 10), "short     ");
-        assert_eq!(truncate_or_pad("exact_len!", 10), "exact_len!");
-        assert_eq!(truncate_or_pad("this is too long", 10), "this is t…");
     }
 }

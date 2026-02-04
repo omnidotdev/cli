@@ -17,6 +17,7 @@ pub use command_palette::{
     should_show_dropdown, DropdownMode,
 };
 
+pub use diff::{render_diff, DiffView};
 pub use messages::line_color;
 pub use model_selection::{render_model_selection_dialog, ModelSelectionDialog};
 pub use prompt::PLACEHOLDERS;

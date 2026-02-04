@@ -36,10 +36,10 @@ use crate::core::session::SessionTarget;
 pub use app::App;
 use app::{ActiveAskUserDialog, ActiveDialog, ActivePermissionDialog, ChatMessage, ExpandedToolDialog};
 use components::{
-    DropdownMode, MESSAGE_PADDING_X, TextLayout, calculate_content_height, dropdown_mode,
-    filter_commands, filter_models, line_color, render_command_dropdown, render_model_dropdown,
-    render_model_selection_dialog, render_session, render_session_list, render_welcome,
-    should_show_dropdown,
+    DiffView, DropdownMode, MESSAGE_PADDING_X, TextLayout, calculate_content_height, dropdown_mode,
+    filter_commands, filter_models, line_color, render_command_dropdown, render_diff,
+    render_model_dropdown, render_model_selection_dialog, render_session, render_session_list,
+    render_welcome, should_show_dropdown,
 };
 use message::DisplayMessage;
 use state::ViewState;
@@ -360,11 +360,38 @@ async fn run_app(
                                     MouseEventKind::Down(_button) => {
                                         if let Some(message_index) = app.is_tool_message_at(mouse.row, mouse.column) {
                                             if let Some(DisplayMessage::Tool { name, invocation, output, .. }) = app.messages.get(message_index) {
+                                                let area = terminal.get_frame().area();
+                                                let dialog_width = area.width * 80 / 100;
+                                                let content_width = dialog_width.saturating_sub(4);
+                                                
+                                                let is_diff = output.contains("--- ")
+                                                    && output.contains("+++ ")
+                                                    && output.contains("@@");
+                                                let cached_lines: Vec<ratatui::text::Line<'static>> = if is_diff {
+                                                    let diff_view = DiffView::new(output);
+                                                    render_diff(&diff_view.diff, content_width)
+                                                } else {
+                                                    output
+                                                        .lines()
+                                                        .map(|line| ratatui::text::Line::from(ratatui::text::Span::styled(
+                                                            line.to_owned(),
+                                                            Style::default().fg(line_color(line))
+                                                        )))
+                                                        .collect()
+                                                };
+                                                let total_lines = cached_lines.len();
+                                                let max_height = area.height * 80 / 100;
+                                                let visible_height = max_height.saturating_sub(6);
                                                 let dialog = ExpandedToolDialog {
                                                     tool_name: name.clone(),
                                                     invocation: invocation.clone(),
                                                     output: output.clone(),
                                                     scroll_offset: 0,
+                                                    total_lines,
+                                                    is_diff,
+                                                    cached_lines,
+                                                    cached_width: content_width,
+                                                    visible_height,
                                                 };
                                                 app.active_dialog = Some(ActiveDialog::ToolOutput(dialog));
                                             }
@@ -1271,7 +1298,7 @@ fn render_ask_user_dialog(frame: &mut ratatui::Frame, dialog: &ActiveAskUserDial
     );
 }
 
-fn render_tool_output_dialog(frame: &mut ratatui::Frame, dialog: &ExpandedToolDialog) {
+fn render_tool_output_dialog(frame: &mut ratatui::Frame, dialog: &mut ExpandedToolDialog) {
     use ratatui::layout::{Alignment, Rect};
     use ratatui::text::{Line, Span};
     use ratatui::widgets::Clear;
@@ -1280,9 +1307,25 @@ fn render_tool_output_dialog(frame: &mut ratatui::Frame, dialog: &ExpandedToolDi
 
     let dialog_width = area.width * 80 / 100;
     let max_height = area.height * 80 / 100;
+    let content_width = dialog_width.saturating_sub(4);
 
-    let output_lines: Vec<&str> = dialog.output.lines().collect();
-    let total_lines = output_lines.len();
+    let needs_recache = content_width != dialog.cached_width || dialog.cached_lines.is_empty();
+    if needs_recache {
+        dialog.cached_lines = if dialog.is_diff {
+            let diff_view = DiffView::new(&dialog.output);
+            render_diff(&diff_view.diff, content_width)
+        } else {
+            dialog
+                .output
+                .lines()
+                .map(|line| Line::from(Span::styled(line.to_owned(), Style::default().fg(line_color(line)))))
+                .collect()
+        };
+        dialog.cached_width = content_width;
+        dialog.total_lines = dialog.cached_lines.len();
+    }
+
+    let total_lines = dialog.total_lines;
 
     #[allow(clippy::cast_possible_truncation)]
     let content_height = (total_lines as u16).saturating_add(4);
@@ -1314,12 +1357,14 @@ fn render_tool_output_dialog(frame: &mut ratatui::Frame, dialog: &ExpandedToolDi
     frame.render_widget(Paragraph::new(invocation_line), chunks[0]);
 
     let visible_height = chunks[1].height as usize;
+    dialog.visible_height = visible_height as u16;
+    
     let scroll = dialog.scroll_offset as usize;
-    let visible_lines: Vec<Line> = output_lines
+    let visible_lines: Vec<Line> = dialog.cached_lines
         .iter()
         .skip(scroll)
         .take(visible_height)
-        .map(|line| Line::from(Span::styled(*line, Style::default().fg(line_color(line)))))
+        .cloned()
         .collect();
 
     let output_para = Paragraph::new(visible_lines);
@@ -1663,38 +1708,43 @@ fn handle_dialog_key(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> 
                 app.active_dialog = Some(ActiveDialog::ModelSelection(d));
             }
         },
-        ActiveDialog::ToolOutput(mut d) => match code {
-            KeyCode::Esc => {}
-            KeyCode::Up | KeyCode::Char('k') => {
-                d.scroll_offset = d.scroll_offset.saturating_sub(1);
-                app.active_dialog = Some(ActiveDialog::ToolOutput(d));
+        ActiveDialog::ToolOutput(mut d) => {
+            #[allow(clippy::cast_possible_truncation)]
+            let total_lines = d.total_lines as u16;
+            let visible_height = d.visible_height;
+            let max_scroll = total_lines.saturating_sub(visible_height);
+
+            match code {
+                KeyCode::Esc => {}
+                KeyCode::Up | KeyCode::Char('k') => {
+                    d.scroll_offset = d.scroll_offset.saturating_sub(1);
+                    app.active_dialog = Some(ActiveDialog::ToolOutput(d));
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    d.scroll_offset = d.scroll_offset.saturating_add(1).min(max_scroll);
+                    app.active_dialog = Some(ActiveDialog::ToolOutput(d));
+                }
+                KeyCode::PageUp => {
+                    d.scroll_offset = d.scroll_offset.saturating_sub(10);
+                    app.active_dialog = Some(ActiveDialog::ToolOutput(d));
+                }
+                KeyCode::PageDown => {
+                    d.scroll_offset = d.scroll_offset.saturating_add(10).min(max_scroll);
+                    app.active_dialog = Some(ActiveDialog::ToolOutput(d));
+                }
+                KeyCode::Home => {
+                    d.scroll_offset = 0;
+                    app.active_dialog = Some(ActiveDialog::ToolOutput(d));
+                }
+                KeyCode::End => {
+                    d.scroll_offset = max_scroll;
+                    app.active_dialog = Some(ActiveDialog::ToolOutput(d));
+                }
+                _ => {
+                    app.active_dialog = Some(ActiveDialog::ToolOutput(d));
+                }
             }
-            KeyCode::Down | KeyCode::Char('j') => {
-                d.scroll_offset = d.scroll_offset.saturating_add(1);
-                app.active_dialog = Some(ActiveDialog::ToolOutput(d));
-            }
-            KeyCode::PageUp => {
-                d.scroll_offset = d.scroll_offset.saturating_sub(10);
-                app.active_dialog = Some(ActiveDialog::ToolOutput(d));
-            }
-            KeyCode::PageDown => {
-                d.scroll_offset = d.scroll_offset.saturating_add(10);
-                app.active_dialog = Some(ActiveDialog::ToolOutput(d));
-            }
-            KeyCode::Home => {
-                d.scroll_offset = 0;
-                app.active_dialog = Some(ActiveDialog::ToolOutput(d));
-            }
-            KeyCode::End => {
-                #[allow(clippy::cast_possible_truncation)]
-                let total_lines = d.output.lines().count() as u16;
-                d.scroll_offset = total_lines.saturating_sub(1);
-                app.active_dialog = Some(ActiveDialog::ToolOutput(d));
-            }
-            _ => {
-                app.active_dialog = Some(ActiveDialog::ToolOutput(d));
-            }
-        },
+        }
         ActiveDialog::NoProvider => {
             if code == KeyCode::Esc {
                 return false;
