@@ -20,6 +20,7 @@ pub use command_palette::{
     should_show_dropdown, DropdownMode,
 };
 pub use edit_buffer::EditBuffer;
+#[allow(unused_imports)]
 pub use editor_view::{EditorView, VisualCursor};
 
 #[allow(unused_imports)]
