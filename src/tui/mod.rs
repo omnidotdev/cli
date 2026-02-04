@@ -368,33 +368,62 @@ async fn run_app(
                                         }
                                     }
                                     MouseEventKind::Down(_button) => {
-                                        if let Some(message_index) = app.is_tool_message_at(mouse.row, mouse.column) {
-                                            if let Some(DisplayMessage::Tool { name, invocation, output, .. }) = app.messages.get(message_index) {
-                                                let area = terminal.get_frame().area();
-                                                let dialog_width = area.width * 80 / 100;
-                                                let content_width = dialog_width.saturating_sub(4);
+                                        // Handle dropdown clicks first (if dropdown is visible)
+                                        if app.show_command_dropdown {
+                                            if let Some(item_index) = app.is_in_dropdown_area(mouse.row, mouse.column) {
+                                                // Click inside dropdown - select and execute
+                                                app.command_selection = item_index;
                                                 
-                                                let cached_lines: Vec<ratatui::text::Line<'static>> = output
-                                                    .lines()
-                                                    .map(|line| ratatui::text::Line::from(ratatui::text::Span::styled(
-                                                        line.to_owned(),
-                                                        Style::default().fg(line_color(line))
-                                                    )))
-                                                    .collect();
-                                                let total_lines = cached_lines.len();
-                                                let max_height = area.height * 80 / 100;
-                                                let visible_height = max_height.saturating_sub(6);
-                                                let dialog = ExpandedToolDialog {
-                                                    tool_name: name.clone(),
-                                                    invocation: invocation.clone(),
-                                                    output: output.clone(),
-                                                    scroll_offset: 0,
-                                                    total_lines,
-                                                    cached_lines,
-                                                    cached_width: content_width,
-                                                    visible_height,
-                                                };
-                                                app.active_dialog = Some(ActiveDialog::ToolOutput(dialog));
+                                                // Execute command (same logic as Enter key)
+                                                match dropdown_mode(app.input()) {
+                                                    DropdownMode::Commands => {
+                                                        let filtered = filter_commands(app.input());
+                                                        if let Some(cmd) = filtered.get(app.command_selection) {
+                                                            app.set_input(cmd.name.to_string());
+                                                        }
+                                                    }
+                                                    DropdownMode::Models => {
+                                                        let filtered = filter_models(app.input(), &app.agent_config.models);
+                                                        if let Some(model) = filtered.get(app.command_selection) {
+                                                            app.set_input(format!("/model {}", model.id));
+                                                        }
+                                                    }
+                                                    DropdownMode::None => {}
+                                                }
+                                            }
+                                            // Click anywhere (inside or outside) closes dropdown
+                                            app.show_command_dropdown = false;
+                                            app.set_dropdown_area(None, 0);
+                                        } else {
+                                            // Dropdown not visible - handle tool message clicks (existing logic)
+                                            if let Some(message_index) = app.is_tool_message_at(mouse.row, mouse.column) {
+                                                if let Some(DisplayMessage::Tool { name, invocation, output, .. }) = app.messages.get(message_index) {
+                                                    let area = terminal.get_frame().area();
+                                                    let dialog_width = area.width * 80 / 100;
+                                                    let content_width = dialog_width.saturating_sub(4);
+                                                    
+                                                    let cached_lines: Vec<ratatui::text::Line<'static>> = output
+                                                        .lines()
+                                                        .map(|line| ratatui::text::Line::from(ratatui::text::Span::styled(
+                                                            line.to_owned(),
+                                                            Style::default().fg(line_color(line))
+                                                        )))
+                                                        .collect();
+                                                    let total_lines = cached_lines.len();
+                                                    let max_height = area.height * 80 / 100;
+                                                    let visible_height = max_height.saturating_sub(6);
+                                                    let dialog = ExpandedToolDialog {
+                                                        tool_name: name.clone(),
+                                                        invocation: invocation.clone(),
+                                                        output: output.clone(),
+                                                        scroll_offset: 0,
+                                                        total_lines,
+                                                        cached_lines,
+                                                        cached_width: content_width,
+                                                        visible_height,
+                                                    };
+                                                    app.active_dialog = Some(ActiveDialog::ToolOutput(dialog));
+                                                }
                                             }
                                         }
                                     }
