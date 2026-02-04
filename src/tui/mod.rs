@@ -243,18 +243,17 @@ async fn run_app(
                         }
                     };
                     let status = status.as_deref();
-                    let queued_messages = app.pending_messages.clone();
-                    let input_text = app.input().to_string();
-                    let cursor_pos_val = app.cursor();
+                    let input_ref = app.edit_buffer.text();
+                    let cursor_val = app.edit_buffer.cursor();
                     render_session(
                         f,
                         area,
                         &app.messages,
-                        &queued_messages,
+                        &app.pending_messages,
                         &app.streaming_thinking,
                         &app.streaming_text,
-                        &input_text,
-                        cursor_pos_val,
+                        input_ref,
+                        cursor_val,
                         app.message_scroll,
                         status,
                         &app.model,
