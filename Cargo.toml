@@ -33,6 +33,7 @@ ratatui = "0.30"
 crossterm = "0.29"
 arboard = { version = "3", optional = true }
 pulldown-cmark = "0.13"
+syntect = "5"
 
 # HTTP API
 axum = "0.8"
