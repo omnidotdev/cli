@@ -110,8 +110,14 @@ impl LlmProvider for AnthropicProvider {
                             }
                             current_blocks[index] = content_block.clone();
 
-                            if let ContentBlock::ToolUse { id, name, .. } = content_block {
-                                yield Ok(CompletionEvent::ToolUseStart { index, id, name });
+                            match content_block {
+                                ContentBlock::ToolUse { id, name, .. } => {
+                                    yield Ok(CompletionEvent::ToolUseStart { index, id, name });
+                                }
+                                ContentBlock::Thinking { .. } => {
+                                    yield Ok(CompletionEvent::ThinkingStart);
+                                }
+                                _ => {}
                             }
                         }
 
@@ -126,14 +132,18 @@ impl LlmProvider for AnthropicProvider {
                                 crate::core::agent::types::Delta::InputJsonDelta { partial_json } => {
                                     yield Ok(CompletionEvent::ToolInputDelta { index, partial_json });
                                 }
-                                crate::core::agent::types::Delta::ThinkingDelta { text } => {
-                                    yield Ok(CompletionEvent::ThinkingDelta(text));
+                                crate::core::agent::types::Delta::ThinkingDelta { thinking } => {
+                                    yield Ok(CompletionEvent::ThinkingDelta(thinking));
                                 }
                             }
                         }
 
                         StreamEvent::ContentBlockStop { index } => {
                             if let Some(block) = current_blocks.get(index).cloned() {
+                                // Emit ThinkingDone before ContentBlockDone for thinking blocks
+                                if matches!(block, ContentBlock::Thinking { .. }) {
+                                    yield Ok(CompletionEvent::ThinkingDone);
+                                }
                                 yield Ok(CompletionEvent::ContentBlockDone { index, block });
                             }
                         }

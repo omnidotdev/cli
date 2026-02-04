@@ -1,6 +1,17 @@
 //! `OpenAI` provider implementation.
 //!
 //! Provides streaming completions via the `OpenAI` Chat Completions API.
+//!
+//! # Thinking/Reasoning Support
+//!
+//! OpenAI's o1/o3 models use "reasoning tokens" internally, but these are **not exposed**
+//! via the streaming API. The reasoning happens server-side and only the final completion
+//! tokens are streamed to the client. The only indication of reasoning is the token count
+//! in the `usage.output_tokens_details.reasoning_tokens` field of the response.
+//!
+//! As a result, this provider does **not** emit `ThinkingStart`, `ThinkingDelta`, or
+//! `ThinkingDone` events. The `reasoning_effort` parameter can be set to control how much
+//! reasoning the model does, but the reasoning content itself remains opaque.
 
 use async_trait::async_trait;
 use futures::StreamExt;

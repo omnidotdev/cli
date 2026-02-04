@@ -57,7 +57,7 @@ pub enum ContentBlock {
     Text { text: String },
 
     /// Thinking content (internal reasoning).
-    Thinking { text: String },
+    Thinking { thinking: String },
 
     /// Tool use request from assistant.
     ToolUse {
@@ -158,7 +158,7 @@ pub struct MessageStart {
 #[allow(clippy::enum_variant_names)]
 pub enum Delta {
     TextDelta { text: String },
-    ThinkingDelta { text: String },
+    ThinkingDelta { thinking: String },
     InputJsonDelta { partial_json: String },
 }
 

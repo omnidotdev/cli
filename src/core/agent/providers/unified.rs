@@ -2,6 +2,15 @@
 //!
 //! Wraps multiple providers (Anthropic, `OpenAI`, Google, Groq, Mistral)
 //! behind a common interface.
+//!
+//! # Thinking/Reasoning Support
+//!
+//! The underlying `llm` crate does not expose thinking/reasoning tokens from any provider.
+//! As a result, this unified provider does **not** emit `ThinkingStart`, `ThinkingDelta`,
+//! or `ThinkingDone` events regardless of which backend is used.
+//!
+//! For Anthropic models with extended thinking support, use the dedicated `AnthropicProvider`
+//! which implements the native Anthropic API with thinking event streaming.
 
 use async_trait::async_trait;
 use futures::StreamExt;
