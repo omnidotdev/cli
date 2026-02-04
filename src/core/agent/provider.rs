@@ -23,14 +23,14 @@ pub enum ReasoningEffort {
 }
 
 impl ReasoningEffort {
-    /// Cycle to next effort level: High → Max → Low → None → High
+    /// Cycle to next effort level: High → Max → None → Low → High
     #[must_use]
     pub const fn next(self) -> Self {
         match self {
             Self::High => Self::Max,
-            Self::Max => Self::Low,
-            Self::Low => Self::None,
-            Self::None => Self::High,
+            Self::Max => Self::None,
+            Self::None => Self::Low,
+            Self::Low => Self::High,
         }
     }
 
