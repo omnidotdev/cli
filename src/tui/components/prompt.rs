@@ -288,6 +288,7 @@ fn render_hints(frame: &mut Frame, area: Rect, status_left: Option<&str>) {
     frame.render_widget(hints_para, area);
 }
 
+#[cfg(test)]
 fn wrap_line(text: &str, width: usize) -> Vec<String> {
     if text.is_empty() {
         return vec![String::new()];

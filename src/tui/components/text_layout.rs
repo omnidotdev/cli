@@ -19,6 +19,7 @@ pub struct TextLayout {
     /// Total number of visual lines
     pub total_lines: usize,
     /// The width used for wrapping
+    #[allow(dead_code)]
     pub width: usize,
 }
 
@@ -115,11 +116,13 @@ impl TextLayout {
     }
 
     /// Get character index at start of visual row
+    #[allow(dead_code)]
     pub fn row_start(&self, row: usize) -> usize {
         self.lines.get(row).map(|l| l.char_start).unwrap_or(0)
     }
 
     /// Get character index at end of visual row
+    #[allow(dead_code)]
     pub fn row_end(&self, row: usize) -> usize {
         self.lines.get(row).map(|l| l.char_end).unwrap_or(0)
     }
@@ -129,7 +132,6 @@ impl TextLayout {
         let mut result = Vec::new();
         let mut current_line = String::new();
         let mut current_line_start = start_offset;
-        let mut char_pos = start_offset;
 
         // Split into words (by whitespace)
         let words: Vec<&str> = line.split_whitespace().collect();
@@ -138,7 +140,7 @@ impl TextLayout {
             return result;
         }
 
-        for (word_idx, word) in words.iter().enumerate() {
+        for word in &words {
             let word_len = word.chars().count();
 
             // Check if word fits on current line
@@ -182,7 +184,7 @@ impl TextLayout {
                 // Chunk the long word by characters
                 let mut word_chars = word.chars().peekable();
                 let mut chunk = String::new();
-                let chunk_start = current_line_start;
+                let _chunk_start = current_line_start;
 
                 while let Some(ch) = word_chars.next() {
                     let chunk_len = chunk.chars().count();
@@ -211,13 +213,6 @@ impl TextLayout {
                 }
 
                 current_line.clear();
-            }
-
-            // Account for space between words in char_pos
-            if word_idx < words.len() - 1 {
-                char_pos += word_len + 1; // +1 for space
-            } else {
-                char_pos += word_len;
             }
         }
 
