@@ -534,4 +534,174 @@ mod tests {
         buf.insert_char('x');
         assert_eq!(buf.preferred_column(), None);
     }
+
+    #[test]
+    fn move_word_left_with_punctuation() {
+        let mut buf = EditBuffer::with_text("hello, world!");
+        buf.set_cursor(13); // At end
+        buf.move_word_left();
+        assert_eq!(buf.cursor(), 7); // After "hello, "
+    }
+
+    #[test]
+    fn move_word_right_with_punctuation() {
+        let mut buf = EditBuffer::with_text("hello, world!");
+        buf.set_cursor(0);
+        buf.move_word_right();
+        assert_eq!(buf.cursor(), 7); // After "hello, "
+    }
+
+    #[test]
+    fn move_word_left_at_start_does_nothing() {
+        let mut buf = EditBuffer::with_text("hello world");
+        buf.set_cursor(0);
+        buf.move_word_left();
+        assert_eq!(buf.cursor(), 0);
+    }
+
+    #[test]
+    fn move_word_right_at_end_does_nothing() {
+        let mut buf = EditBuffer::with_text("hello world");
+        buf.set_cursor(11);
+        buf.move_word_right();
+        assert_eq!(buf.cursor(), 11);
+    }
+
+    #[test]
+    fn delete_word_at_start_does_nothing() {
+        let mut buf = EditBuffer::with_text("hello");
+        buf.set_cursor(0);
+        buf.delete_word();
+        assert_eq!(buf.text(), "hello");
+        assert_eq!(buf.cursor(), 0);
+    }
+
+    #[test]
+    fn delete_word_with_trailing_spaces() {
+        let mut buf = EditBuffer::with_text("hello   ");
+        buf.delete_word();
+        assert_eq!(buf.text(), "");
+        assert_eq!(buf.cursor(), 0);
+    }
+
+    #[test]
+    fn delete_to_start_at_start_does_nothing() {
+        let mut buf = EditBuffer::with_text("hello");
+        buf.set_cursor(0);
+        buf.delete_to_start();
+        assert_eq!(buf.text(), "hello");
+        assert_eq!(buf.cursor(), 0);
+    }
+
+    #[test]
+    fn delete_to_end_at_end_does_nothing() {
+        let mut buf = EditBuffer::with_text("hello");
+        buf.delete_to_end();
+        assert_eq!(buf.text(), "hello");
+        assert_eq!(buf.cursor(), 5);
+    }
+
+    #[test]
+    fn insert_char_unicode_emoji_sequence() {
+        let mut buf = EditBuffer::new();
+        buf.insert_char('👍');
+        assert_eq!(buf.text(), "👍");
+        assert_eq!(buf.cursor(), 4); // Emoji is 4 bytes
+        assert_eq!(buf.len(), 4);
+    }
+
+    #[test]
+    fn delete_char_before_emoji() {
+        let mut buf = EditBuffer::with_text("a👍b");
+        buf.set_cursor(5); // After emoji
+        buf.delete_char_before();
+        assert_eq!(buf.text(), "ab");
+        assert_eq!(buf.cursor(), 1);
+    }
+
+    #[test]
+    fn delete_char_after_emoji() {
+        let mut buf = EditBuffer::with_text("a👍b");
+        buf.set_cursor(1); // Before emoji
+        buf.delete_char_after();
+        assert_eq!(buf.text(), "ab");
+        assert_eq!(buf.cursor(), 1);
+    }
+
+    #[test]
+    fn cursor_line_col_at_newline() {
+        let mut buf = EditBuffer::with_text("hello\nworld");
+        buf.set_cursor(5); // At the newline
+        assert_eq!(buf.cursor_line_col(), (0, 5));
+    }
+
+    #[test]
+    fn cursor_line_col_after_newline() {
+        let mut buf = EditBuffer::with_text("hello\nworld");
+        buf.set_cursor(6); // Right after newline
+        assert_eq!(buf.cursor_line_col(), (1, 0));
+    }
+
+    #[test]
+    fn is_multiline_single_line() {
+        let buf = EditBuffer::with_text("hello");
+        assert!(!buf.is_multiline());
+    }
+
+    #[test]
+    fn is_multiline_multiple_lines() {
+        let buf = EditBuffer::with_text("hello\nworld");
+        assert!(buf.is_multiline());
+    }
+
+    #[test]
+    fn move_left_with_multiple_newlines() {
+        let mut buf = EditBuffer::with_text("a\nb\nc");
+        buf.set_cursor(4); // At 'c'
+        buf.move_left();
+        assert_eq!(buf.cursor(), 3); // At newline
+        buf.move_left();
+        assert_eq!(buf.cursor(), 2); // At 'b'
+    }
+
+    #[test]
+    fn move_right_with_multiple_newlines() {
+        let mut buf = EditBuffer::with_text("a\nb\nc");
+        buf.set_cursor(0); // At 'a'
+        buf.move_right();
+        assert_eq!(buf.cursor(), 1); // At newline
+        buf.move_right();
+        assert_eq!(buf.cursor(), 2); // At 'b'
+    }
+
+    #[test]
+    fn insert_newline_in_middle() {
+        let mut buf = EditBuffer::with_text("hello");
+        buf.set_cursor(2);
+        buf.insert_newline();
+        assert_eq!(buf.text(), "he\nllo");
+        assert_eq!(buf.cursor(), 3);
+        assert!(buf.is_multiline());
+    }
+
+    #[test]
+    fn delete_word_multiple_spaces_before() {
+        let mut buf = EditBuffer::with_text("hello   world");
+        buf.set_cursor(13); // At end
+        buf.delete_word();
+        assert_eq!(buf.text(), "hello   ");
+        assert_eq!(buf.cursor(), 8);
+    }
+
+    #[test]
+    fn byte_to_char_index_out_of_bounds() {
+        let buf = EditBuffer::with_text("hello");
+        assert_eq!(buf.byte_to_char_index(100), 5); // Clamped to text length
+    }
+
+    #[test]
+    fn char_to_byte_index_out_of_bounds() {
+        let buf = EditBuffer::with_text("hello");
+        assert_eq!(buf.char_to_byte_index(100), 5); // Clamped to text length
+    }
 }

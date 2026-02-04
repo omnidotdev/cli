@@ -322,4 +322,98 @@ mod tests {
         assert_eq!(cursor2.row, 2);
         assert_eq!(cursor2.col, 5);
     }
+
+    #[test]
+    fn test_move_up_visual_empty_buffer() {
+        let view = EditorView::new(80);
+        let mut buffer = EditBuffer::new();
+        view.move_up_visual(&mut buffer);
+        assert_eq!(buffer.cursor(), 0);
+    }
+
+    #[test]
+    fn test_move_down_visual_empty_buffer() {
+        let view = EditorView::new(80);
+        let mut buffer = EditBuffer::new();
+        view.move_down_visual(&mut buffer);
+        assert_eq!(buffer.cursor(), 0);
+    }
+
+    #[test]
+    fn test_visual_cursor_multiline_text() {
+        let view = EditorView::new(80);
+        let mut buffer = EditBuffer::with_text("hello\nworld");
+        buffer.set_cursor(8); // 'r' in "world"
+        let cursor = view.get_visual_cursor(&buffer);
+        assert_eq!(cursor.row, 1);
+        assert_eq!(cursor.col, 2);
+    }
+
+    #[test]
+    fn test_visual_line_count_multiline() {
+        let view = EditorView::new(80);
+        let buffer = EditBuffer::with_text("a\nb\nc");
+        assert_eq!(view.get_visual_line_count(&buffer), 3);
+    }
+
+    #[test]
+    fn test_ensure_cursor_visible_already_visible() {
+        let mut view = EditorView::new(80);
+        view.set_scroll_offset(2);
+        let mut buffer = EditBuffer::with_text("a\nb\nc\nd\ne");
+        buffer.set_cursor(4); // Line 2
+
+        view.ensure_cursor_visible(&buffer, 3);
+
+        assert_eq!(view.scroll_offset(), 2); // No change
+    }
+
+    #[test]
+    fn test_ensure_cursor_visible_at_boundary() {
+        let mut view = EditorView::new(80);
+        view.set_scroll_offset(0);
+        let mut buffer = EditBuffer::with_text("a\nb\nc");
+        buffer.set_cursor(4); // Last line
+
+        view.ensure_cursor_visible(&buffer, 2);
+
+        assert!(view.scroll_offset() <= 1);
+    }
+
+    #[test]
+    fn test_get_visual_sol_multiline() {
+        let view = EditorView::new(80);
+        let mut buffer = EditBuffer::with_text("hello\nworld");
+        buffer.set_cursor(8); // In "world"
+        assert_eq!(view.get_visual_sol(&buffer), 6);
+    }
+
+    #[test]
+    fn test_get_visual_eol_multiline() {
+        let view = EditorView::new(80);
+        let mut buffer = EditBuffer::with_text("hello\nworld");
+        buffer.set_cursor(8); // In "world"
+        assert_eq!(view.get_visual_eol(&buffer), 11);
+    }
+
+    #[test]
+    fn test_width_getter() {
+        let view = EditorView::new(100);
+        assert_eq!(view.width(), 100);
+    }
+
+    #[test]
+    fn test_set_width() {
+        let mut view = EditorView::new(80);
+        view.set_width(120);
+        assert_eq!(view.width(), 120);
+    }
+
+    #[test]
+    fn test_scroll_offset_getter_setter() {
+        let mut view = EditorView::new(80);
+        assert_eq!(view.scroll_offset(), 0);
+        view.set_scroll_offset(5);
+        assert_eq!(view.scroll_offset(), 5);
+    }
 }

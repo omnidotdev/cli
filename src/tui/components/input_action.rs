@@ -217,4 +217,100 @@ mod tests {
             Some(&InputAction::DeleteWord)
         );
     }
+
+    #[test]
+    fn test_no_duplicate_keybindings() {
+        let bindings = default_keybindings();
+        let mut seen = std::collections::HashSet::new();
+
+        for binding in &bindings {
+            let key = (binding.key, binding.modifiers);
+            assert!(
+                !seen.contains(&key),
+                "Duplicate keybinding: {:?} with modifiers {:?}",
+                binding.key,
+                binding.modifiers
+            );
+            seen.insert(key);
+        }
+    }
+
+    #[test]
+    fn test_keybinding_home_key() {
+        let bindings = default_keybindings();
+        let map = build_keybinding_map(&bindings);
+
+        assert_eq!(
+            map.get(&(KeyCode::Home, KeyModifiers::NONE)),
+            Some(&InputAction::MoveToStart)
+        );
+    }
+
+    #[test]
+    fn test_keybinding_end_key() {
+        let bindings = default_keybindings();
+        let map = build_keybinding_map(&bindings);
+
+        assert_eq!(
+            map.get(&(KeyCode::End, KeyModifiers::NONE)),
+            Some(&InputAction::MoveToEnd)
+        );
+    }
+
+    #[test]
+    fn test_keybinding_newline_shift_enter() {
+        let bindings = default_keybindings();
+        let map = build_keybinding_map(&bindings);
+
+        assert_eq!(
+            map.get(&(KeyCode::Enter, KeyModifiers::SHIFT)),
+            Some(&InputAction::InsertNewline)
+        );
+    }
+
+    #[test]
+    fn test_keybinding_newline_alt_enter() {
+        let bindings = default_keybindings();
+        let map = build_keybinding_map(&bindings);
+
+        assert_eq!(
+            map.get(&(KeyCode::Enter, KeyModifiers::ALT)),
+            Some(&InputAction::InsertNewline)
+        );
+    }
+
+    #[test]
+    fn test_keybinding_backspace() {
+        let bindings = default_keybindings();
+        let map = build_keybinding_map(&bindings);
+
+        assert_eq!(
+            map.get(&(KeyCode::Backspace, KeyModifiers::NONE)),
+            Some(&InputAction::DeleteCharBefore)
+        );
+    }
+
+    #[test]
+    fn test_keybinding_delete() {
+        let bindings = default_keybindings();
+        let map = build_keybinding_map(&bindings);
+
+        assert_eq!(
+            map.get(&(KeyCode::Delete, KeyModifiers::NONE)),
+            Some(&InputAction::DeleteCharAfter)
+        );
+    }
+
+    #[test]
+    fn test_keybinding_struct_creation() {
+        let binding = KeyBinding::new(
+            KeyCode::Char('a'),
+            KeyModifiers::CONTROL,
+            InputAction::MoveToStart,
+        );
+
+        assert_eq!(binding.key, KeyCode::Char('a'));
+        assert_eq!(binding.modifiers, KeyModifiers::CONTROL);
+        assert_eq!(binding.action, InputAction::MoveToStart);
+    }
 }
