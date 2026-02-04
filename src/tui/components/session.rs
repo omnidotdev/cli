@@ -2,7 +2,7 @@
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
     Frame,
@@ -21,6 +21,7 @@ pub const MESSAGE_PADDING_X: u16 = 2;
 
 /// Brand colors.
 const DIMMED: Color = Color::Rgb(100, 100, 110);
+const THINKING_PREFIX: Color = Color::Rgb(100, 160, 150);
 
 #[allow(clippy::cast_possible_truncation, clippy::too_many_arguments)]
 pub fn render_session(
@@ -184,27 +185,26 @@ fn render_message_list(
         };
 
         if screen_y < padded_area.y + padded_area.height {
-            let clip_top = scroll_offset.saturating_sub(content_y);
             let available_height = (padded_area.y + padded_area.height).saturating_sub(screen_y);
             let thinking_area =
                 Rect::new(padded_area.x, screen_y, padded_area.width, available_height);
 
-            let prefixed = format!("Thinking...\n{streaming_thinking}");
-            let visible_lines: Vec<Line> = prefixed
-                .lines()
-                .map(|line| Line::from(Span::styled(line.to_owned(), Style::default().fg(DIMMED))))
-                .skip(clip_top as usize)
-                .collect();
-            let para = Paragraph::new(visible_lines).wrap(Wrap { trim: false });
+            let thinking_line = Line::from(vec![
+                Span::styled(
+                    "Thinking: ",
+                    Style::default()
+                        .fg(THINKING_PREFIX)
+                        .add_modifier(Modifier::ITALIC),
+                ),
+                Span::styled(streaming_thinking.to_owned(), Style::default().fg(DIMMED)),
+            ]);
+            let para = Paragraph::new(thinking_line).wrap(Wrap { trim: false });
             frame.render_widget(para, thinking_area);
 
-            let thinking_height: u16 = prefixed
-                .lines()
-                .map(|line| {
-                    wrapped_line_height(line.chars().count(), padded_area.width.max(1) as usize)
-                })
-                .sum::<u16>()
-                .max(1);
+            let prefixed = format!("Thinking: {streaming_thinking}");
+            let thinking_height: u16 =
+                wrapped_line_height(prefixed.chars().count(), padded_area.width.max(1) as usize)
+                    .max(1);
             content_y = content_y.saturating_add(thinking_height).saturating_add(1);
         }
     }
@@ -296,12 +296,8 @@ pub fn calculate_content_height(
 
     if !streaming_thinking.is_empty() {
         let width = width.max(1) as usize;
-        let prefixed = format!("Thinking...\n{streaming_thinking}");
-        let thinking_height: u16 = prefixed
-            .lines()
-            .map(|line| wrapped_line_height(line.chars().count(), width))
-            .sum::<u16>()
-            .max(1);
+        let prefixed = format!("Thinking: {streaming_thinking}");
+        let thinking_height: u16 = wrapped_line_height(prefixed.chars().count(), width).max(1);
         total = total.saturating_add(thinking_height).saturating_add(1);
     }
 

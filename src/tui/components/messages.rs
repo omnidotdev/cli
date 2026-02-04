@@ -2,7 +2,7 @@
 
 use ratatui::{
     layout::Rect,
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
     Frame,
@@ -23,6 +23,7 @@ const ERROR_COLOR: Color = Color::Red;
 const SUCCESS_COLOR: Color = Color::Rgb(77, 201, 176);
 const SELECTION_BG: Color = Color::Rgb(60, 80, 100);
 const SELECTION_FG: Color = Color::White;
+const THINKING_PREFIX: Color = Color::Rgb(100, 160, 150);
 
 pub const DIFF_ADD: Color = Color::Rgb(80, 160, 80);
 pub const DIFF_DEL: Color = Color::Rgb(180, 80, 80);
@@ -314,7 +315,7 @@ fn render_reasoning_message_with_scroll(
     selected_text: &mut String,
 ) {
     let text_width = area.width.max(1) as usize;
-    let prefixed_text = format!("Thinking...\n{text}");
+    let prefixed_text = format!("Thinking: {text}");
     let layout = TextLayout::new(&prefixed_text, text_width);
 
     let all_lines: Vec<Line> = layout
@@ -336,6 +337,20 @@ fn render_reasoning_message_with_scroll(
                     wrapped_line.text.clone(),
                     Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
                 ))
+            } else if i == 0 && wrapped_line.text.starts_with("Thinking: ") {
+                let prefix_len = "Thinking: ".len();
+                let (prefix, content) = wrapped_line
+                    .text
+                    .split_at(prefix_len.min(wrapped_line.text.len()));
+                Line::from(vec![
+                    Span::styled(
+                        prefix.to_string(),
+                        Style::default()
+                            .fg(THINKING_PREFIX)
+                            .add_modifier(Modifier::ITALIC),
+                    ),
+                    Span::styled(content.to_string(), Style::default().fg(DIMMED)),
+                ])
             } else {
                 Line::from(Span::styled(
                     wrapped_line.text.clone(),
@@ -365,7 +380,7 @@ pub fn message_height(message: &DisplayMessage, width: u16) -> u16 {
             (layout.total_lines as u16).max(1)
         }
         DisplayMessage::Reasoning { text } => {
-            let prefixed_text = format!("Thinking...\n{text}");
+            let prefixed_text = format!("Thinking: {text}");
             let layout = TextLayout::new(&prefixed_text, width);
             (layout.total_lines as u16).max(1)
         }

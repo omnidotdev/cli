@@ -186,6 +186,7 @@ struct OpenAiDelta {
     #[serde(default)]
     tool_calls: Option<Vec<OpenAiToolCallDelta>>,
     #[serde(default)]
+    #[allow(dead_code)]
     reasoning: Option<String>,
     #[serde(default)]
     reasoning_details: Option<Vec<ReasoningDetail>>,
@@ -502,17 +503,6 @@ impl LlmProvider for OpenAiProvider {
                     };
 
                     for choice in chunk.choices {
-                        if let Some(ref reasoning) = choice.delta.reasoning {
-                            if !reasoning.is_empty() {
-                                tracing::debug!(len = reasoning.len(), "Received reasoning string");
-                                if !thinking_started {
-                                    yield Ok(CompletionEvent::ThinkingStart);
-                                    thinking_started = true;
-                                }
-                                yield Ok(CompletionEvent::ThinkingDelta(reasoning.clone()));
-                            }
-                        }
-
                         if let Some(ref details) = choice.delta.reasoning_details {
                             tracing::debug!(count = details.len(), "Received reasoning_details");
                             for detail in details {
