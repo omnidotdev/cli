@@ -244,6 +244,7 @@ async fn run_app(
                         &mut app.selected_text,
                         app.session_cost,
                         app.prompt_scroll_offset,
+                        &mut app.tool_message_areas,
                     )
                 }
             };

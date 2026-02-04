@@ -40,6 +40,7 @@ pub fn render_session(
     selected_text: &mut String,
     _session_cost: f64,
     prompt_scroll_offset: usize,
+    tool_message_areas: &mut Vec<(Rect, usize)>,
 ) -> ((u16, u16), Rect) {
     let estimated_width = area.width.saturating_sub(3).max(1) as usize;
     let input_lines = if input.is_empty() {
@@ -69,6 +70,7 @@ pub fn render_session(
         scroll_offset,
         selection,
         selected_text,
+        tool_message_areas,
     );
 
     // Apply same horizontal padding to prompt area for alignment
@@ -104,6 +106,7 @@ fn render_message_list(
     scroll_offset: u16,
     selection: Option<&Selection>,
     selected_text: &mut String,
+    tool_message_areas: &mut Vec<(Rect, usize)>,
 ) {
     // Apply padding to message area
     let padded_area = Rect::new(
@@ -113,8 +116,9 @@ fn render_message_list(
         area.height,
     );
 
+    tool_message_areas.clear();
+
     if messages.is_empty() && streaming_thinking.is_empty() && streaming_text.is_empty() {
-        // Render empty state
         let empty_msg = Paragraph::new(Line::from(Span::styled(
             "No messages yet. Start typing to begin.",
             Style::default().fg(DIMMED),
@@ -123,12 +127,9 @@ fn render_message_list(
         return;
     }
 
-    // Calculate content positions and render visible messages with smooth scrolling
-    // y_offset tracks position in virtual content space
-    // screen_y tracks where we're rendering on screen
-    let mut content_y: u16 = 1; // Start at 1 for top padding
+    let mut content_y: u16 = 1;
 
-    for message in messages {
+    for (msg_index, message) in messages.iter().enumerate() {
         let msg_height = estimate_message_height(message, padded_area.width);
         let msg_end = content_y + msg_height;
 
@@ -155,7 +156,6 @@ fn render_message_list(
 
         let available_height = (padded_area.y + padded_area.height).saturating_sub(screen_y);
 
-        // Render the message with scroll offset for partial visibility
         let msg_area = Rect::new(padded_area.x, screen_y, padded_area.width, available_height);
         let sel_bounds = selection.map(Selection::bounds);
         render_message_with_scroll(
@@ -167,7 +167,12 @@ fn render_message_list(
             selected_text,
         );
 
-        content_y = msg_end + 1; // +1 for spacing
+        if matches!(message, DisplayMessage::Tool { .. }) && clip_top == 0 {
+            let tool_area = Rect::new(padded_area.x, screen_y, padded_area.width, 1);
+            tool_message_areas.push((tool_area, msg_index));
+        }
+
+        content_y = msg_end + 1;
     }
 
     // Render streaming thinking if present (dimmed style)

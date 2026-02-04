@@ -424,30 +424,7 @@ impl LlmProvider for OpenAiProvider {
 
         let openai_tools = request.tools.as_ref().map(|t| convert_tools(t));
 
-        let model_lower = request.model.to_lowercase();
-        let reasoning = if self.provider_name == "openrouter"
-            && (model_lower.contains("claude") || model_lower.contains("anthropic"))
-        {
-            tracing::debug!(
-                provider = %self.provider_name,
-                model = %request.model,
-                "Enabling OpenRouter reasoning for Claude model"
-            );
-            Some(ReasoningConfig {
-                max_tokens: Some(8000),
-                effort: Some("high".to_string()),
-            })
-        } else {
-            tracing::debug!(
-                provider = %self.provider_name,
-                model = %request.model,
-                "Reasoning not enabled (provider={}, has_claude={}, has_anthropic={})",
-                self.provider_name,
-                model_lower.contains("claude"),
-                model_lower.contains("anthropic")
-            );
-            None
-        };
+        let reasoning: Option<ReasoningConfig> = None;
 
         let openai_request = OpenAiRequest {
             model: request.model,
