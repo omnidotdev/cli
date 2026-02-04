@@ -106,7 +106,10 @@ struct StreamOptions {
 
 #[derive(Debug, Serialize)]
 struct ReasoningConfig {
-    max_tokens: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effort: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -173,6 +176,8 @@ struct OpenAiDelta {
     content: Option<String>,
     #[serde(default)]
     tool_calls: Option<Vec<OpenAiToolCallDelta>>,
+    #[serde(default)]
+    reasoning: Option<String>,
     #[serde(default)]
     reasoning_details: Option<Vec<ReasoningDetail>>,
 }
@@ -363,7 +368,12 @@ fn parse_sse_event(buffer: &str) -> Option<(Option<OpenAiChunk>, String)> {
 
     // Parse JSON
     match serde_json::from_str::<OpenAiChunk>(&data) {
-        Ok(chunk) => Some((Some(chunk), remainder)),
+        Ok(chunk) => {
+            if data.contains("reasoning") {
+                tracing::debug!(data = %data, "SSE event contains reasoning");
+            }
+            Some((Some(chunk), remainder))
+        }
         Err(e) => {
             tracing::debug!(data = %data, error = %e, "failed to parse OpenAI event");
             Some((None, remainder))
@@ -418,8 +428,24 @@ impl LlmProvider for OpenAiProvider {
         let reasoning = if self.provider_name == "openrouter"
             && (model_lower.contains("claude") || model_lower.contains("anthropic"))
         {
-            Some(ReasoningConfig { max_tokens: 8000 })
+            tracing::debug!(
+                provider = %self.provider_name,
+                model = %request.model,
+                "Enabling OpenRouter reasoning for Claude model"
+            );
+            Some(ReasoningConfig {
+                max_tokens: Some(8000),
+                effort: Some("high".to_string()),
+            })
         } else {
+            tracing::debug!(
+                provider = %self.provider_name,
+                model = %request.model,
+                "Reasoning not enabled (provider={}, has_claude={}, has_anthropic={})",
+                self.provider_name,
+                model_lower.contains("claude"),
+                model_lower.contains("anthropic")
+            );
             None
         };
 
@@ -480,21 +506,38 @@ impl LlmProvider for OpenAiProvider {
                     };
 
                     for choice in chunk.choices {
-                        // Handle reasoning details (OpenRouter)
-                        if let Some(details) = choice.delta.reasoning_details {
+                        if let Some(ref reasoning) = choice.delta.reasoning {
+                            if !reasoning.is_empty() {
+                                tracing::debug!(len = reasoning.len(), "Received reasoning string");
+                                if !thinking_started {
+                                    yield Ok(CompletionEvent::ThinkingStart);
+                                    thinking_started = true;
+                                }
+                                yield Ok(CompletionEvent::ThinkingDelta(reasoning.clone()));
+                            }
+                        }
+
+                        if let Some(ref details) = choice.delta.reasoning_details {
+                            tracing::debug!(count = details.len(), "Received reasoning_details");
                             for detail in details {
+                                tracing::debug!(
+                                    detail_type = %detail.detail_type,
+                                    has_text = detail.text.is_some(),
+                                    has_summary = detail.summary.is_some(),
+                                    "Processing reasoning detail"
+                                );
                                 if !thinking_started {
                                     yield Ok(CompletionEvent::ThinkingStart);
                                     thinking_started = true;
                                 }
                                 if detail.detail_type == "reasoning.text" {
-                                    if let Some(text) = detail.text {
-                                        yield Ok(CompletionEvent::ThinkingDelta(text));
+                                    if let Some(text) = &detail.text {
+                                        yield Ok(CompletionEvent::ThinkingDelta(text.clone()));
                                     }
                                 }
                                 if detail.detail_type == "reasoning.summary" {
-                                    if let Some(summary) = detail.summary {
-                                        yield Ok(CompletionEvent::ThinkingDelta(summary));
+                                    if let Some(summary) = &detail.summary {
+                                        yield Ok(CompletionEvent::ThinkingDelta(summary.clone()));
                                     }
                                 }
                             }

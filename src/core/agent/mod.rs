@@ -750,12 +750,9 @@ impl Agent {
                         message: msg,
                     });
                 }
-                // TODO(Task 6-8): Implement thinking content handling
                 CompletionEvent::ThinkingStart
                 | CompletionEvent::ThinkingDelta(_)
-                | CompletionEvent::ThinkingDone => {
-                    // Stub: Thinking content will be handled in Tasks 6-8
-                }
+                | CompletionEvent::ThinkingDone => {}
             }
         }
 
@@ -930,12 +927,13 @@ impl Agent {
                         message: msg,
                     });
                 }
-                // TODO(Task 6-8): Implement thinking content handling
-                CompletionEvent::ThinkingStart
-                | CompletionEvent::ThinkingDelta(_)
-                | CompletionEvent::ThinkingDone => {
-                    // Stub: Thinking content will be handled in Tasks 6-8
+                CompletionEvent::ThinkingStart => {
+                    on_event(ChatEvent::ThinkingStart);
                 }
+                CompletionEvent::ThinkingDelta(text) => {
+                    on_event(ChatEvent::Thinking(text));
+                }
+                CompletionEvent::ThinkingDone => {}
             }
         }
 
