@@ -8,7 +8,7 @@ use uuid::Uuid;
 use super::components::{
     EditBuffer, EditorView, InputAction, ModelSelectionDialog, SessionListDialog,
 };
-use super::message::{DisplayMessage, format_tool_invocation};
+use super::message::{format_tool_invocation, DisplayMessage};
 use super::state::ViewState;
 
 /// Type alias for model fetch results receiver.
@@ -50,12 +50,12 @@ pub const ECOSYSTEM_TIPS: &[&str] = &[
 ];
 
 use crate::config::{AgentConfig, AgentPermissions, Config};
-use crate::core::Agent;
 use crate::core::agent::{
     AgentMode, AskUserResponse, InterfaceMessage, PermissionAction, PermissionContext,
     PermissionResponse, ReasoningEffort,
 };
 use crate::core::session::{SessionManager, SessionTarget};
+use crate::core::Agent;
 
 /// Active text selection state.
 #[derive(Debug, Clone)]
@@ -315,6 +315,21 @@ pub struct App {
 
     /// Messages queued while agent is processing.
     pub pending_messages: Vec<String>,
+
+    /// Whether file picker dropdown is visible
+    pub show_file_dropdown: bool,
+
+    /// Currently selected file index in dropdown
+    pub file_selection: usize,
+
+    /// File dropdown area bounds for mouse detection
+    pub file_dropdown_area: Option<Rect>,
+
+    /// Number of items in file dropdown
+    pub file_dropdown_item_count: usize,
+
+    /// Cached project files (lazy loaded on first @)
+    pub cached_project_files: Vec<std::path::PathBuf>,
 }
 
 impl Default for App {
@@ -463,6 +478,11 @@ impl App {
             esc_pressed_once: false,
             backspace_on_empty_once: false,
             pending_messages: Vec::new(),
+            show_file_dropdown: false,
+            file_selection: 0,
+            file_dropdown_area: None,
+            file_dropdown_item_count: 0,
+            cached_project_files: Vec::new(),
         }
     }
 
@@ -926,6 +946,34 @@ impl App {
             {
                 let item_index = (row - area.y) as usize;
                 if item_index < self.command_dropdown_item_count {
+                    Some(item_index)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Set the file dropdown area bounds and item count.
+    pub fn set_file_dropdown_area(&mut self, area: Option<Rect>, item_count: usize) {
+        self.file_dropdown_area = area;
+        self.file_dropdown_item_count = item_count;
+    }
+
+    /// Check if a point is within the file dropdown area.
+    /// Returns the item index if clicked on a dropdown item, None otherwise.
+    #[must_use]
+    pub fn is_in_file_dropdown_area(&self, row: u16, col: u16) -> Option<usize> {
+        self.file_dropdown_area.and_then(|area| {
+            if row >= area.y
+                && row < area.y + area.height
+                && col >= area.x
+                && col < area.x + area.width
+            {
+                let item_index = (row - area.y) as usize;
+                if item_index < self.file_dropdown_item_count {
                     Some(item_index)
                 } else {
                     None

@@ -44,6 +44,7 @@ use components::{
     calculate_content_height, default_keybindings, dropdown_mode, filter_commands, filter_models,
     line_color, render_command_dropdown, render_model_dropdown, render_model_selection_dialog,
     render_session, render_session_list, render_welcome, should_show_dropdown,
+    file_picker,
 };
 use message::DisplayMessage;
 use state::ViewState;
@@ -881,6 +882,16 @@ fn handle_key(
             app.show_command_dropdown = should_show_dropdown(app.input());
             if app.show_command_dropdown {
                 app.command_selection = 0;
+            }
+            // Check for @ trigger for file dropdown
+            let cursor_pos = app.cursor();
+            app.show_file_dropdown = file_picker::should_show_file_dropdown(app.input(), cursor_pos);
+            if app.show_file_dropdown {
+                app.file_selection = 0;
+                // Lazy load files on first @
+                if app.cached_project_files.is_empty() {
+                    app.cached_project_files = file_picker::list_project_files();
+                }
             }
         }
         KeyCode::Backspace => {
