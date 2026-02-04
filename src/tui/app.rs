@@ -8,7 +8,7 @@ use uuid::Uuid;
 use super::components::{
     EditBuffer, EditorView, InputAction, ModelSelectionDialog, SessionListDialog,
 };
-use super::message::{DisplayMessage, format_tool_invocation};
+use super::message::{format_tool_invocation, DisplayMessage};
 use super::state::ViewState;
 
 /// Type alias for model fetch results receiver.
@@ -50,12 +50,12 @@ pub const ECOSYSTEM_TIPS: &[&str] = &[
 ];
 
 use crate::config::{AgentConfig, AgentPermissions, Config};
-use crate::core::Agent;
 use crate::core::agent::{
     AgentMode, AskUserResponse, InterfaceMessage, PermissionAction, PermissionContext,
     PermissionResponse, ReasoningEffort,
 };
 use crate::core::session::{SessionManager, SessionTarget};
+use crate::core::Agent;
 
 /// Active text selection state.
 #[derive(Debug, Clone)]
@@ -920,8 +920,10 @@ impl App {
     #[must_use]
     pub fn is_in_dropdown_area(&self, row: u16, col: u16) -> Option<usize> {
         self.command_dropdown_area.and_then(|area| {
-            if row >= area.y
-                && row < area.y + area.height
+            // Must be inside bounds AND past the top border (row > area.y)
+            // row == area.y is the top border itself, not a valid item
+            if row > area.y
+                && row < area.y + area.height.saturating_sub(1) // exclude bottom border
                 && col >= area.x
                 && col < area.x + area.width
             {
