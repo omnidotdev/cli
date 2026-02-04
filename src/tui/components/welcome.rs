@@ -14,7 +14,7 @@ use ratatui::{
 };
 
 use super::prompt::{render_prompt, PromptMode};
-use super::text_layout::TextLayout;
+
 use crate::core::agent::AgentMode;
 use crate::tui::app::{LOGO_LINES, LOGO_SHADOW};
 
@@ -135,18 +135,26 @@ pub fn render_welcome(
         area.height.saturating_sub(prompt_y.saturating_sub(area.y)),
     );
 
+    // Render prompt first to get actual box position
+    let (cursor_pos, actual_prompt_box) = render_prompt(
+        frame,
+        prompt_area,
+        input,
+        cursor,
+        PromptMode::Centered,
+        None,
+        model,
+        provider,
+        Some(placeholder),
+        agent_mode,
+        prompt_scroll_offset,
+    );
+
     // Only render footer if terminal is wide enough
     if area.width >= MIN_WIDTH_FOR_FOOTER && area.height > 4 {
-        // Calculate prompt height based on visual lines
-        let estimated_width = area.width.saturating_sub(7).max(1) as usize;
-        let layout = TextLayout::new(input, estimated_width);
-        let prompt_visual_lines = layout.total_lines.min(6); // cap at 6
-        let prompt_box_height = prompt_visual_lines as u16 + 4; // +4 for padding
-
-        let tip_y = prompt_y + prompt_box_height + 1;
         let footer_y = area.y + area.height.saturating_sub(1);
 
-        // Render ecosystem tip centered with yellow circle
+        let tip_y = actual_prompt_box.y + actual_prompt_box.height + 1;
         if !tip.is_empty() && tip_y < footer_y {
             let tip_with_dot = format!("● {tip}");
             let tip_width = tip_with_dot.chars().count() as u16;
@@ -182,19 +190,7 @@ pub fn render_welcome(
         frame.render_widget(version_para, clamped);
     }
 
-    render_prompt(
-        frame,
-        prompt_area,
-        input,
-        cursor,
-        PromptMode::Centered,
-        None,
-        model,
-        provider,
-        Some(placeholder),
-        agent_mode,
-        prompt_scroll_offset,
-    )
+    (cursor_pos, actual_prompt_box)
 }
 
 /// Clamp a Rect to fit within bounds.

@@ -323,25 +323,21 @@ async fn run_app(
                             if !app.has_dialog() {
                                 match mouse.kind {
                                     MouseEventKind::ScrollUp => {
-                                        if app.view_state == ViewState::Session {
-                                            if app.is_in_prompt_area(mouse.row, mouse.column) {
-                                                app.scroll_prompt_up(3);
-                                            } else {
-                                                app.scroll_messages_up(3);
-                                            }
+                                        if app.is_in_prompt_area(mouse.row, mouse.column) {
+                                            app.scroll_prompt_up(3);
+                                        } else if app.view_state == ViewState::Session {
+                                            app.scroll_messages_up(3);
                                         } else {
                                             app.scroll_up(3);
                                         }
                                     }
                                     MouseEventKind::ScrollDown => {
-                                        if app.view_state == ViewState::Session {
-                                            if app.is_in_prompt_area(mouse.row, mouse.column) {
-                                                let layout = TextLayout::new(&app.input, app.prompt_text_width);
-                                                let max_scroll = layout.total_lines.saturating_sub(6);
-                                                app.scroll_prompt_down(3, max_scroll);
-                                            } else {
-                                                app.scroll_messages_down(3);
-                                            }
+                                        if app.is_in_prompt_area(mouse.row, mouse.column) {
+                                            let layout = TextLayout::new(&app.input, app.prompt_text_width);
+                                            let max_scroll = layout.total_lines.saturating_sub(6);
+                                            app.scroll_prompt_down(3, max_scroll);
+                                        } else if app.view_state == ViewState::Session {
+                                            app.scroll_messages_down(3);
                                         } else {
                                             app.scroll_down(3, 1000);
                                         }
@@ -788,12 +784,11 @@ fn handle_key(
                     app.scroll_messages_up(1);
                 }
             } else {
-                app.scroll_up(1);
+                app.move_up();
             }
         }
         KeyCode::Down => {
             if app.show_command_dropdown {
-                // Navigate dropdown selection down (wrap to top)
                 let max_idx = match dropdown_mode(&app.input) {
                     DropdownMode::Commands => filter_commands(&app.input).len().saturating_sub(1),
                     DropdownMode::Models => filter_models(&app.input, &app.agent_config.models)
@@ -813,7 +808,7 @@ fn handle_key(
                     app.scroll_messages_down(1);
                 }
             } else {
-                app.scroll_down(1, 1000); // Welcome screen uses fixed max.
+                app.move_down();
             }
         }
         _ => {}
