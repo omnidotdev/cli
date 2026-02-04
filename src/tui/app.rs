@@ -50,7 +50,7 @@ pub const ECOSYSTEM_TIPS: &[&str] = &[
 use crate::config::{AgentConfig, AgentPermissions, Config};
 use crate::core::agent::{
     AgentMode, AskUserResponse, InterfaceMessage, PermissionAction, PermissionContext,
-    PermissionResponse,
+    PermissionResponse, ReasoningEffort,
 };
 use crate::core::session::{SessionManager, SessionTarget};
 use crate::core::Agent;
@@ -290,6 +290,9 @@ pub struct App {
 
     /// Tool message areas for click detection (Rect, `message_index`)
     pub tool_message_areas: Vec<(Rect, usize)>,
+
+    /// Current reasoning effort level for thinking-capable models.
+    pub reasoning_effort: ReasoningEffort,
 }
 
 impl Default for App {
@@ -433,6 +436,7 @@ impl App {
             prompt_scroll_offset: 0,
             prompt_area: None,
             tool_message_areas: Vec::new(),
+            reasoning_effort: ReasoningEffort::default(),
         }
     }
 

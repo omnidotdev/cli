@@ -20,7 +20,7 @@ pub use permission::{
     PermissionContext, PermissionError, PermissionMessage, PermissionResponse,
 };
 pub use plan::PlanManager;
-pub use provider::{CompletionEvent, CompletionRequest, CompletionStream, LlmProvider};
+pub use provider::{CompletionEvent, CompletionRequest, CompletionStream, LlmProvider, ReasoningEffort};
 pub use providers::{AnthropicProvider, OpenAiProvider, UnifiedProvider};
 pub use tools::ToolRegistry;
 pub use types::{
@@ -73,6 +73,8 @@ pub struct Agent {
     max_iterations: u32,
     /// Recent tool calls for loop detection (`tool_name`, `input_hash`)
     recent_tool_calls: Vec<(String, u64)>,
+    /// Reasoning effort level for thinking-capable models
+    reasoning_effort: ReasoningEffort,
 }
 
 impl Agent {
@@ -93,6 +95,7 @@ impl Agent {
             tool_filter: None,
             max_iterations: DEFAULT_MAX_ITERATIONS,
             recent_tool_calls: Vec::new(),
+            reasoning_effort: ReasoningEffort::default(),
         }
     }
 
@@ -118,6 +121,7 @@ impl Agent {
             tool_filter: None,
             max_iterations: DEFAULT_MAX_ITERATIONS,
             recent_tool_calls: Vec::new(),
+            reasoning_effort: ReasoningEffort::default(),
         }
     }
 
@@ -180,6 +184,11 @@ impl Agent {
     /// Set maximum iterations for the agent loop
     pub const fn set_max_iterations(&mut self, max: u32) {
         self.max_iterations = max;
+    }
+
+    /// Set the reasoning effort level for thinking-capable models.
+    pub const fn set_reasoning_effort(&mut self, effort: ReasoningEffort) {
+        self.reasoning_effort = effort;
     }
 
     /// Compute a hash for tool input (for loop detection)
@@ -453,6 +462,7 @@ impl Agent {
             }],
             system: Some("You are a helpful assistant that generates concise titles.".to_string()),
             tools: None,
+            reasoning_effort: ReasoningEffort::High,
         };
 
         let stream = self.provider.stream(request).await?;
@@ -671,6 +681,7 @@ impl Agent {
             messages: self.conversation.messages().to_vec(),
             system: self.conversation.system().map(String::from),
             tools: Some(self.filtered_tools()),
+            reasoning_effort: self.reasoning_effort,
         };
 
         let stream = self.provider.stream(request).await?;
@@ -838,6 +849,7 @@ impl Agent {
             messages: self.conversation.messages().to_vec(),
             system: self.conversation.system().map(String::from),
             tools: Some(self.filtered_tools()),
+            reasoning_effort: self.reasoning_effort,
         };
 
         let stream = self.provider.stream(request).await?;

@@ -15,7 +15,7 @@ use ratatui::{
 
 use super::prompt::{render_prompt, PromptMode};
 
-use crate::core::agent::AgentMode;
+use crate::core::agent::{AgentMode, ReasoningEffort};
 use crate::tui::app::{LOGO_LINES, LOGO_SHADOW};
 
 /// Brand colors
@@ -44,6 +44,7 @@ pub fn render_welcome(
     model: &str,
     provider: &str,
     prompt_scroll_offset: usize,
+    reasoning_effort: ReasoningEffort,
 ) -> ((u16, u16), Rect) {
     // Early return for tiny terminals
     if area.width < 10 || area.height < 5 {
@@ -148,6 +149,7 @@ pub fn render_welcome(
         Some(placeholder),
         agent_mode,
         prompt_scroll_offset,
+        reasoning_effort,
     );
 
     // Only render footer if terminal is wide enough

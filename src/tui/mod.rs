@@ -217,6 +217,7 @@ async fn run_app(
                         &app.model,
                         &app.provider,
                         app.prompt_scroll_offset,
+                        app.reasoning_effort,
                     )
                 }
                 ViewState::Session => {
@@ -245,6 +246,7 @@ async fn run_app(
                         app.session_cost,
                         app.prompt_scroll_offset,
                         &mut app.tool_message_areas,
+                        app.reasoning_effort,
                     )
                 }
             };
@@ -557,6 +559,12 @@ fn handle_key(
             KeyCode::Char('s') => {
                 // Open session list dialog
                 app.show_session_list();
+            }
+            KeyCode::Char('t') => {
+                app.reasoning_effort = app.reasoning_effort.next();
+                if let Some(ref mut agent) = app.agent {
+                    agent.set_reasoning_effort(app.reasoning_effort);
+                }
             }
             _ => {}
         }

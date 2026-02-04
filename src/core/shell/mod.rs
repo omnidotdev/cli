@@ -78,6 +78,7 @@ pub async fn generate_command(
         }],
         system: Some(SHELL_SYSTEM_PROMPT.to_string()),
         tools: None,
+        reasoning_effort: crate::core::agent::ReasoningEffort::High,
     };
 
     let stream = provider.stream(request).await?;

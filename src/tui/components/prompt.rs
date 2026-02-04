@@ -10,7 +10,7 @@ use ratatui::{
 
 use super::command_palette::CENTERED_MAX_WIDTH;
 use super::text_layout::TextLayout;
-use crate::core::agent::AgentMode;
+use crate::core::agent::{AgentMode, ReasoningEffort};
 
 const BRAND_TEAL: Color = Color::Rgb(77, 201, 176);
 const PLAN_PURPLE: Color = Color::Rgb(160, 100, 200);
@@ -100,6 +100,7 @@ pub fn render_prompt(
     placeholder: Option<&str>,
     agent_mode: AgentMode,
     scroll_offset: usize,
+    reasoning_effort: ReasoningEffort,
 ) -> ((u16, u16), Rect) {
     if area.width < 5 || area.height < 3 {
         return ((area.x, area.y), area);
@@ -157,6 +158,7 @@ pub fn render_prompt(
         text_width,
         box_area.height,
         scroll_offset,
+        reasoning_effort,
     );
 
     let block = Block::default()
@@ -194,6 +196,7 @@ fn build_prompt_content(
     text_width: usize,
     box_height: u16,
     scroll_offset: usize,
+    reasoning_effort: ReasoningEffort,
 ) -> (Vec<Line<'static>>, CursorInfo) {
     let border_color = match agent_mode {
         AgentMode::Build => BRAND_TEAL,
@@ -255,6 +258,8 @@ fn build_prompt_content(
         Span::styled(display_model, Style::default().fg(Color::White)),
         Span::raw("  "),
         Span::styled(display_provider, Style::default().fg(DIMMED)),
+        Span::styled(" · ", Style::default().fg(DIMMED)),
+        Span::styled(reasoning_effort.to_string(), Style::default().fg(DIMMED)),
     ]);
     content.push(footer);
     content.push(Line::from(""));
@@ -282,7 +287,9 @@ fn render_hints(frame: &mut Frame, area: Rect, status_left: Option<&str>) {
             Span::styled("tab", Style::default().fg(Color::White)),
             Span::styled(" mode  ", Style::default().fg(DIMMED)),
             Span::styled("/", Style::default().fg(Color::White)),
-            Span::styled(" commands", Style::default().fg(DIMMED)),
+            Span::styled(" commands  ", Style::default().fg(DIMMED)),
+            Span::styled("ctrl+t", Style::default().fg(Color::White)),
+            Span::styled(" effort", Style::default().fg(DIMMED)),
         ])
     };
 

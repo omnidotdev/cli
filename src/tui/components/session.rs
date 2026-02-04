@@ -12,7 +12,7 @@ use super::markdown::parse_markdown_line;
 use super::messages::{render_message_with_scroll, wrapped_line_height};
 use super::prompt::{render_prompt, PromptMode};
 use super::text_layout::TextLayout;
-use crate::core::agent::AgentMode;
+use crate::core::agent::{AgentMode, ReasoningEffort};
 use crate::tui::app::Selection;
 use crate::tui::message::DisplayMessage;
 
@@ -42,6 +42,7 @@ pub fn render_session(
     _session_cost: f64,
     prompt_scroll_offset: usize,
     tool_message_areas: &mut Vec<(Rect, usize)>,
+    reasoning_effort: ReasoningEffort,
 ) -> ((u16, u16), Rect) {
     let estimated_width = area.width.saturating_sub(3).max(1) as usize;
     let input_lines = if input.is_empty() {
@@ -94,6 +95,7 @@ pub fn render_session(
         None,
         agent_mode,
         prompt_scroll_offset,
+        reasoning_effort,
     )
 }
 
