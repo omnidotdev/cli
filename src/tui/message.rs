@@ -41,6 +41,8 @@ pub enum DisplayMessage {
         timestamp: Option<SystemTime>,
         /// The agent mode for this message
         mode: AgentMode,
+        /// Whether this message is queued (not yet sent)
+        queued: bool,
     },
     /// Assistant response without border
     Assistant {
@@ -73,6 +75,18 @@ impl DisplayMessage {
             text: text.into(),
             timestamp: Some(SystemTime::now()),
             mode,
+            queued: false,
+        }
+    }
+
+    /// Create a queued user message (not yet sent)
+    #[must_use]
+    pub fn queued_user(text: impl Into<String>, mode: AgentMode) -> Self {
+        Self::User {
+            text: text.into(),
+            timestamp: None,
+            mode,
+            queued: true,
         }
     }
 

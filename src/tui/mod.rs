@@ -222,24 +222,15 @@ async fn run_app(
                 }
                 ViewState::Session => {
                     // Session view with messages and bottom prompt
-                    // Show activity status, or "Thinking..." if loading with no specific status
                     let status = {
-                        let queue_count = app.pending_messages.len();
-                        let queue_suffix = if queue_count > 0 {
-                            format!(" [{queue_count}]")
-                        } else {
-                            String::new()
-                        };
+                        let queue_count = app.queued_message_count();
                         
                         if app.esc_pressed_once && app.loading {
-                            Some(format!("press esc to cancel{queue_suffix}"))
+                            Some("press esc to cancel".to_string())
                         } else if app.backspace_on_empty_once && queue_count > 0 {
-                            Some(format!("press backspace to delete last queued{queue_suffix}"))
+                            Some("press backspace to delete last queued".to_string())
                         } else if app.loading {
-                            let base = app.activity_status.as_deref().unwrap_or("Thinking...");
-                            Some(format!("{base}{queue_suffix}"))
-                        } else if queue_count > 0 {
-                            Some(format!("[{queue_count}]"))
+                            Some(app.activity_status.as_deref().unwrap_or("Thinking...").to_string())
                         } else {
                             None
                         }
@@ -433,12 +424,11 @@ async fn run_app(
                         app.chat_rx = None;
 
                         // Process next queued message if any
-                        if app.pending_messages.is_empty() {
-                            app.loading = false;
-                        } else {
-                            let next_prompt = app.pending_messages.remove(0);
+                        if let Some(next_prompt) = app.activate_first_queued_message() {
                             app.input = next_prompt;
                             start_chat(app, permission_tx.clone());
+                        } else {
+                            app.loading = false;
                         }
                     }
                     Some(ChatMessage::Error(e, agent)) => {
@@ -454,12 +444,11 @@ async fn run_app(
                         app.chat_rx = None;
 
                         // Process next queued message if any
-                        if app.pending_messages.is_empty() {
-                            app.loading = false;
-                        } else {
-                            let next_prompt = app.pending_messages.remove(0);
+                        if let Some(next_prompt) = app.activate_first_queued_message() {
                             app.input = next_prompt;
                             start_chat(app, permission_tx.clone());
+                        } else {
+                            app.loading = false;
                         }
                     }
                     None => {
@@ -611,13 +600,12 @@ fn handle_key(
         KeyCode::Enter => {
             // Queue message if loading
             if !app.input.is_empty() && app.loading {
-                if app.pending_messages.len() < 10 {
-                    app.pending_messages.push(app.input.clone());
+                if app.queued_message_count() < 10 {
+                    app.add_queued_message(app.input.clone());
                     app.clear_input();
                     app.esc_pressed_once = false;
                     app.backspace_on_empty_once = false;
                 }
-                // If queue full, just ignore (don't submit)
             } else if !app.input.is_empty() && !app.loading {
                 // If dropdown is visible, execute selected item
                 if app.show_command_dropdown {
@@ -802,20 +790,17 @@ fn handle_key(
             }
         }
         KeyCode::Backspace => {
-            if app.input.is_empty() && !app.pending_messages.is_empty() {
-                // Double-backspace to delete last queued message
+            if app.input.is_empty() && app.queued_message_count() > 0 {
                 if app.backspace_on_empty_once {
-                    app.pending_messages.pop();
+                    app.remove_last_queued_message();
                     app.backspace_on_empty_once = false;
                 } else {
                     app.backspace_on_empty_once = true;
                 }
             } else {
-                // Normal backspace - delete character
                 app.delete_char();
-                app.backspace_on_empty_once = false; // Reset on any actual typing
+                app.backspace_on_empty_once = false;
             }
-            // Update dropdown visibility
             app.show_command_dropdown = should_show_dropdown(&app.input);
             if app.show_command_dropdown {
                 app.command_selection = 0;
@@ -827,7 +812,7 @@ fn handle_key(
                 if app.esc_pressed_once {
                     // Cancel streaming (don't abort task - agent must return via Done)
                     app.chat_rx = None;
-                    app.pending_messages.clear();
+                    app.clear_queued_messages();
                     app.finalize_streaming(true);
                     app.loading = false;
                     app.esc_pressed_once = false;

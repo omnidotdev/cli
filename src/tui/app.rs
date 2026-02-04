@@ -294,9 +294,6 @@ pub struct App {
     /// Current reasoning effort level for thinking-capable models.
     pub reasoning_effort: ReasoningEffort,
 
-    /// Queued user messages to be processed when agent is available.
-    pub pending_messages: Vec<String>,
-
     /// Track first Esc press for double-Esc cancellation.
     pub esc_pressed_once: bool,
 
@@ -446,7 +443,6 @@ impl App {
             prompt_area: None,
             tool_message_areas: Vec::new(),
             reasoning_effort: ReasoningEffort::default(),
-            pending_messages: Vec::new(),
             esc_pressed_once: false,
             backspace_on_empty_once: false,
         }
@@ -885,6 +881,58 @@ impl App {
         self.messages.push(message);
     }
 
+    /// Count queued messages in the conversation.
+    #[must_use]
+    pub fn queued_message_count(&self) -> usize {
+        self.messages
+            .iter()
+            .filter(|m| matches!(m, DisplayMessage::User { queued: true, .. }))
+            .count()
+    }
+
+    /// Add a queued user message.
+    pub fn add_queued_message(&mut self, text: String) {
+        self.messages
+            .push(DisplayMessage::queued_user(text, self.agent_mode));
+    }
+
+    /// Activate the first queued message (mark as not queued, return text).
+    pub fn activate_first_queued_message(&mut self) -> Option<String> {
+        for msg in &mut self.messages {
+            if let DisplayMessage::User {
+                text,
+                queued,
+                timestamp,
+                ..
+            } = msg
+            {
+                if *queued {
+                    *queued = false;
+                    *timestamp = Some(std::time::SystemTime::now());
+                    return Some(text.clone());
+                }
+            }
+        }
+        None
+    }
+
+    /// Remove the last queued message.
+    pub fn remove_last_queued_message(&mut self) {
+        if let Some(idx) = self
+            .messages
+            .iter()
+            .rposition(|m| matches!(m, DisplayMessage::User { queued: true, .. }))
+        {
+            self.messages.remove(idx);
+        }
+    }
+
+    /// Clear all queued messages.
+    pub fn clear_queued_messages(&mut self) {
+        self.messages
+            .retain(|m| !matches!(m, DisplayMessage::User { queued: true, .. }));
+    }
+
     /// Finalize streaming text into an assistant message.
     pub fn finalize_streaming(&mut self, cancelled: bool) {
         self.finalize_streaming_thinking();
@@ -1042,6 +1090,7 @@ impl App {
                             text,
                             timestamp: None,
                             mode,
+                            queued: false,
                         });
                     }
                 }
@@ -1170,12 +1219,6 @@ mod tests {
         assert_eq!(app.is_tool_message_at(20, 40), Some(8));
         assert_eq!(app.is_tool_message_at(30, 40), Some(12));
         assert_eq!(app.is_tool_message_at(15, 40), None);
-    }
-
-    #[test]
-    fn test_pending_messages_default_empty() {
-        let app = App::new();
-        assert!(app.pending_messages.is_empty());
     }
 
     #[test]

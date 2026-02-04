@@ -327,6 +327,7 @@ mod tests {
             text: text.to_string(),
             timestamp: None,
             mode: AgentMode::Build,
+            queued: false,
         }
     }
 

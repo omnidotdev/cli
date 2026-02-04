@@ -63,12 +63,15 @@ pub fn render_message_with_scroll(
     selected_text: &mut String,
 ) {
     match message {
-        DisplayMessage::User { text, mode, .. } => {
+        DisplayMessage::User {
+            text, mode, queued, ..
+        } => {
             render_user_message_with_scroll(
                 frame,
                 area,
                 text,
                 *mode,
+                *queued,
                 scroll_offset,
                 selection,
                 selected_text,
@@ -116,12 +119,15 @@ pub fn render_message_with_scroll(
 }
 
 /// Render a user message with scroll offset for partial visibility
-#[allow(clippy::cast_possible_truncation)]
+const QUEUED_COLOR: Color = Color::Rgb(200, 160, 80);
+
+#[allow(clippy::cast_possible_truncation, clippy::too_many_arguments)]
 fn render_user_message_with_scroll(
     frame: &mut Frame,
     area: Rect,
     text: &str,
     mode: AgentMode,
+    queued: bool,
     scroll_offset: u16,
     selection: Option<(u16, u16)>,
     selected_text: &mut String,
@@ -134,10 +140,20 @@ fn render_user_message_with_scroll(
     let text_width = area.width.saturating_sub(horizontal_padding).max(1) as usize;
     let layout = TextLayout::new(text, text_width);
     let content_height = layout.total_lines as u16;
-    let total_height = content_height + VERTICAL_PADDING;
+    let badge_height = if queued { 1 } else { 0 };
+    let total_height = content_height + VERTICAL_PADDING + badge_height;
     let visible_height = total_height.saturating_sub(scroll_offset).min(area.height);
 
-    let mut lines: Vec<Line> = vec![Line::from("")]; // Top padding
+    let mut lines: Vec<Line> = Vec::new();
+
+    if queued {
+        lines.push(Line::from(Span::styled(
+            " ○ Queued",
+            Style::default().fg(QUEUED_COLOR),
+        )));
+    }
+
+    lines.push(Line::from("")); // Top padding
 
     for (i, wrapped_line) in layout.lines.iter().enumerate() {
         #[allow(clippy::cast_possible_truncation)]
@@ -168,9 +184,13 @@ fn render_user_message_with_scroll(
 
     let visible_lines: Vec<Line> = lines.into_iter().skip(scroll_offset as usize).collect();
 
-    let border_color = match mode {
-        AgentMode::Build => BRAND_TEAL,
-        AgentMode::Plan => PLAN_PURPLE,
+    let border_color = if queued {
+        QUEUED_COLOR
+    } else {
+        match mode {
+            AgentMode::Build => BRAND_TEAL,
+            AgentMode::Plan => PLAN_PURPLE,
+        }
     };
 
     let block = Block::default()
