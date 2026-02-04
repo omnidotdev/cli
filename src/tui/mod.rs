@@ -1355,7 +1355,10 @@ fn render_tool_output_dialog(frame: &mut ratatui::Frame, dialog: &mut ExpandedTo
     frame.render_widget(Paragraph::new(invocation_line), chunks[0]);
 
     let visible_height = chunks[1].height as usize;
-    dialog.visible_height = visible_height as u16;
+    #[allow(clippy::cast_possible_truncation)]
+    {
+        dialog.visible_height = visible_height as u16;
+    }
     
     let scroll = dialog.scroll_offset as usize;
     let visible_lines: Vec<Line> = dialog.cached_lines

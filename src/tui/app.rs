@@ -1184,6 +1184,7 @@ mod tests {
             visible_height: 20,
         };
 
+        #[allow(clippy::cast_possible_truncation)]
         let max_scroll = (dialog.total_lines as u16).saturating_sub(dialog.visible_height);
         assert_eq!(max_scroll, 80);
     }
@@ -1201,6 +1202,7 @@ mod tests {
             visible_height: 20,
         };
 
+        #[allow(clippy::cast_possible_truncation)]
         let max_scroll = (dialog.total_lines as u16).saturating_sub(dialog.visible_height);
         assert_eq!(max_scroll, 0);
     }

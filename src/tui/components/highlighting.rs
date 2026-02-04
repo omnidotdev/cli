@@ -291,7 +291,7 @@ mod tests {
             elapsed.as_millis()
         );
 
-        eprintln!("[perf] syntax_set() access: {:?}", elapsed);
+        eprintln!("[perf] syntax_set() access: {elapsed:?}");
     }
 
     #[test]
@@ -308,7 +308,7 @@ mod tests {
             elapsed.as_millis()
         );
 
-        eprintln!("[perf] theme_set() access: {:?}", elapsed);
+        eprintln!("[perf] theme_set() access: {elapsed:?}");
     }
 
     #[test]
@@ -338,8 +338,7 @@ mod tests {
         );
 
         eprintln!(
-            "[perf] Cached access - syntax_set: {:?}, theme_set: {:?}",
-            elapsed_syntax, elapsed_theme
+            "[perf] Cached access - syntax_set: {elapsed_syntax:?}, theme_set: {elapsed_theme:?}"
         );
     }
 
@@ -350,8 +349,7 @@ mod tests {
         let code_lines: Vec<String> = (0..100)
             .map(|i| {
                 format!(
-                    "    fn function_{}(x: i32, y: &str) -> Result<String, Error> {{ Ok(format!(\"{{}} {{}}\", x, y)) }}",
-                    i
+                    "    fn function_{i}(x: i32, y: &str) -> Result<String, Error> {{ Ok(format!(\"{{}} {{}}\", x, y)) }}"
                 )
             })
             .collect();
@@ -371,9 +369,8 @@ mod tests {
         );
 
         eprintln!(
-            "[perf] Highlighted 100 lines ({} spans) in {:?}",
-            spans.len(),
-            elapsed
+            "[perf] Highlighted 100 lines ({} spans) in {elapsed:?}",
+            spans.len()
         );
     }
 
@@ -396,15 +393,14 @@ mod tests {
             let spans = highlight_code(code, lang);
             let elapsed = start.elapsed();
 
-            assert!(!spans.is_empty(), "Expected spans for {} code", lang);
+            assert!(!spans.is_empty(), "Expected spans for {lang} code");
             assert!(
                 elapsed.as_millis() < 50,
-                "Highlighting {} code took {}ms, expected < 50ms",
-                lang,
+                "Highlighting {lang} code took {}ms, expected < 50ms",
                 elapsed.as_millis()
             );
 
-            eprintln!("[perf] {} highlighting: {:?}", lang, elapsed);
+            eprintln!("[perf] {lang} highlighting: {elapsed:?}");
         }
     }
 }
