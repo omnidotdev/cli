@@ -56,6 +56,9 @@ pub enum ContentBlock {
     /// Text content.
     Text { text: String },
 
+    /// Thinking content (internal reasoning).
+    Thinking { text: String },
+
     /// Tool use request from assistant.
     ToolUse {
         id: String,
@@ -152,8 +155,10 @@ pub struct MessageStart {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[allow(clippy::enum_variant_names)]
 pub enum Delta {
     TextDelta { text: String },
+    ThinkingDelta { text: String },
     InputJsonDelta { partial_json: String },
 }
 
@@ -172,6 +177,10 @@ pub struct ApiError {
 pub enum ChatEvent {
     /// Text chunk from the assistant
     Text(String),
+    /// Thinking started (internal reasoning)
+    ThinkingStart,
+    /// Thinking chunk from the assistant
+    Thinking(String),
     /// Tool invocation starting (for activity status)
     ToolStart { name: String },
     /// Tool invocation with result

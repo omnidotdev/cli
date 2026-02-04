@@ -26,6 +26,12 @@ pub struct CompletionRequest {
 /// A streaming event from the LLM.
 #[derive(Debug, Clone)]
 pub enum CompletionEvent {
+    /// Start of a thinking block.
+    ThinkingStart,
+    /// A chunk of thinking content.
+    ThinkingDelta(String),
+    /// A thinking block has completed.
+    ThinkingDone,
     /// A chunk of text content.
     TextDelta(String),
     /// Start of a tool use block.

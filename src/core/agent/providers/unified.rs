@@ -190,6 +190,7 @@ fn convert_messages(messages: &[Message], system: Option<&str>) -> Vec<ChatMessa
                                 },
                             });
                         }
+                        ContentBlock::Thinking { .. } => {}
                     }
                 }
 

@@ -118,7 +118,6 @@ impl LlmProvider for AnthropicProvider {
                         StreamEvent::ContentBlockDelta { index, delta } => {
                             match delta {
                                 crate::core::agent::types::Delta::TextDelta { text } => {
-                                    // Update accumulated block
                                     if let Some(ContentBlock::Text { text: t }) = current_blocks.get_mut(index) {
                                         t.push_str(&text);
                                     }
@@ -126,6 +125,9 @@ impl LlmProvider for AnthropicProvider {
                                 }
                                 crate::core::agent::types::Delta::InputJsonDelta { partial_json } => {
                                     yield Ok(CompletionEvent::ToolInputDelta { index, partial_json });
+                                }
+                                crate::core::agent::types::Delta::ThinkingDelta { text } => {
+                                    yield Ok(CompletionEvent::ThinkingDelta(text));
                                 }
                             }
                         }

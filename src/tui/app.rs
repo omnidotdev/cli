@@ -76,6 +76,10 @@ impl Selection {
 pub enum ChatMessage {
     /// Text chunk to append
     Text(String),
+    /// Thinking started (internal reasoning)
+    ThinkingStart,
+    /// Thinking chunk to append
+    Thinking(String),
     /// Tool starting (for activity status)
     ToolStart { name: String },
     /// Tool invocation with name, args, output, and error status
@@ -267,6 +271,9 @@ pub struct App {
 
     /// Prompt area bounds for mouse detection
     pub prompt_area: Option<Rect>,
+
+    /// Tool message areas for click detection (Rect, `message_index`)
+    pub tool_message_areas: Vec<(Rect, usize)>,
 }
 
 impl Default for App {
@@ -408,6 +415,7 @@ impl App {
             preferred_column: None,
             prompt_scroll_offset: 0,
             prompt_area: None,
+            tool_message_areas: Vec::new(),
         }
     }
 

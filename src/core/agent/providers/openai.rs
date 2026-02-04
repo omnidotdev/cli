@@ -224,6 +224,7 @@ fn convert_messages(messages: &[Message], system: Option<&str>) -> Vec<OpenAiMes
                         } => {
                             tool_results.push((tool_use_id.clone(), content.clone()));
                         }
+                        ContentBlock::Thinking { .. } => {}
                     }
                 }
 

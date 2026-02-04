@@ -418,6 +418,9 @@ async fn run_app(
                         app.activity_status = None;
                         app.chat_rx = None;
                     }
+                    Some(ChatMessage::ThinkingStart | ChatMessage::Thinking(_)) => {
+                        // TODO(Task 8): Display thinking content with dimmed styling
+                    }
                 }
             }
 
@@ -1582,6 +1585,12 @@ fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMess
                             output_tokens,
                             cost_usd,
                         });
+                    }
+                    ChatEvent::ThinkingStart => {
+                        let _ = tx_clone.send(ChatMessage::ThinkingStart);
+                    }
+                    ChatEvent::Thinking(text) => {
+                        let _ = tx_clone.send(ChatMessage::Thinking(text));
                     }
                 }
             })

@@ -4,7 +4,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 
@@ -24,15 +24,29 @@ const SUCCESS_COLOR: Color = Color::Rgb(77, 201, 176);
 const SELECTION_BG: Color = Color::Rgb(60, 80, 100);
 const SELECTION_FG: Color = Color::White;
 
-/// Diff colors (muted for readability)
+/// Diff colors (muted for readability) - used in popup dialog
+#[allow(dead_code)]
 const DIFF_ADD: Color = Color::Rgb(80, 160, 80);
+#[allow(dead_code)]
 const DIFF_DEL: Color = Color::Rgb(180, 80, 80);
+#[allow(dead_code)]
 const DIFF_HUNK: Color = Color::Rgb(80, 140, 180);
 
-/// Continuation character for tool output
+/// Continuation character for tool output - used in popup dialog
+#[allow(dead_code)]
 const CONT_CHAR: &str = "⎿";
 
-/// Get the appropriate color for a line, applying diff colors if it looks like a diff
+/// Format line count badge for collapsed tool output
+fn format_line_badge(count: usize) -> String {
+    match count {
+        0 => "[no output]".to_string(),
+        1 => "[1 line]".to_string(),
+        n => format!("[{n} lines]"),
+    }
+}
+
+/// Get the appropriate color for a line, applying diff colors if it looks like a diff - used in popup dialog
+#[allow(dead_code)]
 fn line_color(line: &str) -> Color {
     // Check for diff patterns - apply to any output that looks like a diff
     if (line.starts_with('+') || line.starts_with('>')) && !line.starts_with("+++") {
@@ -215,7 +229,7 @@ fn render_assistant_message_with_scroll(
     frame.render_widget(para, area);
 }
 
-/// Render a tool message with scroll offset for partial visibility
+/// Render a tool message as a single collapsed line with line count badge
 #[allow(clippy::cast_possible_truncation, clippy::too_many_arguments)]
 fn render_tool_message_with_scroll(
     frame: &mut Frame,
@@ -228,6 +242,10 @@ fn render_tool_message_with_scroll(
     selection: Option<(u16, u16)>,
     selected_text: &mut String,
 ) {
+    if scroll_offset > 0 {
+        return;
+    }
+
     let icon = if is_error {
         icons::ERROR
     } else {
@@ -235,9 +253,9 @@ fn render_tool_message_with_scroll(
     };
     let icon_color = if is_error { ERROR_COLOR } else { SUCCESS_COLOR };
 
-    let mut lines: Vec<Line> = Vec::new();
+    let line_count = output.lines().count();
+    let badge = format_line_badge(line_count);
 
-    // Header line: ● ToolName(invocation)
     let header = if invocation.is_empty() {
         format!("{icon} {name}")
     } else {
@@ -245,20 +263,21 @@ fn render_tool_message_with_scroll(
     };
 
     let header_y = area.y;
-    let is_header_selected =
+    let is_selected =
         selection.is_some_and(|(min_y, max_y)| header_y >= min_y && header_y <= max_y);
 
-    if is_header_selected {
+    let line = if is_selected {
         if !selected_text.is_empty() {
             selected_text.push('\n');
         }
-        selected_text.push_str(&header);
-        lines.push(Line::from(Span::styled(
-            header,
+        let full_text = format!("{header} {badge}");
+        selected_text.push_str(&full_text);
+        Line::from(Span::styled(
+            full_text,
             Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
-        )));
+        ))
     } else {
-        lines.push(Line::from(vec![
+        Line::from(vec![
             Span::styled(format!("{icon} "), Style::default().fg(icon_color)),
             Span::styled(name, Style::default().fg(Color::White)),
             Span::styled(
@@ -269,64 +288,11 @@ fn render_tool_message_with_scroll(
                 },
                 Style::default().fg(DIMMED),
             ),
-        ]));
-    }
+            Span::styled(format!(" {badge}"), Style::default().fg(DIMMED)),
+        ])
+    };
 
-    // Output lines with continuation character
-    let output_lines: Vec<&str> = output.lines().collect();
-    let max_output_lines = 12;
-    let show_lines = output_lines.len().min(max_output_lines);
-    let truncated = output_lines.len() > max_output_lines;
-
-    for (i, line_text) in output_lines.iter().take(show_lines).enumerate() {
-        #[allow(clippy::cast_possible_truncation)]
-        let line_y = area.y + 1 + i as u16;
-        let is_selected =
-            selection.is_some_and(|(min_y, max_y)| line_y >= min_y && line_y <= max_y);
-
-        // First line gets the continuation char, rest get spacing
-        let prefix = if i == 0 {
-            format!("  {CONT_CHAR}  ")
-        } else {
-            "     ".to_string()
-        };
-
-        if is_selected {
-            if !selected_text.is_empty() {
-                selected_text.push('\n');
-            }
-            selected_text.push_str(line_text);
-            lines.push(Line::from(Span::styled(
-                format!("{prefix}{line_text}"),
-                Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
-            )));
-        } else {
-            // Determine text color - apply diff colors if line looks like a diff
-            let text_color = if is_error {
-                ERROR_COLOR
-            } else {
-                line_color(line_text)
-            };
-            lines.push(Line::from(vec![
-                Span::styled(prefix, Style::default().fg(DIMMED)),
-                Span::styled((*line_text).to_string(), Style::default().fg(text_color)),
-            ]));
-        }
-    }
-
-    // Truncation indicator
-    if truncated {
-        let remaining = output_lines.len() - max_output_lines;
-        lines.push(Line::from(Span::styled(
-            format!("     ... ({remaining} more lines)"),
-            Style::default().fg(DIMMED),
-        )));
-    }
-
-    // Skip lines according to scroll offset
-    let visible_lines: Vec<Line> = lines.into_iter().skip(scroll_offset as usize).collect();
-
-    let para = Paragraph::new(visible_lines).wrap(Wrap { trim: false });
+    let para = Paragraph::new(vec![line]);
     frame.render_widget(para, area);
 }
 
@@ -355,20 +321,6 @@ pub fn message_height(message: &DisplayMessage, width: u16) -> u16 {
             let layout = TextLayout::new(text, width);
             (layout.total_lines as u16).max(1)
         }
-        DisplayMessage::Tool { output, .. } => {
-            let max_output_lines = 12;
-            let output_line_count = output.lines().count();
-            let truncated = output_line_count > max_output_lines;
-            let prefix_len = 5;
-            let effective_width = width.saturating_sub(prefix_len).max(1);
-
-            let output_height: u16 = output
-                .lines()
-                .take(max_output_lines)
-                .map(|line| wrapped_line_height(line.chars().count(), effective_width))
-                .sum();
-
-            1 + output_height + u16::from(truncated)
-        }
+        DisplayMessage::Tool { .. } => 1,
     }
 }
