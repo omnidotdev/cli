@@ -4,9 +4,7 @@ use std::time::Duration;
 use crate::config::{AgentConfig, ModelInfo};
 use crate::core::keychain;
 
-pub async fn fetch_provider_models(
-    config: &AgentConfig,
-) -> Vec<(String, Vec<ModelInfo>)> {
+pub async fn fetch_provider_models(config: &AgentConfig) -> Vec<(String, Vec<ModelInfo>)> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
@@ -20,7 +18,11 @@ pub async fn fetch_provider_models(
             .as_ref()
             .and_then(|env| std::env::var(env).ok());
         let has_env_key = env_key.is_some();
-        let keychain_key = if has_env_key { None } else { keychain::get_api_key(provider_name) };
+        let keychain_key = if has_env_key {
+            None
+        } else {
+            keychain::get_api_key(provider_name)
+        };
         let has_keychain_key = keychain_key.is_some();
         let is_local = provider_config.base_url.is_some() && provider_config.api_key_env.is_none();
 
@@ -31,7 +33,10 @@ pub async fn fetch_provider_models(
         let api_key = env_key.or(keychain_key);
 
         if let Some(base_url) = &provider_config.base_url {
-            if let Ok(models) = fetch_openai_compatible_models(&client, base_url, api_key.as_deref(), provider_name).await {
+            if let Ok(models) =
+                fetch_openai_compatible_models(&client, base_url, api_key.as_deref(), provider_name)
+                    .await
+            {
                 if !models.is_empty() {
                     results.insert(provider_name.clone(), models);
                     continue;
@@ -128,7 +133,7 @@ mod tests {
                 }
                 assert!(!models.is_empty());
             }
-            Err(_) => {
+            Err(()) => {
                 panic!("Failed to fetch models");
             }
         }

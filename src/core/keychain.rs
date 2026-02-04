@@ -82,6 +82,7 @@ fn get_test_store() -> &'static RwLock<HashMap<String, String>> {
 }
 
 #[cfg(test)]
+#[allow(clippy::missing_panics_doc)]
 pub fn set_test_key(provider: &str, key: &str) {
     let mut store = get_test_store().write().unwrap();
     store.insert(provider.to_string(), key.to_string());
@@ -90,6 +91,7 @@ pub fn set_test_key(provider: &str, key: &str) {
 }
 
 #[cfg(test)]
+#[allow(clippy::missing_panics_doc)]
 pub fn clear_test_keys() {
     let mut store = get_test_store().write().unwrap();
     store.clear();
@@ -98,6 +100,7 @@ pub fn clear_test_keys() {
 }
 
 #[cfg(test)]
+#[allow(clippy::missing_panics_doc)]
 pub fn store_api_key(provider: &str, api_key: &str) -> anyhow::Result<()> {
     let mut store = get_test_store().write().unwrap();
     store.insert(provider.to_string(), api_key.to_string());
@@ -107,6 +110,8 @@ pub fn store_api_key(provider: &str, api_key: &str) -> anyhow::Result<()> {
 }
 
 #[cfg(test)]
+#[must_use]
+#[allow(clippy::missing_panics_doc)]
 pub fn get_api_key(provider: &str) -> Option<String> {
     {
         let cache = get_cache().read().unwrap();
@@ -126,6 +131,7 @@ pub fn get_api_key(provider: &str) -> Option<String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::missing_panics_doc)]
 pub fn delete_api_key(provider: &str) -> anyhow::Result<()> {
     let mut store = get_test_store().write().unwrap();
     store.remove(provider);

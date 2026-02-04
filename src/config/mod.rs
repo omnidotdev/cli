@@ -12,7 +12,7 @@ use crate::core::agent::{
 };
 use crate::core::keychain;
 
-pub use persona::{list_personas, load_persona, personas_dir, Persona};
+pub use persona::{Persona, list_personas, load_persona, personas_dir};
 
 /// Model information with provider association.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1025,14 +1025,14 @@ api_key_env = "ANTHROPIC_API_KEY"
             loaded
                 .get("tui")
                 .and_then(|t| t.get("mouse"))
-                .and_then(|m| m.as_bool()),
+                .and_then(toml::Value::as_bool),
             Some(true)
         );
         assert_eq!(
             loaded
                 .get("tui")
                 .and_then(|t| t.get("tips"))
-                .and_then(|t| t.as_bool()),
+                .and_then(toml::Value::as_bool),
             Some(false)
         );
 

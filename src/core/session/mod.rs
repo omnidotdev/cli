@@ -494,16 +494,15 @@ mod tests {
     fn create_and_list_sessions() {
         let (manager, _dir) = temp_manager();
 
-        let session1 = manager.create_session().unwrap();
-        let session2 = manager.create_session().unwrap();
+        let first = manager.create_session().unwrap();
+        let second = manager.create_session().unwrap();
 
-        let sessions = manager.list_sessions().unwrap();
-        assert_eq!(sessions.len(), 2);
+        let all_sessions = manager.list_sessions().unwrap();
+        assert_eq!(all_sessions.len(), 2);
 
-        // Both sessions should be present
-        let ids: Vec<_> = sessions.iter().map(|s| s.id.as_str()).collect();
-        assert!(ids.contains(&session1.id.as_str()));
-        assert!(ids.contains(&session2.id.as_str()));
+        let ids: Vec<_> = all_sessions.iter().map(|s| s.id.as_str()).collect();
+        assert!(ids.contains(&first.id.as_str()));
+        assert!(ids.contains(&second.id.as_str()));
     }
 
     #[test]

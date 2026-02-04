@@ -11,10 +11,9 @@ use std::time::Duration;
 
 use crossterm::{
     event::{
-        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
-        EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
-        KeyboardEnhancementFlags, MouseEventKind, PopKeyboardEnhancementFlags,
-        PushKeyboardEnhancementFlags,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        Event, KeyCode, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags, MouseEventKind,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
@@ -37,9 +36,10 @@ use crate::core::session::SessionTarget;
 pub use app::App;
 use app::{ActiveAskUserDialog, ActiveDialog, ActivePermissionDialog, ChatMessage};
 use components::{
-    DropdownMode, MESSAGE_PADDING_X, TextLayout, calculate_content_height, dropdown_mode, filter_commands,
-    filter_models, render_command_dropdown, render_model_dropdown, render_model_selection_dialog,
-    render_session, render_session_list, render_welcome, should_show_dropdown,
+    DropdownMode, MESSAGE_PADDING_X, TextLayout, calculate_content_height, dropdown_mode,
+    filter_commands, filter_models, render_command_dropdown, render_model_dropdown,
+    render_model_selection_dialog, render_session, render_session_list, render_welcome,
+    should_show_dropdown,
 };
 use message::DisplayMessage;
 use state::ViewState;
@@ -711,7 +711,6 @@ fn handle_key(
                     agent.switch_mode(new_mode, None);
                     app.sync_agent_mode();
                 } else {
-                
                     app.agent_mode = match app.agent_mode {
                         crate::core::agent::AgentMode::Build => crate::core::agent::AgentMode::Plan,
                         crate::core::agent::AgentMode::Plan => crate::core::agent::AgentMode::Build,
@@ -1096,10 +1095,7 @@ fn render_no_provider_dialog(frame: &mut ratatui::Frame) {
             "Run `omni auth login` in another terminal",
             dim_style,
         )]),
-        Line::from(vec![Span::styled(
-            "to set up a provider.",
-            dim_style,
-        )]),
+        Line::from(vec![Span::styled("to set up a provider.", dim_style)]),
         Line::from(""),
         Line::from(vec![Span::styled("Press Esc to dismiss", dim_style)]),
     ];
@@ -1507,69 +1503,6 @@ fn handle_dialog_key(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> 
     false
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_no_provider_shows_modal() {
-        let mut app = App::new();
-        
-        // Ensure agent is None (simulating no provider configured)
-        app.agent = None;
-        
-        // Simulate typing
-        app.input = "test message".to_string();
-        app.cursor = app.input.len();
-        
-        // Verify agent is None
-        assert!(app.agent.is_none());
-        
-        // Simulate what happens in handle_key when Enter is pressed
-        if app.agent.is_none() {
-            app.active_dialog = Some(ActiveDialog::NoProvider);
-        }
-        
-        // Verify modal is shown
-        assert!(matches!(app.active_dialog, Some(ActiveDialog::NoProvider)));
-    }
-
-    #[test]
-    fn test_modal_dismisses_on_esc() {
-        let mut app = App::new();
-        
-        // Set up modal
-        app.active_dialog = Some(ActiveDialog::NoProvider);
-        app.input = "test message".to_string();
-        
-        // Simulate Esc key in handle_dialog_key
-        let dialog = app.active_dialog.take();
-        assert!(matches!(dialog, Some(ActiveDialog::NoProvider)));
-        
-        // After Esc, dialog should be None but input preserved
-        assert!(app.active_dialog.is_none());
-        assert_eq!(app.input, "test message");
-    }
-
-    #[test]
-    fn test_input_preserved_when_modal_shown() {
-        let mut app = App::new();
-        
-        app.input = "important message".to_string();
-        app.cursor = app.input.len();
-        
-        // Show modal
-        app.active_dialog = Some(ActiveDialog::NoProvider);
-        
-        // Dismiss modal
-        app.active_dialog = None;
-        
-        // Input should be preserved
-        assert_eq!(app.input, "important message");
-        assert_eq!(app.cursor, "important message".len());
-    }
-}
-
 /// Start a chat request in the background.
 fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMessage>) {
     let Some(mut agent) = app.agent.take() else {
@@ -1659,4 +1592,67 @@ fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMess
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_no_provider_shows_modal() {
+        let mut app = App::new();
+
+        // Ensure agent is None (simulating no provider configured)
+        app.agent = None;
+
+        // Simulate typing
+        app.input = "test message".to_string();
+        app.cursor = app.input.len();
+
+        // Verify agent is None
+        assert!(app.agent.is_none());
+
+        // Simulate what happens in handle_key when Enter is pressed
+        if app.agent.is_none() {
+            app.active_dialog = Some(ActiveDialog::NoProvider);
+        }
+
+        // Verify modal is shown
+        assert!(matches!(app.active_dialog, Some(ActiveDialog::NoProvider)));
+    }
+
+    #[test]
+    fn test_modal_dismisses_on_esc() {
+        let mut app = App::new();
+
+        // Set up modal
+        app.active_dialog = Some(ActiveDialog::NoProvider);
+        app.input = "test message".to_string();
+
+        // Simulate Esc key in handle_dialog_key
+        let dialog = app.active_dialog.take();
+        assert!(matches!(dialog, Some(ActiveDialog::NoProvider)));
+
+        // After Esc, dialog should be None but input preserved
+        assert!(app.active_dialog.is_none());
+        assert_eq!(app.input, "test message");
+    }
+
+    #[test]
+    fn test_input_preserved_when_modal_shown() {
+        let mut app = App::new();
+
+        app.input = "important message".to_string();
+        app.cursor = app.input.len();
+
+        // Show modal
+        app.active_dialog = Some(ActiveDialog::NoProvider);
+
+        // Dismiss modal
+        app.active_dialog = None;
+
+        // Input should be preserved
+        assert_eq!(app.input, "important message");
+        assert_eq!(app.cursor, "important message".len());
+    }
 }

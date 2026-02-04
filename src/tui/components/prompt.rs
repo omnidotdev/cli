@@ -1,11 +1,11 @@
 //! Reusable prompt component.
 
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph, Wrap},
-    Frame,
 };
 
 use super::command_palette::CENTERED_MAX_WIDTH;
@@ -208,7 +208,9 @@ fn build_prompt_content(
     } else {
         let layout = TextLayout::new(input, text_width);
         let wrapped: Vec<String> = layout.lines.iter().map(|l| l.text.clone()).collect();
-        let (visual_line, cursor_col) = layout.cursor_to_visual(cursor);
+        // cursor is a byte index, convert to char index for cursor_to_visual
+        let cursor_char = input[..cursor.min(input.len())].chars().count();
+        let (visual_line, cursor_col) = layout.cursor_to_visual(cursor_char);
 
         (wrapped, visual_line, cursor_col)
     };
@@ -352,13 +354,5 @@ mod tests {
         assert_eq!(PromptMode::Centered, PromptMode::Centered);
         assert_eq!(PromptMode::FullWidth, PromptMode::FullWidth);
         assert_ne!(PromptMode::Centered, PromptMode::FullWidth);
-    }
-
-    #[test]
-    fn placeholders_not_empty() {
-        assert!(!PLACEHOLDERS.is_empty());
-        for placeholder in PLACEHOLDERS {
-            assert!(!placeholder.is_empty());
-        }
     }
 }

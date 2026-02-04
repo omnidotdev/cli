@@ -1,6 +1,6 @@
 use crate::config::{AgentConfig, Config};
 use crate::core::keychain;
-use dialoguer::{theme::ColorfulTheme, Password, Select};
+use dialoguer::{Password, Select, theme::ColorfulTheme};
 
 use super::{LoginArgs, LogoutArgs};
 

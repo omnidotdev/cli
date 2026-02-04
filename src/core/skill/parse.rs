@@ -94,7 +94,7 @@ mod tests {
         let skill_file = dir.path().join("SKILL.md");
         fs::write(
             &skill_file,
-            r#"---
+            r"---
 name: test-skill
 description: A test skill for testing
 metadata:
@@ -104,7 +104,7 @@ metadata:
 # Test Skill
 
 This is the skill content.
-"#,
+",
         )
         .unwrap();
 
@@ -123,12 +123,12 @@ This is the skill content.
         let skill_file = dir.path().join("SKILL.md");
         fs::write(
             &skill_file,
-            r#"---
+            r"---
 name: minimal
 description: Minimal skill
 ---
 Content here.
-"#,
+",
         )
         .unwrap();
 

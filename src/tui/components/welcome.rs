@@ -5,15 +5,15 @@ use std::fs;
 use std::path::Path;
 
 use ratatui::{
+    Frame,
     buffer::Buffer,
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
     widgets::Paragraph,
-    Frame,
 };
 
-use super::prompt::{render_prompt, PromptMode};
+use super::prompt::{PromptMode, render_prompt};
 
 use crate::core::agent::AgentMode;
 use crate::tui::app::{LOGO_LINES, LOGO_SHADOW};

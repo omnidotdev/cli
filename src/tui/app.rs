@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use super::components::{ModelSelectionDialog, SessionListDialog, TextLayout};
-use super::message::{format_tool_invocation, DisplayMessage};
+use super::message::{DisplayMessage, format_tool_invocation};
 use super::state::ViewState;
 
 /// Type alias for model fetch results receiver.
@@ -48,12 +48,12 @@ pub const ECOSYSTEM_TIPS: &[&str] = &[
 ];
 
 use crate::config::{AgentConfig, AgentPermissions, Config};
+use crate::core::Agent;
 use crate::core::agent::{
     AgentMode, AskUserResponse, InterfaceMessage, PermissionAction, PermissionContext,
     PermissionResponse,
 };
 use crate::core::session::{SessionManager, SessionTarget};
-use crate::core::Agent;
 
 /// Active text selection state.
 #[derive(Debug, Clone)]
@@ -876,7 +876,7 @@ impl App {
     }
 
     /// Scroll the prompt up by the given number of lines.
-    pub fn scroll_prompt_up(&mut self, lines: usize) {
+    pub const fn scroll_prompt_up(&mut self, lines: usize) {
         self.prompt_scroll_offset = self.prompt_scroll_offset.saturating_sub(lines);
     }
 
@@ -886,14 +886,14 @@ impl App {
     }
 
     /// Set the prompt area bounds for mouse detection.
-    pub fn set_prompt_area(&mut self, area: Rect) {
+    pub const fn set_prompt_area(&mut self, area: Rect) {
         self.prompt_area = Some(area);
     }
 
     /// Check if a point is within the prompt area.
     #[must_use]
     pub fn is_in_prompt_area(&self, row: u16, col: u16) -> bool {
-        self.prompt_area.map_or(false, |area| {
+        self.prompt_area.is_some_and(|area| {
             row >= area.y
                 && row < area.y + area.height
                 && col >= area.x

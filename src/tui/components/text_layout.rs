@@ -1,7 +1,7 @@
 //! Text layout module with word-aware wrapping and character position tracking.
 
 /// A single wrapped line with character position tracking
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrappedLine {
     /// The text content of this wrapped line
     pub text: String,
@@ -118,13 +118,13 @@ impl TextLayout {
     /// Get character index at start of visual row
     #[allow(dead_code)]
     pub fn row_start(&self, row: usize) -> usize {
-        self.lines.get(row).map(|l| l.char_start).unwrap_or(0)
+        self.lines.get(row).map_or(0, |l| l.char_start)
     }
 
     /// Get character index at end of visual row
     #[allow(dead_code)]
     pub fn row_end(&self, row: usize) -> usize {
-        self.lines.get(row).map(|l| l.char_end).unwrap_or(0)
+        self.lines.get(row).map_or(0, |l| l.char_end)
     }
 
     fn wrap_logical_line(line: &str, width: usize, start_offset: usize) -> Vec<WrappedLine> {
@@ -155,7 +155,7 @@ impl TextLayout {
             let word_len = word.chars().count();
 
             let current_len = current_line.chars().count();
-            let space_needed = if current_len == 0 { 0 } else { 1 };
+            let space_needed = usize::from(current_len != 0);
             let total_needed = current_len + space_needed + word_len;
 
             if total_needed <= width {
@@ -439,5 +439,37 @@ mod tests {
         assert_eq!(layout.row_end(0), 5);
         assert_eq!(layout.row_start(1), 6);
         assert_eq!(layout.row_end(1), 11);
+    }
+
+    #[test]
+    fn test_navigation_roundtrip() {
+        let text = "hello world test";
+        let layout = TextLayout::new(text, 7);
+
+        for char_idx in 0..=text.chars().count() {
+            let (row, col) = layout.cursor_to_visual(char_idx);
+            let back = layout.visual_to_cursor(row, col);
+            assert_eq!(
+                back, char_idx,
+                "Roundtrip failed for char_idx={char_idx}: got ({row}, {col}) -> {back}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_navigation_up_down() {
+        let text = "hello world test";
+        let layout = TextLayout::new(text, 7);
+
+        let start_char = 8;
+        let (row, col) = layout.cursor_to_visual(start_char);
+        assert_eq!(row, 1);
+        assert_eq!(col, 2);
+
+        let up_char = layout.visual_to_cursor(0, col);
+        assert_eq!(up_char, 2);
+
+        let down_char = layout.visual_to_cursor(2, col);
+        assert_eq!(down_char, 14);
     }
 }
