@@ -194,10 +194,9 @@ async fn run_app(
                 full_area.height,
             );
 
-            // Calculate content height for scroll calculations (account for message area padding)
             let padded_width = area.width.saturating_sub(MESSAGE_PADDING_X * 2);
             let content_height =
-                calculate_content_height(&app.messages, &app.streaming_text, padded_width);
+                calculate_content_height(&app.messages, &app.streaming_thinking, &app.streaming_text, padded_width);
 
             // Update dimensions for scroll calculations
             app.update_dimensions(area.width, area.height, content_height);
@@ -232,6 +231,7 @@ async fn run_app(
                         f,
                         area,
                         &app.messages,
+                        &app.streaming_thinking,
                         &app.streaming_text,
                         &app.input,
                         app.cursor,
@@ -432,8 +432,12 @@ async fn run_app(
                         app.activity_status = None;
                         app.chat_rx = None;
                     }
-                    Some(ChatMessage::ThinkingStart | ChatMessage::Thinking(_)) => {
-                        // TODO(Task 8): Display thinking content with dimmed styling
+                    Some(ChatMessage::ThinkingStart) => {
+                        app.streaming_thinking.clear();
+                        app.activity_status = Some("Thinking...".to_string());
+                    }
+                    Some(ChatMessage::Thinking(text)) => {
+                        app.streaming_thinking.push_str(&text);
                     }
                 }
             }

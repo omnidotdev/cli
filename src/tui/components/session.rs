@@ -22,14 +22,12 @@ pub const MESSAGE_PADDING_X: u16 = 2;
 /// Brand colors.
 const DIMMED: Color = Color::Rgb(100, 100, 110);
 
-/// Render the session screen with message list and prompt.
-///
-/// Returns the cursor position (x, y) and the prompt area rect.
 #[allow(clippy::cast_possible_truncation, clippy::too_many_arguments)]
 pub fn render_session(
     frame: &mut Frame,
     area: Rect,
     messages: &[DisplayMessage],
+    streaming_thinking: &str,
     streaming_text: &str,
     input: &str,
     cursor: usize,
@@ -62,11 +60,11 @@ pub fn render_session(
         ])
         .split(area);
 
-    // Render messages
     render_message_list(
         frame,
         chunks[0],
         messages,
+        streaming_thinking,
         streaming_text,
         scroll_offset,
         selection,
@@ -96,12 +94,12 @@ pub fn render_session(
     )
 }
 
-/// Render the scrollable message list.
 #[allow(clippy::cast_possible_truncation, clippy::too_many_arguments)]
 fn render_message_list(
     frame: &mut Frame,
     area: Rect,
     messages: &[DisplayMessage],
+    streaming_thinking: &str,
     streaming_text: &str,
     scroll_offset: u16,
     selection: Option<&Selection>,
@@ -115,7 +113,7 @@ fn render_message_list(
         area.height,
     );
 
-    if messages.is_empty() && streaming_text.is_empty() {
+    if messages.is_empty() && streaming_thinking.is_empty() && streaming_text.is_empty() {
         // Render empty state
         let empty_msg = Paragraph::new(Line::from(Span::styled(
             "No messages yet. Start typing to begin.",
@@ -172,7 +170,40 @@ fn render_message_list(
         content_y = msg_end + 1; // +1 for spacing
     }
 
-    // Render streaming text if present
+    // Render streaming thinking if present (dimmed style)
+    if !streaming_thinking.is_empty() {
+        let screen_y = if content_y >= scroll_offset {
+            padded_area.y + (content_y - scroll_offset)
+        } else {
+            padded_area.y
+        };
+
+        if screen_y < padded_area.y + padded_area.height {
+            let clip_top = scroll_offset.saturating_sub(content_y);
+            let available_height = (padded_area.y + padded_area.height).saturating_sub(screen_y);
+            let thinking_area =
+                Rect::new(padded_area.x, screen_y, padded_area.width, available_height);
+
+            let prefixed = format!("Thinking...\n{streaming_thinking}");
+            let visible_lines: Vec<Line> = prefixed
+                .lines()
+                .map(|line| Line::from(Span::styled(line.to_owned(), Style::default().fg(DIMMED))))
+                .skip(clip_top as usize)
+                .collect();
+            let para = Paragraph::new(visible_lines).wrap(Wrap { trim: false });
+            frame.render_widget(para, thinking_area);
+
+            let thinking_height: u16 = prefixed
+                .lines()
+                .map(|line| {
+                    wrapped_line_height(line.chars().count(), padded_area.width.max(1) as usize)
+                })
+                .sum::<u16>()
+                .max(1);
+            content_y = content_y.saturating_add(thinking_height).saturating_add(1);
+        }
+    }
+
     if !streaming_text.is_empty() {
         // Calculate position in content space
         let screen_y = if content_y >= scroll_offset {
@@ -244,21 +275,31 @@ fn estimate_message_height(message: &DisplayMessage, width: u16) -> u16 {
     super::messages::message_height(message, width)
 }
 
-/// Calculate total content height for all messages and streaming text.
 #[allow(clippy::cast_possible_truncation)]
 pub fn calculate_content_height(
     messages: &[DisplayMessage],
+    streaming_thinking: &str,
     streaming_text: &str,
     width: u16,
 ) -> u16 {
-    let mut total: u16 = 1; // Start with 1 for top padding
+    let mut total: u16 = 1;
 
     for message in messages {
         total = total.saturating_add(estimate_message_height(message, width));
-        total = total.saturating_add(1); // Spacing between messages.
+        total = total.saturating_add(1);
     }
 
-    // Add streaming text height
+    if !streaming_thinking.is_empty() {
+        let width = width.max(1) as usize;
+        let prefixed = format!("Thinking...\n{streaming_thinking}");
+        let thinking_height: u16 = prefixed
+            .lines()
+            .map(|line| wrapped_line_height(line.chars().count(), width))
+            .sum::<u16>()
+            .max(1);
+        total = total.saturating_add(thinking_height).saturating_add(1);
+    }
+
     if !streaming_text.is_empty() {
         let width = width.max(1) as usize;
         let streaming_height: u16 = streaming_text
@@ -269,7 +310,6 @@ pub fn calculate_content_height(
         total = total.saturating_add(streaming_height);
     }
 
-    // Add 1 line bottom padding for visual separation from prompt
     total = total.saturating_add(1);
 
     total
@@ -327,15 +367,14 @@ mod tests {
 
     #[test]
     fn calculate_content_height_empty() {
-        let height = calculate_content_height(&[], "", 80);
-        assert_eq!(height, 2); // 1 top + 1 bottom padding
+        let height = calculate_content_height(&[], "", "", 80);
+        assert_eq!(height, 2);
     }
 
     #[test]
     fn calculate_content_height_single_message() {
         let messages = vec![user_message("hello")];
-        let height = calculate_content_height(&messages, "", 80);
-        // 1 (top) + 3 (user message) + 1 (spacing) + 1 (bottom) = 6
+        let height = calculate_content_height(&messages, "", "", 80);
         assert_eq!(height, 6);
     }
 
@@ -346,8 +385,7 @@ mod tests {
             assistant_message("second"),
             user_message("third"),
         ];
-        let height = calculate_content_height(&messages, "", 80);
-        // 1 (top) + (3 + 1) + (1 + 1) + (3 + 1) + 1 (bottom) = 12
+        let height = calculate_content_height(&messages, "", "", 80);
         assert_eq!(height, 12);
     }
 
@@ -355,16 +393,14 @@ mod tests {
     fn calculate_content_height_with_streaming() {
         let messages = vec![user_message("hello")];
         let streaming = "streaming text";
-        let height = calculate_content_height(&messages, streaming, 80);
-        // 1 (top) + 3 (user message) + 1 (spacing) + 1 (streaming) + 1 (bottom) = 7
+        let height = calculate_content_height(&messages, "", streaming, 80);
         assert_eq!(height, 7);
     }
 
     #[test]
     fn calculate_content_height_streaming_multiline() {
         let streaming = "line one\nline two";
-        let height = calculate_content_height(&[], streaming, 80);
-        // 1 (top) + 2 (streaming lines) + 1 (bottom) = 4
+        let height = calculate_content_height(&[], "", streaming, 80);
         assert_eq!(height, 4);
     }
 }

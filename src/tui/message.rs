@@ -47,6 +47,11 @@ pub enum DisplayMessage {
         /// The assistant's response text
         text: String,
     },
+    /// Reasoning/thinking content (dimmed)
+    Reasoning {
+        /// The reasoning/thinking text
+        text: String,
+    },
     /// Tool invocation with result
     Tool {
         /// Name of the tool

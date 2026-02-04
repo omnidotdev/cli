@@ -101,6 +101,16 @@ pub fn render_message_with_scroll(
                 selected_text,
             );
         }
+        DisplayMessage::Reasoning { text } => {
+            render_reasoning_message_with_scroll(
+                frame,
+                area,
+                text,
+                scroll_offset,
+                selection,
+                selected_text,
+            );
+        }
     }
 }
 
@@ -295,7 +305,52 @@ pub const fn wrapped_line_height(chars: usize, width: usize) -> u16 {
     }
 }
 
-/// Calculate message height without rendering
+fn render_reasoning_message_with_scroll(
+    frame: &mut Frame,
+    area: Rect,
+    text: &str,
+    scroll_offset: u16,
+    selection: Option<(u16, u16)>,
+    selected_text: &mut String,
+) {
+    let text_width = area.width.max(1) as usize;
+    let prefixed_text = format!("Thinking...\n{text}");
+    let layout = TextLayout::new(&prefixed_text, text_width);
+
+    let all_lines: Vec<Line> = layout
+        .lines
+        .iter()
+        .enumerate()
+        .map(|(i, wrapped_line)| {
+            #[allow(clippy::cast_possible_truncation)]
+            let line_y = area.y + i as u16;
+            let is_selected =
+                selection.is_some_and(|(min_y, max_y)| line_y >= min_y && line_y <= max_y);
+
+            if is_selected {
+                if !selected_text.is_empty() {
+                    selected_text.push('\n');
+                }
+                selected_text.push_str(&wrapped_line.text);
+                Line::from(Span::styled(
+                    wrapped_line.text.clone(),
+                    Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
+                ))
+            } else {
+                Line::from(Span::styled(
+                    wrapped_line.text.clone(),
+                    Style::default().fg(DIMMED),
+                ))
+            }
+        })
+        .collect();
+
+    let visible_lines: Vec<Line> = all_lines.into_iter().skip(scroll_offset as usize).collect();
+
+    let para = Paragraph::new(visible_lines);
+    frame.render_widget(para, area);
+}
+
 #[allow(clippy::cast_possible_truncation)]
 pub fn message_height(message: &DisplayMessage, width: u16) -> u16 {
     let width = width.max(1) as usize;
@@ -307,6 +362,11 @@ pub fn message_height(message: &DisplayMessage, width: u16) -> u16 {
         }
         DisplayMessage::Assistant { text } => {
             let layout = TextLayout::new(text, width);
+            (layout.total_lines as u16).max(1)
+        }
+        DisplayMessage::Reasoning { text } => {
+            let prefixed_text = format!("Thinking...\n{text}");
+            let layout = TextLayout::new(&prefixed_text, width);
             (layout.total_lines as u16).max(1)
         }
         DisplayMessage::Tool { .. } => 1,

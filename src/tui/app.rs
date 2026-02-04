@@ -222,6 +222,9 @@ pub struct App {
     /// Currently streaming assistant text (accumulated before adding to messages).
     pub streaming_text: String,
 
+    /// Currently streaming thinking/reasoning text (accumulated before adding to messages).
+    pub streaming_thinking: String,
+
     /// Scroll offset for the message list.
     pub message_scroll: u16,
 
@@ -407,6 +410,7 @@ impl App {
             view_state,
             messages: display_messages,
             streaming_text: String::new(),
+            streaming_thinking: String::new(),
             message_scroll: 0,
             model,
             session_tokens: (0, 0),
@@ -867,9 +871,18 @@ impl App {
 
     /// Finalize streaming text into an assistant message.
     pub fn finalize_streaming(&mut self) {
+        self.finalize_streaming_thinking();
         if !self.streaming_text.is_empty() {
             let text = std::mem::take(&mut self.streaming_text);
             self.add_assistant_message(text);
+        }
+    }
+
+    /// Finalize streaming thinking into a reasoning message.
+    pub fn finalize_streaming_thinking(&mut self) {
+        if !self.streaming_thinking.is_empty() {
+            let text = std::mem::take(&mut self.streaming_thinking);
+            self.messages.push(DisplayMessage::Reasoning { text });
         }
     }
 
@@ -877,6 +890,7 @@ impl App {
     pub fn clear_conversation(&mut self) {
         self.messages.clear();
         self.streaming_text.clear();
+        self.streaming_thinking.clear();
         self.message_scroll = 0;
     }
 
@@ -1060,8 +1074,15 @@ impl App {
                                     &t.tool, invocation, output, is_error,
                                 ));
                             }
-                            Part::Reasoning(_) => {
-                                // Skip reasoning parts in display for now
+                            Part::Reasoning(r) => {
+                                if !assistant_text.is_empty() {
+                                    display_messages.push(DisplayMessage::assistant(
+                                        std::mem::take(&mut assistant_text),
+                                    ));
+                                }
+                                display_messages.push(DisplayMessage::Reasoning {
+                                    text: r.text.clone(),
+                                });
                             }
                         }
                     }
