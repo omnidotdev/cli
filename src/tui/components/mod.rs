@@ -3,6 +3,7 @@
 mod command_palette;
 mod diff;
 pub mod highlighting;
+mod input_action;
 mod markdown;
 mod messages;
 mod model_selection;
@@ -17,6 +18,8 @@ pub use command_palette::{
     should_show_dropdown, DropdownMode,
 };
 
+#[allow(unused_imports)]
+pub use input_action::{build_keybinding_map, default_keybindings, InputAction, KeyBinding};
 pub use messages::line_color;
 pub use model_selection::{render_model_selection_dialog, ModelSelectionDialog};
 pub use prompt::PLACEHOLDERS;
