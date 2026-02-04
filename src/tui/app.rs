@@ -131,12 +131,25 @@ pub struct ActiveAskUserDialog {
     pub cursor: usize,
 }
 
+/// Expanded tool output dialog state.
+pub struct ExpandedToolDialog {
+    /// Name of the tool (e.g., "shell", "edit").
+    pub tool_name: String,
+    /// Invocation string (e.g., command or file path).
+    pub invocation: String,
+    /// Full output content.
+    pub output: String,
+    /// Current scroll offset for viewing large outputs.
+    pub scroll_offset: u16,
+}
+
 /// Currently active dialog, if any.
 pub enum ActiveDialog {
     Permission(ActivePermissionDialog),
     AskUser(ActiveAskUserDialog),
     SessionList(SessionListDialog),
     ModelSelection(ModelSelectionDialog),
+    ToolOutput(ExpandedToolDialog),
     NoProvider,
 }
 
@@ -907,6 +920,23 @@ impl App {
                 && row < area.y + area.height
                 && col >= area.x
                 && col < area.x + area.width
+        })
+    }
+
+    /// Check if a point is within any tool message area.
+    /// Returns the message index if clicked on a tool message, None otherwise.
+    #[must_use]
+    pub fn is_tool_message_at(&self, row: u16, col: u16) -> Option<usize> {
+        self.tool_message_areas.iter().find_map(|(area, index)| {
+            if row >= area.y
+                && row < area.y + area.height
+                && col >= area.x
+                && col < area.x + area.width
+            {
+                Some(*index)
+            } else {
+                None
+            }
         })
     }
 

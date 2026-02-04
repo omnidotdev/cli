@@ -101,13 +101,11 @@ mod tests {
         // The bold span should have BOLD modifier
         let bold_span = spans.iter().find(|s| s.content == "bold");
         assert!(bold_span.is_some());
-        assert!(
-            bold_span
-                .unwrap()
-                .style
-                .add_modifier
-                .contains(Modifier::BOLD)
-        );
+        assert!(bold_span
+            .unwrap()
+            .style
+            .add_modifier
+            .contains(Modifier::BOLD));
     }
 
     #[test]
@@ -115,13 +113,11 @@ mod tests {
         let spans = parse_markdown_line("hello *italic* world");
         let italic_span = spans.iter().find(|s| s.content == "italic");
         assert!(italic_span.is_some());
-        assert!(
-            italic_span
-                .unwrap()
-                .style
-                .add_modifier
-                .contains(Modifier::ITALIC)
-        );
+        assert!(italic_span
+            .unwrap()
+            .style
+            .add_modifier
+            .contains(Modifier::ITALIC));
     }
 
     #[test]
@@ -129,13 +125,11 @@ mod tests {
         let spans = parse_markdown_line("hello ~~struck~~ world");
         let struck_span = spans.iter().find(|s| s.content == "struck");
         assert!(struck_span.is_some());
-        assert!(
-            struck_span
-                .unwrap()
-                .style
-                .add_modifier
-                .contains(Modifier::CROSSED_OUT)
-        );
+        assert!(struck_span
+            .unwrap()
+            .style
+            .add_modifier
+            .contains(Modifier::CROSSED_OUT));
     }
 
     #[test]
