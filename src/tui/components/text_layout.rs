@@ -77,6 +77,53 @@ impl TextLayout {
         }
     }
 
+    /// Convert cursor (char index) to visual position (row, col)
+    pub fn cursor_to_visual(&self, cursor_char: usize) -> (usize, usize) {
+        for (row, line) in self.lines.iter().enumerate() {
+            if cursor_char >= line.char_start && cursor_char <= line.char_end {
+                let col = cursor_char - line.char_start;
+                return (row, col);
+            }
+        }
+        let last_row = self.lines.len().saturating_sub(1);
+        if let Some(last_line) = self.lines.last() {
+            (last_row, last_line.char_end - last_line.char_start)
+        } else {
+            (0, 0)
+        }
+    }
+
+    /// Convert visual position (row, col) to cursor (char index)
+    pub fn visual_to_cursor(&self, row: usize, col: usize) -> usize {
+        if self.lines.is_empty() {
+            return 0;
+        }
+        let clamped_row = row.min(self.lines.len() - 1);
+        let is_past_last = row >= self.lines.len();
+
+        if let Some(line) = self.lines.get(clamped_row) {
+            let line_len = line.char_end - line.char_start;
+            if is_past_last {
+                line.char_end
+            } else {
+                let col = col.min(line_len);
+                line.char_start + col
+            }
+        } else {
+            0
+        }
+    }
+
+    /// Get character index at start of visual row
+    pub fn row_start(&self, row: usize) -> usize {
+        self.lines.get(row).map(|l| l.char_start).unwrap_or(0)
+    }
+
+    /// Get character index at end of visual row
+    pub fn row_end(&self, row: usize) -> usize {
+        self.lines.get(row).map(|l| l.char_end).unwrap_or(0)
+    }
+
     /// Wrap a single logical line (between newlines) by words
     fn wrap_logical_line(line: &str, width: usize, start_offset: usize) -> Vec<WrappedLine> {
         let mut result = Vec::new();
@@ -320,5 +367,91 @@ mod tests {
         assert_eq!(layout.total_lines, 2);
         assert_eq!(layout.lines[0].text, "hello");
         assert_eq!(layout.lines[1].text, "world");
+    }
+
+    #[test]
+    fn test_cursor_to_visual_empty() {
+        let layout = TextLayout::new("", 10);
+        assert_eq!(layout.cursor_to_visual(0), (0, 0));
+    }
+
+    #[test]
+    fn test_cursor_to_visual_single_line() {
+        let layout = TextLayout::new("hello", 10);
+        assert_eq!(layout.cursor_to_visual(0), (0, 0));
+        assert_eq!(layout.cursor_to_visual(3), (0, 3));
+        assert_eq!(layout.cursor_to_visual(5), (0, 5)); // end of text
+    }
+
+    #[test]
+    fn test_cursor_to_visual_at_wrap() {
+        let layout = TextLayout::new("hello world", 7);
+        // "hello" is line 0, "world" is line 1
+        // cursor at position 6 (the 'w' in world) -> (1, 0)
+        assert_eq!(layout.cursor_to_visual(6), (1, 0));
+        assert_eq!(layout.cursor_to_visual(7), (1, 1)); // 'o' in world
+    }
+
+    #[test]
+    fn test_cursor_to_visual_second_line() {
+        let layout = TextLayout::new("hello world", 7);
+        assert_eq!(layout.cursor_to_visual(8), (1, 2)); // 'r' in world
+        assert_eq!(layout.cursor_to_visual(11), (1, 5)); // end of text
+    }
+
+    #[test]
+    fn test_cursor_to_visual_after_newline() {
+        let layout = TextLayout::new("a\nb", 10);
+        assert_eq!(layout.cursor_to_visual(0), (0, 0)); // 'a'
+        assert_eq!(layout.cursor_to_visual(1), (0, 1)); // end of first line
+        assert_eq!(layout.cursor_to_visual(2), (1, 0)); // 'b'
+        assert_eq!(layout.cursor_to_visual(3), (1, 1)); // end of text
+    }
+
+    #[test]
+    fn test_cursor_to_visual_end_of_text() {
+        let layout = TextLayout::new("hello", 10);
+        assert_eq!(layout.cursor_to_visual(5), (0, 5)); // cursor at end
+        assert_eq!(layout.cursor_to_visual(100), (0, 5)); // past end
+    }
+
+    #[test]
+    fn test_visual_to_cursor_basic() {
+        let layout = TextLayout::new("hello", 10);
+        assert_eq!(layout.visual_to_cursor(0, 0), 0);
+        assert_eq!(layout.visual_to_cursor(0, 3), 3);
+        assert_eq!(layout.visual_to_cursor(0, 5), 5);
+    }
+
+    #[test]
+    fn test_visual_to_cursor_wrapped_line() {
+        let layout = TextLayout::new("hello world", 7);
+        // Line 0: "hello" (chars 0-5)
+        // Line 1: "world" (chars 6-11)
+        assert_eq!(layout.visual_to_cursor(1, 0), 6);
+        assert_eq!(layout.visual_to_cursor(1, 2), 8);
+    }
+
+    #[test]
+    fn test_visual_to_cursor_past_line_end() {
+        let layout = TextLayout::new("hi", 10);
+        // Request column past end of line -> clamp to end
+        assert_eq!(layout.visual_to_cursor(0, 100), 2);
+    }
+
+    #[test]
+    fn test_visual_to_cursor_past_last_line() {
+        let layout = TextLayout::new("hello", 10);
+        // Request row past last line -> use last line, clamp column
+        assert_eq!(layout.visual_to_cursor(100, 0), 5);
+    }
+
+    #[test]
+    fn test_row_start_and_end() {
+        let layout = TextLayout::new("hello world", 7);
+        assert_eq!(layout.row_start(0), 0);
+        assert_eq!(layout.row_end(0), 5);
+        assert_eq!(layout.row_start(1), 6);
+        assert_eq!(layout.row_end(1), 11);
     }
 }
