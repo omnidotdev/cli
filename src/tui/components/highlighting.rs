@@ -277,4 +277,135 @@ mod tests {
         assert!(ratatui_style.add_modifier.contains(Modifier::BOLD));
         assert!(ratatui_style.add_modifier.contains(Modifier::ITALIC));
     }
+
+    #[test]
+    fn test_syntax_set_access_performance() {
+        use std::time::Instant;
+
+        let start = Instant::now();
+        let _ = syntax_set();
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed.as_millis() < 100,
+            "SyntaxSet access took {}ms, expected < 100ms",
+            elapsed.as_millis()
+        );
+
+        eprintln!("[perf] syntax_set() access: {:?}", elapsed);
+    }
+
+    #[test]
+    fn test_theme_set_access_performance() {
+        use std::time::Instant;
+
+        let start = Instant::now();
+        let _ = theme_set();
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed.as_millis() < 100,
+            "ThemeSet access took {}ms, expected < 100ms",
+            elapsed.as_millis()
+        );
+
+        eprintln!("[perf] theme_set() access: {:?}", elapsed);
+    }
+
+    #[test]
+    fn test_oncelock_cached_access_is_fast() {
+        use std::time::Instant;
+
+        let _ = syntax_set();
+        let _ = theme_set();
+
+        let start_syntax = Instant::now();
+        let _ = syntax_set();
+        let elapsed_syntax = start_syntax.elapsed();
+
+        let start_theme = Instant::now();
+        let _ = theme_set();
+        let elapsed_theme = start_theme.elapsed();
+
+        assert!(
+            elapsed_syntax.as_micros() < 100,
+            "Cached syntax_set() took {}μs, expected < 100μs",
+            elapsed_syntax.as_micros()
+        );
+        assert!(
+            elapsed_theme.as_micros() < 100,
+            "Cached theme_set() took {}μs, expected < 100μs",
+            elapsed_theme.as_micros()
+        );
+
+        eprintln!(
+            "[perf] Cached access - syntax_set: {:?}, theme_set: {:?}",
+            elapsed_syntax, elapsed_theme
+        );
+    }
+
+    #[test]
+    fn test_highlight_100_lines_performance() {
+        use std::time::Instant;
+
+        let code_lines: Vec<String> = (0..100)
+            .map(|i| {
+                format!(
+                    "    fn function_{}(x: i32, y: &str) -> Result<String, Error> {{ Ok(format!(\"{{}} {{}}\", x, y)) }}",
+                    i
+                )
+            })
+            .collect();
+        let code = code_lines.join("\n");
+
+        let _ = highlight_code("fn test() {}", "rs");
+
+        let start = Instant::now();
+        let spans = highlight_code(&code, "rs");
+        let elapsed = start.elapsed();
+
+        assert!(!spans.is_empty(), "Expected spans for 100 lines of code");
+        assert!(
+            elapsed.as_millis() < 50,
+            "Highlighting 100 lines took {}ms, expected < 50ms",
+            elapsed.as_millis()
+        );
+
+        eprintln!(
+            "[perf] Highlighted 100 lines ({} spans) in {:?}",
+            spans.len(),
+            elapsed
+        );
+    }
+
+    #[test]
+    fn test_highlight_performance_multiple_languages() {
+        use std::time::Instant;
+
+        let test_cases = [
+            ("rs", "fn main() { let x = 42; println!(\"{}\", x); }"),
+            ("py", "def main():\n    x = 42\n    print(f'{x}')"),
+            (
+                "ts",
+                "const main = (): void => { const x = 42; console.log(x); };",
+            ),
+            ("js", "function main() { const x = 42; console.log(x); }"),
+        ];
+
+        for (lang, code) in test_cases {
+            let start = Instant::now();
+            let spans = highlight_code(code, lang);
+            let elapsed = start.elapsed();
+
+            assert!(!spans.is_empty(), "Expected spans for {} code", lang);
+            assert!(
+                elapsed.as_millis() < 50,
+                "Highlighting {} code took {}ms, expected < 50ms",
+                lang,
+                elapsed.as_millis()
+            );
+
+            eprintln!("[perf] {} highlighting: {:?}", lang, elapsed);
+        }
+    }
 }
