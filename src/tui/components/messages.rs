@@ -13,10 +13,9 @@ use super::text_layout::TextLayout;
 use crate::core::agent::AgentMode;
 use crate::tui::message::{icons, tool_icon, DisplayMessage};
 
-/// Brand colors
 const BRAND_TEAL: Color = Color::Rgb(77, 201, 176);
 const PLAN_PURPLE: Color = Color::Rgb(160, 100, 200);
-/// Lighter panel background for "previous" user messages
+const QUEUED_COLOR: Color = Color::Rgb(200, 160, 80);
 const PANEL_BG: Color = Color::Rgb(28, 30, 35);
 const DIMMED: Color = Color::Rgb(100, 100, 110);
 const ERROR_COLOR: Color = Color::Red;
@@ -63,15 +62,12 @@ pub fn render_message_with_scroll(
     selected_text: &mut String,
 ) {
     match message {
-        DisplayMessage::User {
-            text, mode, queued, ..
-        } => {
+        DisplayMessage::User { text, mode, .. } => {
             render_user_message_with_scroll(
                 frame,
                 area,
                 text,
                 *mode,
-                *queued,
                 scroll_offset,
                 selection,
                 selected_text,
@@ -118,16 +114,12 @@ pub fn render_message_with_scroll(
     }
 }
 
-/// Render a user message with scroll offset for partial visibility
-const QUEUED_COLOR: Color = Color::Rgb(200, 160, 80);
-
 #[allow(clippy::cast_possible_truncation, clippy::too_many_arguments)]
 fn render_user_message_with_scroll(
     frame: &mut Frame,
     area: Rect,
     text: &str,
     mode: AgentMode,
-    queued: bool,
     scroll_offset: u16,
     selection: Option<(u16, u16)>,
     selected_text: &mut String,
@@ -140,18 +132,10 @@ fn render_user_message_with_scroll(
     let text_width = area.width.saturating_sub(horizontal_padding).max(1) as usize;
     let layout = TextLayout::new(text, text_width);
     let content_height = layout.total_lines as u16;
-    let badge_height = if queued { 1 } else { 0 };
-    let total_height = content_height + VERTICAL_PADDING + badge_height;
+    let total_height = content_height + VERTICAL_PADDING;
     let visible_height = total_height.saturating_sub(scroll_offset).min(area.height);
 
     let mut lines: Vec<Line> = Vec::new();
-
-    if queued {
-        lines.push(Line::from(Span::styled(
-            " ○ Queued",
-            Style::default().fg(QUEUED_COLOR),
-        )));
-    }
 
     lines.push(Line::from("")); // Top padding
 
@@ -184,13 +168,9 @@ fn render_user_message_with_scroll(
 
     let visible_lines: Vec<Line> = lines.into_iter().skip(scroll_offset as usize).collect();
 
-    let border_color = if queued {
-        QUEUED_COLOR
-    } else {
-        match mode {
-            AgentMode::Build => BRAND_TEAL,
-            AgentMode::Plan => PLAN_PURPLE,
-        }
+    let border_color = match mode {
+        AgentMode::Build => BRAND_TEAL,
+        AgentMode::Plan => PLAN_PURPLE,
     };
 
     let block = Block::default()
@@ -204,7 +184,60 @@ fn render_user_message_with_scroll(
     frame.render_widget(para, render_area);
 }
 
-/// Render an assistant message with scroll offset for partial visibility
+#[allow(clippy::cast_possible_truncation)]
+pub fn render_queued_user_message(
+    frame: &mut Frame,
+    area: Rect,
+    text: &str,
+    mode: AgentMode,
+    scroll_offset: u16,
+) {
+    const LEFT_BORDER_AND_PADDING: u16 = 2;
+    const RIGHT_PADDING: u16 = 1;
+    const VERTICAL_PADDING: u16 = 2;
+    const BADGE_HEIGHT: u16 = 1;
+
+    let horizontal_padding = LEFT_BORDER_AND_PADDING + RIGHT_PADDING;
+    let text_width = area.width.saturating_sub(horizontal_padding).max(1) as usize;
+    let layout = TextLayout::new(text, text_width);
+    let content_height = layout.total_lines as u16;
+    let total_height = content_height + VERTICAL_PADDING + BADGE_HEIGHT;
+    let visible_height = total_height.saturating_sub(scroll_offset).min(area.height);
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    let mode_label = match mode {
+        AgentMode::Build => "build",
+        AgentMode::Plan => "plan",
+    };
+    lines.push(Line::from(vec![
+        Span::styled(" ○ Queued", Style::default().fg(QUEUED_COLOR)),
+        Span::styled(format!("  [{mode_label}]"), Style::default().fg(DIMMED)),
+    ]));
+    lines.push(Line::from(""));
+
+    for wrapped_line in &layout.lines {
+        lines.push(Line::from(vec![
+            Span::raw(" "),
+            Span::raw(wrapped_line.text.clone()),
+        ]));
+    }
+    lines.push(Line::from(""));
+
+    let visible_lines: Vec<Line> = lines.into_iter().skip(scroll_offset as usize).collect();
+
+    let block = Block::default()
+        .borders(Borders::LEFT)
+        .border_style(Style::default().fg(QUEUED_COLOR))
+        .style(Style::default().bg(PANEL_BG));
+
+    let para = Paragraph::new(visible_lines).block(block);
+
+    let render_area = Rect::new(area.x, area.y, area.width, visible_height);
+    frame.render_widget(para, render_area);
+}
+
+#[allow(clippy::cast_possible_truncation)]
 #[allow(clippy::cast_possible_truncation)]
 fn render_assistant_message_with_scroll(
     frame: &mut Frame,
@@ -406,6 +439,14 @@ pub fn message_height(message: &DisplayMessage, width: u16) -> u16 {
         }
         DisplayMessage::Tool { .. } => 1,
     }
+}
+
+#[allow(clippy::cast_possible_truncation)]
+pub fn queued_message_height(text: &str, width: u16) -> u16 {
+    let width = width.max(1) as usize;
+    let text_width = width.saturating_sub(3).max(1);
+    let layout = TextLayout::new(text, text_width);
+    layout.total_lines as u16 + 3
 }
 
 #[cfg(test)]

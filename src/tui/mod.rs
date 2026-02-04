@@ -236,10 +236,12 @@ async fn run_app(
                         }
                     };
                     let status = status.as_deref();
+                    let queued_messages = app.pending_messages.clone();
                     render_session(
                         f,
                         area,
                         &app.messages,
+                        &queued_messages,
                         &app.streaming_thinking,
                         &app.streaming_text,
                         &app.input,

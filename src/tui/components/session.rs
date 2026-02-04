@@ -19,7 +19,6 @@ use crate::tui::message::DisplayMessage;
 /// Horizontal padding for message area.
 pub const MESSAGE_PADDING_X: u16 = 2;
 
-/// Brand colors.
 const DIMMED: Color = Color::Rgb(100, 100, 110);
 const THINKING_PREFIX: Color = Color::Rgb(100, 160, 150);
 
@@ -28,6 +27,7 @@ pub fn render_session(
     frame: &mut Frame,
     area: Rect,
     messages: &[DisplayMessage],
+    queued_messages: &[String],
     streaming_thinking: &str,
     streaming_text: &str,
     input: &str,
@@ -53,15 +53,29 @@ pub fn render_session(
     };
     let prompt_height = (input_lines as u16 + 5).clamp(6, 11);
 
-    // Split into message area and prompt area
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(1),                // Messages
-            Constraint::Length(1),             // Gap between messages and prompt
-            Constraint::Length(prompt_height), // Prompt + status
-        ])
-        .split(area);
+    let padded_width = area.width.saturating_sub(MESSAGE_PADDING_X * 2);
+    let queued_total_height: u16 = queued_messages
+        .iter()
+        .map(|text| super::messages::queued_message_height(text, padded_width) + 1)
+        .sum();
+
+    let (chunks, prompt_idx, queued_idx) = if queued_total_height > 0 {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(1),
+                Constraint::Length(queued_total_height),
+                Constraint::Length(prompt_height),
+            ])
+            .split(area);
+        (chunks, 2, Some(1))
+    } else {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(prompt_height)])
+            .split(area);
+        (chunks, 1, None)
+    };
 
     render_message_list(
         frame,
@@ -75,12 +89,17 @@ pub fn render_session(
         tool_message_areas,
     );
 
-    // Apply same horizontal padding to prompt area for alignment
+    if let Some(idx) = queued_idx {
+        render_queued_area(frame, chunks[idx], queued_messages, agent_mode);
+    }
+
     let prompt_area = Rect::new(
-        chunks[2].x + MESSAGE_PADDING_X,
-        chunks[2].y,
-        chunks[2].width.saturating_sub(MESSAGE_PADDING_X * 2),
-        chunks[2].height,
+        chunks[prompt_idx].x + MESSAGE_PADDING_X,
+        chunks[prompt_idx].y,
+        chunks[prompt_idx]
+            .width
+            .saturating_sub(MESSAGE_PADDING_X * 2),
+        chunks[prompt_idx].height,
     );
 
     render_prompt(
@@ -99,6 +118,36 @@ pub fn render_session(
     )
 }
 
+fn render_queued_area(
+    frame: &mut Frame,
+    area: Rect,
+    queued_messages: &[String],
+    agent_mode: AgentMode,
+) {
+    let padded_area = Rect::new(
+        area.x + MESSAGE_PADDING_X,
+        area.y,
+        area.width.saturating_sub(MESSAGE_PADDING_X * 2),
+        area.height,
+    );
+
+    let mut y_offset: u16 = 0;
+    for queued_text in queued_messages {
+        let msg_height = super::messages::queued_message_height(queued_text, padded_area.width);
+        if y_offset + msg_height > padded_area.height {
+            break;
+        }
+        let msg_area = Rect::new(
+            padded_area.x,
+            padded_area.y + y_offset,
+            padded_area.width,
+            msg_height,
+        );
+        super::messages::render_queued_user_message(frame, msg_area, queued_text, agent_mode, 0);
+        y_offset += msg_height + 1;
+    }
+}
+
 #[allow(clippy::cast_possible_truncation, clippy::too_many_arguments)]
 fn render_message_list(
     frame: &mut Frame,
@@ -111,7 +160,6 @@ fn render_message_list(
     selected_text: &mut String,
     tool_message_areas: &mut Vec<(Rect, usize)>,
 ) {
-    // Apply padding to message area
     let padded_area = Rect::new(
         area.x + MESSAGE_PADDING_X,
         area.y,
@@ -297,20 +345,21 @@ pub fn calculate_content_height(
     }
 
     if !streaming_thinking.is_empty() {
-        let width = width.max(1) as usize;
+        let width_usize = width.max(1) as usize;
         let prefixed = format!("Thinking: {streaming_thinking}");
-        let thinking_height: u16 = wrapped_line_height(prefixed.chars().count(), width).max(1);
+        let thinking_height: u16 =
+            wrapped_line_height(prefixed.chars().count(), width_usize).max(1);
         total = total.saturating_add(thinking_height).saturating_add(1);
     }
 
     if !streaming_text.is_empty() {
-        let width = width.max(1) as usize;
+        let width_usize = width.max(1) as usize;
         let streaming_height: u16 = streaming_text
             .lines()
-            .map(|line| wrapped_line_height(line.chars().count(), width))
+            .map(|line| wrapped_line_height(line.chars().count(), width_usize))
             .sum::<u16>()
             .max(1);
-        total = total.saturating_add(streaming_height);
+        total = total.saturating_add(streaming_height).saturating_add(1);
     }
 
     total = total.saturating_add(1);
@@ -327,7 +376,6 @@ mod tests {
             text: text.to_string(),
             timestamp: None,
             mode: AgentMode::Build,
-            queued: false,
         }
     }
 
@@ -398,13 +446,13 @@ mod tests {
         let messages = vec![user_message("hello")];
         let streaming = "streaming text";
         let height = calculate_content_height(&messages, "", streaming, 80);
-        assert_eq!(height, 7);
+        assert_eq!(height, 8);
     }
 
     #[test]
     fn calculate_content_height_streaming_multiline() {
         let streaming = "line one\nline two";
         let height = calculate_content_height(&[], "", streaming, 80);
-        assert_eq!(height, 4);
+        assert_eq!(height, 5);
     }
 }

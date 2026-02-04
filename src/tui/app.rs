@@ -299,6 +299,9 @@ pub struct App {
 
     /// Track first backspace on empty input for double-backspace delete.
     pub backspace_on_empty_once: bool,
+
+    /// Messages queued while agent is processing.
+    pub pending_messages: Vec<String>,
 }
 
 impl Default for App {
@@ -445,6 +448,7 @@ impl App {
             reasoning_effort: ReasoningEffort::default(),
             esc_pressed_once: false,
             backspace_on_empty_once: false,
+            pending_messages: Vec::new(),
         }
     }
 
@@ -881,56 +885,35 @@ impl App {
         self.messages.push(message);
     }
 
-    /// Count queued messages in the conversation.
     #[must_use]
     pub fn queued_message_count(&self) -> usize {
-        self.messages
-            .iter()
-            .filter(|m| matches!(m, DisplayMessage::User { queued: true, .. }))
-            .count()
+        self.pending_messages.len()
     }
 
-    /// Add a queued user message.
+    #[must_use]
+    pub fn get_queued_messages(&self) -> &[String] {
+        &self.pending_messages
+    }
+
     pub fn add_queued_message(&mut self, text: String) {
-        self.messages
-            .push(DisplayMessage::queued_user(text, self.agent_mode));
+        self.pending_messages.push(text);
     }
 
-    /// Activate the first queued message (mark as not queued, return text).
     pub fn activate_first_queued_message(&mut self) -> Option<String> {
-        for msg in &mut self.messages {
-            if let DisplayMessage::User {
-                text,
-                queued,
-                timestamp,
-                ..
-            } = msg
-            {
-                if *queued {
-                    *queued = false;
-                    *timestamp = Some(std::time::SystemTime::now());
-                    return Some(text.clone());
-                }
-            }
+        if self.pending_messages.is_empty() {
+            return None;
         }
-        None
+        let text = self.pending_messages.remove(0);
+        self.add_user_message(text.clone());
+        Some(text)
     }
 
-    /// Remove the last queued message.
     pub fn remove_last_queued_message(&mut self) {
-        if let Some(idx) = self
-            .messages
-            .iter()
-            .rposition(|m| matches!(m, DisplayMessage::User { queued: true, .. }))
-        {
-            self.messages.remove(idx);
-        }
+        self.pending_messages.pop();
     }
 
-    /// Clear all queued messages.
     pub fn clear_queued_messages(&mut self) {
-        self.messages
-            .retain(|m| !matches!(m, DisplayMessage::User { queued: true, .. }));
+        self.pending_messages.clear();
     }
 
     /// Finalize streaming text into an assistant message.
@@ -1090,7 +1073,6 @@ impl App {
                             text,
                             timestamp: None,
                             mode,
-                            queued: false,
                         });
                     }
                 }

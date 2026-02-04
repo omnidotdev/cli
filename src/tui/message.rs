@@ -35,14 +35,9 @@ pub fn tool_icon(name: &str) -> &'static str {
 pub enum DisplayMessage {
     /// User message with teal border
     User {
-        /// The user's message text
         text: String,
-        /// When the message was sent
         timestamp: Option<SystemTime>,
-        /// The agent mode for this message
         mode: AgentMode,
-        /// Whether this message is queued (not yet sent)
-        queued: bool,
     },
     /// Assistant response without border
     Assistant {
@@ -68,29 +63,15 @@ pub enum DisplayMessage {
 }
 
 impl DisplayMessage {
-    /// Create a user message
     #[must_use]
     pub fn user(text: impl Into<String>, mode: AgentMode) -> Self {
         Self::User {
             text: text.into(),
             timestamp: Some(SystemTime::now()),
             mode,
-            queued: false,
         }
     }
 
-    /// Create a queued user message (not yet sent)
-    #[must_use]
-    pub fn queued_user(text: impl Into<String>, mode: AgentMode) -> Self {
-        Self::User {
-            text: text.into(),
-            timestamp: None,
-            mode,
-            queued: true,
-        }
-    }
-
-    /// Create an assistant message
     #[must_use]
     pub fn assistant(text: impl Into<String>) -> Self {
         Self::Assistant { text: text.into() }
