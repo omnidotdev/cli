@@ -20,7 +20,9 @@ pub use permission::{
     PermissionContext, PermissionError, PermissionMessage, PermissionResponse,
 };
 pub use plan::PlanManager;
-pub use provider::{CompletionEvent, CompletionRequest, CompletionStream, LlmProvider, ReasoningEffort};
+pub use provider::{
+    CompletionEvent, CompletionRequest, CompletionStream, LlmProvider, ReasoningEffort,
+};
 pub use providers::{AnthropicProvider, OpenAiProvider, UnifiedProvider};
 pub use tools::ToolRegistry;
 pub use types::{

@@ -8,7 +8,7 @@ use uuid::Uuid;
 use super::components::{
     EditBuffer, EditorView, InputAction, ModelSelectionDialog, SessionListDialog,
 };
-use super::message::{format_tool_invocation, DisplayMessage};
+use super::message::{DisplayMessage, format_tool_invocation};
 use super::state::ViewState;
 
 /// Type alias for model fetch results receiver.
@@ -50,12 +50,12 @@ pub const ECOSYSTEM_TIPS: &[&str] = &[
 ];
 
 use crate::config::{AgentConfig, AgentPermissions, Config};
+use crate::core::Agent;
 use crate::core::agent::{
     AgentMode, AskUserResponse, InterfaceMessage, PermissionAction, PermissionContext,
     PermissionResponse, ReasoningEffort,
 };
 use crate::core::session::{SessionManager, SessionTarget};
-use crate::core::Agent;
 
 /// Active text selection state.
 #[derive(Debug, Clone)]

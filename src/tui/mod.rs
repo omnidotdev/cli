@@ -36,7 +36,9 @@ use crate::core::agent::{
 use crate::core::session::SessionTarget;
 
 pub use app::App;
-use app::{ActiveAskUserDialog, ActiveDialog, ActivePermissionDialog, ChatMessage, ExpandedToolDialog};
+use app::{
+    ActiveAskUserDialog, ActiveDialog, ActivePermissionDialog, ChatMessage, ExpandedToolDialog,
+};
 use components::{
     DropdownMode, InputAction, MESSAGE_PADDING_X, TextLayout, build_keybinding_map,
     calculate_content_height, default_keybindings, dropdown_mode, filter_commands, filter_models,
@@ -202,8 +204,12 @@ async fn run_app(
             );
 
             let padded_width = area.width.saturating_sub(MESSAGE_PADDING_X * 2);
-            let content_height =
-                calculate_content_height(&app.messages, &app.streaming_thinking, &app.streaming_text, padded_width);
+            let content_height = calculate_content_height(
+                &app.messages,
+                &app.streaming_thinking,
+                &app.streaming_text,
+                padded_width,
+            );
 
             // Update dimensions for scroll calculations
             app.update_dimensions(area.width, area.height, content_height);
@@ -231,13 +237,18 @@ async fn run_app(
                     // Session view with messages and bottom prompt
                     let status = {
                         let queue_count = app.queued_message_count();
-                        
+
                         if app.esc_pressed_once && app.loading {
                             Some("press esc to cancel".to_string())
                         } else if app.backspace_on_empty_once && queue_count > 0 {
                             Some("press backspace to delete last queued".to_string())
                         } else if app.loading {
-                            Some(app.activity_status.as_deref().unwrap_or("Thinking...").to_string())
+                            Some(
+                                app.activity_status
+                                    .as_deref()
+                                    .unwrap_or("Thinking...")
+                                    .to_string(),
+                            )
                         } else {
                             None
                         }
@@ -279,7 +290,12 @@ async fn run_app(
             if app.show_command_dropdown && should_show_dropdown(app.input()) {
                 match dropdown_mode(app.input()) {
                     DropdownMode::Commands => {
-                        let (_, area) = render_command_dropdown(f, prompt_area, app.input(), app.command_selection);
+                        let (_, area) = render_command_dropdown(
+                            f,
+                            prompt_area,
+                            app.input(),
+                            app.command_selection,
+                        );
                         app.set_dropdown_area(Some(area), filter_commands(app.input()).len());
                     }
                     DropdownMode::Models => {
@@ -290,7 +306,10 @@ async fn run_app(
                             app.command_selection,
                             &app.agent_config.models,
                         );
-                        app.set_dropdown_area(Some(area), filter_models(app.input(), &app.agent_config.models).len());
+                        app.set_dropdown_area(
+                            Some(area),
+                            filter_models(app.input(), &app.agent_config.models).len(),
+                        );
                     }
                     DropdownMode::None => {}
                 }
@@ -373,7 +392,7 @@ async fn run_app(
                                             if let Some(item_index) = app.is_in_dropdown_area(mouse.row, mouse.column) {
                                                 // Click inside dropdown - select and execute
                                                 app.command_selection = item_index;
-                                                
+
                                                 // Execute command (same logic as Enter key)
                                                 match dropdown_mode(app.input()) {
                                                     DropdownMode::Commands => {
@@ -401,7 +420,7 @@ async fn run_app(
                                                     let area = terminal.get_frame().area();
                                                     let dialog_width = area.width * 80 / 100;
                                                     let content_width = dialog_width.saturating_sub(4);
-                                                    
+
                                                     let cached_lines: Vec<ratatui::text::Line<'static>> = output
                                                         .lines()
                                                         .map(|line| ratatui::text::Line::from(ratatui::text::Span::styled(
@@ -723,7 +742,11 @@ fn handle_key(
 
                 // Handle model switch command
                 if trimmed == "/model" || trimmed.starts_with("/model ") {
-                    let model_arg = trimmed.strip_prefix("/model").unwrap_or("").trim().to_string();
+                    let model_arg = trimmed
+                        .strip_prefix("/model")
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
                     if model_arg.is_empty() {
                         app.clear_input();
                         app.show_model_selection_dialog();
@@ -1357,7 +1380,12 @@ fn render_tool_output_dialog(frame: &mut ratatui::Frame, dialog: &mut ExpandedTo
         dialog.cached_lines = dialog
             .output
             .lines()
-            .map(|line| Line::from(Span::styled(line.to_owned(), Style::default().fg(line_color(line)))))
+            .map(|line| {
+                Line::from(Span::styled(
+                    line.to_owned(),
+                    Style::default().fg(line_color(line)),
+                ))
+            })
             .collect();
         dialog.cached_width = content_width;
         dialog.total_lines = dialog.cached_lines.len();
@@ -1387,7 +1415,11 @@ fn render_tool_output_dialog(frame: &mut ratatui::Frame, dialog: &mut ExpandedTo
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(1), Constraint::Length(1)])
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
+        ])
         .split(inner);
 
     let invocation_style = Style::default().fg(Color::Rgb(180, 180, 190));
@@ -1399,9 +1431,10 @@ fn render_tool_output_dialog(frame: &mut ratatui::Frame, dialog: &mut ExpandedTo
     {
         dialog.visible_height = visible_height as u16;
     }
-    
+
     let scroll = dialog.scroll_offset as usize;
-    let visible_lines: Vec<Line> = dialog.cached_lines
+    let visible_lines: Vec<Line> = dialog
+        .cached_lines
         .iter()
         .skip(scroll)
         .take(visible_height)

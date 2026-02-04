@@ -438,10 +438,13 @@ impl LlmProvider for OpenAiProvider {
         let reasoning = if self.provider_name == "openrouter"
             && (model_lower.contains("claude") || model_lower.contains("anthropic"))
         {
-            request.reasoning_effort.to_api_value().map(|effort| ReasoningConfig {
-                effort: Some(effort.to_string()),
-                summary: None,
-            })
+            request
+                .reasoning_effort
+                .to_api_value()
+                .map(|effort| ReasoningConfig {
+                    effort: Some(effort.to_string()),
+                    summary: None,
+                })
         } else {
             None
         };

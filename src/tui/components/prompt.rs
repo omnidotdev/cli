@@ -1,11 +1,11 @@
 //! Reusable prompt component.
 
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph, Wrap},
-    Frame,
 };
 
 use super::command_palette::CENTERED_MAX_WIDTH;

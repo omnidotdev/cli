@@ -801,10 +801,12 @@ mod tests {
         assert_eq!(lines.len(), 2);
 
         assert!(lines[0].spans[0].content.contains("test.txt"));
-        assert!(lines[1]
-            .spans
-            .iter()
-            .any(|span| span.content.contains(" | ")));
+        assert!(
+            lines[1]
+                .spans
+                .iter()
+                .any(|span| span.content.contains(" | "))
+        );
     }
 
     #[test]
