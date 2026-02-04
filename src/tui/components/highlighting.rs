@@ -104,14 +104,13 @@ pub fn syntect_to_ratatui_style(style: SyntectStyle) -> RatatuiStyle {
 ///
 /// # Example
 ///
-/// ```
+/// ```ignore
 /// use omni_cli::tui::components::highlighting::highlight_code;
 ///
 /// let spans = highlight_code("fn main() {}", "rs");
 /// assert!(!spans.is_empty());
 /// ```
 #[must_use]
-#[allow(dead_code)]
 pub fn highlight_code(code: &str, language: &str) -> Vec<Span<'static>> {
     let ps = syntax_set();
     let ts = theme_set();

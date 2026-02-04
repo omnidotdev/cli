@@ -113,7 +113,6 @@ pub struct ParsedDiff {
 }
 
 /// Diff view widget with collapsible state
-#[allow(dead_code)]
 pub struct DiffView {
     /// Parsed diff data
     pub diff: ParsedDiff,
@@ -123,7 +122,6 @@ pub struct DiffView {
 
 impl DiffView {
     /// Create a new diff view from a diff string
-    #[allow(dead_code)]
     pub fn new(diff_string: &str) -> Self {
         Self {
             diff: parse_diff(diff_string),
@@ -344,7 +342,6 @@ pub enum SplitSide {
 /// Selects layout based on width:
 /// - `width >= SPLIT_THRESHOLD`: Split view (old left, new right)
 /// - `width < SPLIT_THRESHOLD`: Unified view (single column with +/- prefixes)
-#[allow(dead_code)]
 pub fn render_diff(diff: &ParsedDiff, width: u16) -> Vec<Line<'static>> {
     let extension = diff_extension(diff);
     if width >= SPLIT_THRESHOLD {

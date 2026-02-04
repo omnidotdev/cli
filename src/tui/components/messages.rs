@@ -8,7 +8,8 @@ use ratatui::{
     Frame,
 };
 
-use super::markdown::parse_markdown_line;
+use super::diff::{render_diff, DiffView};
+use super::markdown::MarkdownStreamParser;
 use super::text_layout::TextLayout;
 use crate::core::agent::AgentMode;
 use crate::tui::message::{icons, tool_icon, DisplayMessage};
@@ -249,30 +250,29 @@ fn render_assistant_message_with_scroll(
     let text_width = area.width.max(1) as usize;
     let layout = TextLayout::new(text, text_width);
 
-    let all_lines: Vec<Line> = layout
-        .lines
-        .iter()
-        .enumerate()
-        .map(|(i, wrapped_line)| {
-            #[allow(clippy::cast_possible_truncation)]
-            let line_y = area.y + i as u16;
-            let is_selected =
-                selection.is_some_and(|(min_y, max_y)| line_y >= min_y && line_y <= max_y);
+    let mut parser = MarkdownStreamParser::new();
+    let mut all_lines: Vec<Line> = Vec::with_capacity(layout.lines.len());
 
-            if is_selected {
-                if !selected_text.is_empty() {
-                    selected_text.push('\n');
-                }
-                selected_text.push_str(&wrapped_line.text);
-                Line::from(Span::styled(
-                    wrapped_line.text.clone(),
-                    Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
-                ))
-            } else {
-                Line::from(parse_markdown_line(&wrapped_line.text))
+    for (i, wrapped_line) in layout.lines.iter().enumerate() {
+        #[allow(clippy::cast_possible_truncation)]
+        let line_y = area.y + i as u16;
+        let is_selected =
+            selection.is_some_and(|(min_y, max_y)| line_y >= min_y && line_y <= max_y);
+
+        let line = if is_selected {
+            if !selected_text.is_empty() {
+                selected_text.push('\n');
             }
-        })
-        .collect();
+            selected_text.push_str(&wrapped_line.text);
+            Line::from(Span::styled(
+                wrapped_line.text.clone(),
+                Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
+            ))
+        } else {
+            Line::from(parser.parse_line(&wrapped_line.text))
+        };
+        all_lines.push(line);
+    }
 
     let visible_lines: Vec<Line> = all_lines.into_iter().skip(scroll_offset as usize).collect();
 
@@ -280,7 +280,7 @@ fn render_assistant_message_with_scroll(
     frame.render_widget(para, area);
 }
 
-/// Render a tool message as a single collapsed line with line count badge
+/// Render a tool message with optional diff expansion
 #[allow(clippy::cast_possible_truncation, clippy::too_many_arguments)]
 fn render_tool_message_with_scroll(
     frame: &mut Frame,
@@ -303,6 +303,8 @@ fn render_tool_message_with_scroll(
         tool_icon(name)
     };
     let icon_color = if is_error { ERROR_COLOR } else { SUCCESS_COLOR };
+
+    let is_diff = output.contains("--- ") && output.contains("+++ ") && output.contains("@@");
 
     let line_count = output.lines().count();
     let badge = format_line_badge(line_count);
@@ -343,8 +345,19 @@ fn render_tool_message_with_scroll(
         ])
     };
 
-    let para = Paragraph::new(vec![line]);
-    frame.render_widget(para, area);
+    if is_diff {
+        let diff_view = DiffView::new(output);
+        let diff_lines = render_diff(&diff_view.diff, area.width);
+
+        let mut all_lines = vec![line];
+        all_lines.extend(diff_lines);
+
+        let para = Paragraph::new(all_lines);
+        frame.render_widget(para, area);
+    } else {
+        let para = Paragraph::new(vec![line]);
+        frame.render_widget(para, area);
+    }
 }
 
 /// Calculate how many rows a line of text takes when wrapped to a given width
