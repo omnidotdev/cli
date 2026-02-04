@@ -1,10 +1,120 @@
 //! Conversation state management.
 
+use std::fs;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
 use super::types::{Content, ContentBlock, Message, Role};
+
+/// Maximum size per file (100KB).
+const MAX_FILE_SIZE: usize = 100 * 1024;
+/// Maximum total size for all files (500KB).
+const MAX_TOTAL_SIZE: usize = 500 * 1024;
+
+/// Read file content with size validation.
+///
+/// # Errors
+///
+/// Returns an error message if the file doesn't exist, is too large, or can't be read.
+pub fn read_file_for_context(path: &str) -> Result<String, String> {
+    let file_path = Path::new(path);
+
+    if !file_path.exists() {
+        return Err(format!("file not found: {path}"));
+    }
+
+    if !file_path.is_file() {
+        return Err(format!("not a file: {path}"));
+    }
+
+    let metadata =
+        fs::metadata(file_path).map_err(|e| format!("cannot read file metadata: {e}"))?;
+    let size = usize::try_from(metadata.len()).unwrap_or(usize::MAX);
+
+    if size > MAX_FILE_SIZE {
+        return Err(format!(
+            "file too large: {path} ({size} bytes, max {MAX_FILE_SIZE} bytes)"
+        ));
+    }
+
+    fs::read_to_string(file_path).map_err(|e| format!("cannot read file: {e}"))
+}
+
+/// Parse @-mentions from text and return list of paths.
+///
+/// Finds all `@path` patterns where `@` is followed by non-whitespace characters
+/// until whitespace or end of text. The `@` prefix is stripped from the returned paths.
+#[must_use]
+pub fn parse_at_mentions(text: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+    let chars: Vec<char> = text.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+
+    while i < len {
+        let at_start_or_after_whitespace = i == 0 || chars[i - 1].is_whitespace();
+        if chars[i] == '@' && at_start_or_after_whitespace {
+            let start = i + 1;
+            let mut end = start;
+
+            while end < len && !chars[end].is_whitespace() {
+                end += 1;
+            }
+
+            if end > start {
+                let path: String = chars[start..end].iter().collect();
+                paths.push(path);
+            }
+
+            i = end;
+        } else {
+            i += 1;
+        }
+    }
+
+    paths
+}
+
+/// Prepare message with file contexts prepended.
+///
+/// Parses @-mentions from the text, reads each referenced file, validates sizes,
+/// and prepends file content wrapped in XML tags to the user text.
+///
+/// # Errors
+///
+/// Returns an error message if any file fails to read or total size exceeds limit.
+pub fn prepare_message_with_files(user_text: &str) -> Result<String, String> {
+    let paths = parse_at_mentions(user_text);
+
+    if paths.is_empty() {
+        return Ok(user_text.to_string());
+    }
+
+    let mut file_contexts = Vec::new();
+    let mut total_size = 0usize;
+
+    for path in &paths {
+        let content = read_file_for_context(path)?;
+        total_size += content.len();
+
+        if total_size > MAX_TOTAL_SIZE {
+            return Err(format!(
+                "total file content too large ({total_size} bytes, max {MAX_TOTAL_SIZE} bytes)"
+            ));
+        }
+
+        file_contexts.push(format!(
+            "<file-context path=\"{path}\">\n{content}\n</file-context>"
+        ));
+    }
+
+    if file_contexts.is_empty() {
+        Ok(user_text.to_string())
+    } else {
+        Ok(format!("{}\n\n{}", file_contexts.join("\n\n"), user_text))
+    }
+}
 
 /// Manages multi-turn conversation state.
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -153,5 +263,53 @@ mod tests {
         conv.clear();
 
         assert!(conv.messages().is_empty());
+    }
+
+    #[test]
+    fn parse_at_mentions_extracts_paths() {
+        assert_eq!(
+            parse_at_mentions("check @src/main.rs please"),
+            vec!["src/main.rs"]
+        );
+        assert_eq!(
+            parse_at_mentions("@file1.txt and @file2.txt"),
+            vec!["file1.txt", "file2.txt"]
+        );
+        assert_eq!(
+            parse_at_mentions("@path/to/file.rs at start"),
+            vec!["path/to/file.rs"]
+        );
+    }
+
+    #[test]
+    fn parse_at_mentions_ignores_email_like() {
+        assert!(parse_at_mentions("email user@example.com").is_empty());
+    }
+
+    #[test]
+    fn parse_at_mentions_handles_edge_cases() {
+        assert!(parse_at_mentions("no mentions here").is_empty());
+        assert!(parse_at_mentions("@ alone").is_empty());
+        assert_eq!(parse_at_mentions("@single"), vec!["single"]);
+    }
+
+    #[test]
+    fn read_file_for_context_handles_missing_file() {
+        let result = read_file_for_context("/nonexistent/path/file.txt");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("file not found"));
+    }
+
+    #[test]
+    fn prepare_message_no_mentions_returns_original() {
+        let text = "plain message without mentions";
+        let result = prepare_message_with_files(text).unwrap();
+        assert_eq!(result, text);
+    }
+
+    #[test]
+    fn prepare_message_with_missing_file_returns_error() {
+        let result = prepare_message_with_files("check @/nonexistent/file.txt");
+        assert!(result.is_err());
     }
 }

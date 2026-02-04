@@ -31,7 +31,7 @@ use tokio::sync::mpsc;
 
 use crate::core::agent::{
     AskUserResponse, InterfaceMessage, PermissionAction, PermissionActor, PermissionClient,
-    PermissionContext, PermissionMessage, PermissionResponse,
+    PermissionContext, PermissionMessage, PermissionResponse, prepare_message_with_files,
 };
 use crate::core::session::SessionTarget;
 
@@ -1943,7 +1943,6 @@ fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMess
         return;
     };
 
-    // Ensure agent has permission client with current permission presets
     let client = PermissionClient::with_presets(
         "tui-session".to_string(),
         permission_tx,
@@ -1953,13 +1952,20 @@ fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMess
 
     let prompt = app.take_input();
 
-    // Transition to session view on first message
-    app.enter_session();
+    let prepared_prompt = match prepare_message_with_files(&prompt) {
+        Ok(prepared) => prepared,
+        Err(e) => {
+            app.agent = Some(agent);
+            app.messages
+                .push(DisplayMessage::tool_error("File Context", e));
+            app.enter_session();
+            return;
+        }
+    };
 
-    // Add user message to the conversation
+    app.enter_session();
     app.add_user_message(&prompt);
 
-    // Clear streaming state for new response
     app.streaming_text.clear();
     app.output.clear();
     app.loading = true;
@@ -1972,7 +1978,7 @@ fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMess
         let tx_clone = tx.clone();
 
         let result = agent
-            .chat_with_events(&prompt, |event| {
+            .chat_with_events(&prepared_prompt, |event| {
                 use crate::core::agent::ChatEvent;
                 match event {
                     ChatEvent::Text(text) => {

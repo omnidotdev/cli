@@ -13,7 +13,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
-pub use conversation::Conversation;
+pub use conversation::{Conversation, prepare_message_with_files};
 pub use error::{AgentError, Result};
 pub use permission::{
     AskUserResponse, InterfaceMessage, PermissionAction, PermissionActor, PermissionClient,
