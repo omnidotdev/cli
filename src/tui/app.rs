@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use super::components::{ModelSelectionDialog, SessionListDialog, TextLayout};
-use super::message::{DisplayMessage, format_tool_invocation};
+use super::message::{format_tool_invocation, DisplayMessage};
 use super::state::ViewState;
 
 /// Type alias for model fetch results receiver.
@@ -48,12 +48,12 @@ pub const ECOSYSTEM_TIPS: &[&str] = &[
 ];
 
 use crate::config::{AgentConfig, AgentPermissions, Config};
-use crate::core::Agent;
 use crate::core::agent::{
     AgentMode, AskUserResponse, InterfaceMessage, PermissionAction, PermissionContext,
     PermissionResponse,
 };
 use crate::core::session::{SessionManager, SessionTarget};
+use crate::core::Agent;
 
 /// Active text selection state.
 #[derive(Debug, Clone)]
@@ -830,7 +830,8 @@ impl App {
 
     /// Add a user message to the conversation.
     pub fn add_user_message(&mut self, text: impl Into<String>) {
-        self.messages.push(DisplayMessage::user(text));
+        self.messages
+            .push(DisplayMessage::user(text, self.agent_mode));
     }
 
     /// Add an assistant message to the conversation.
@@ -942,7 +943,7 @@ impl App {
             let parts = manager.list_parts(msg.id())?;
 
             match msg {
-                SessionMessage::User(_) => {
+                SessionMessage::User(user_msg) => {
                     // Collect text parts into user message
                     let text: String = parts
                         .iter()
@@ -954,9 +955,15 @@ impl App {
                         .join("\n");
 
                     if !text.is_empty() {
+                        let mode = if user_msg.agent == "plan" {
+                            AgentMode::Plan
+                        } else {
+                            AgentMode::Build
+                        };
                         display_messages.push(DisplayMessage::User {
                             text,
                             timestamp: None,
+                            mode,
                         });
                     }
                 }

@@ -2,6 +2,8 @@
 
 use std::time::SystemTime;
 
+use crate::core::agent::AgentMode;
+
 /// Tool icons by category
 pub mod icons {
     pub const SHELL: &str = "●";
@@ -37,6 +39,8 @@ pub enum DisplayMessage {
         text: String,
         /// When the message was sent
         timestamp: Option<SystemTime>,
+        /// The agent mode for this message
+        mode: AgentMode,
     },
     /// Assistant response without border
     Assistant {
@@ -59,10 +63,11 @@ pub enum DisplayMessage {
 impl DisplayMessage {
     /// Create a user message
     #[must_use]
-    pub fn user(text: impl Into<String>) -> Self {
+    pub fn user(text: impl Into<String>, mode: AgentMode) -> Self {
         Self::User {
             text: text.into(),
             timestamp: Some(SystemTime::now()),
+            mode,
         }
     }
 
