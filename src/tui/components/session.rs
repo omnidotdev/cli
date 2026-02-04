@@ -1,16 +1,16 @@
 //! Session screen component.
 
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
+    Frame,
 };
 
 use super::markdown::parse_markdown_line;
 use super::messages::{render_message_with_scroll, wrapped_line_height};
-use super::prompt::{PromptMode, render_prompt};
+use super::prompt::{render_prompt, PromptMode};
 use super::text_layout::TextLayout;
 use crate::core::agent::AgentMode;
 use crate::tui::app::Selection;
@@ -57,6 +57,7 @@ pub fn render_session(
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(1),                // Messages
+            Constraint::Length(1),             // Gap between messages and prompt
             Constraint::Length(prompt_height), // Prompt + status
         ])
         .split(area);
@@ -74,10 +75,10 @@ pub fn render_session(
 
     // Apply same horizontal padding to prompt area for alignment
     let prompt_area = Rect::new(
-        chunks[1].x + MESSAGE_PADDING_X,
-        chunks[1].y,
-        chunks[1].width.saturating_sub(MESSAGE_PADDING_X * 2),
-        chunks[1].height,
+        chunks[2].x + MESSAGE_PADDING_X,
+        chunks[2].y,
+        chunks[2].width.saturating_sub(MESSAGE_PADDING_X * 2),
+        chunks[2].height,
     );
 
     render_prompt(
@@ -127,7 +128,7 @@ fn render_message_list(
     // Calculate content positions and render visible messages with smooth scrolling
     // y_offset tracks position in virtual content space
     // screen_y tracks where we're rendering on screen
-    let mut content_y: u16 = 0;
+    let mut content_y: u16 = 1; // Start at 1 for top padding
 
     for message in messages {
         let msg_height = estimate_message_height(message, padded_area.width);
@@ -250,7 +251,7 @@ pub fn calculate_content_height(
     streaming_text: &str,
     width: u16,
 ) -> u16 {
-    let mut total: u16 = 0;
+    let mut total: u16 = 1; // Start with 1 for top padding
 
     for message in messages {
         total = total.saturating_add(estimate_message_height(message, width));
@@ -323,15 +324,15 @@ mod tests {
     #[test]
     fn calculate_content_height_empty() {
         let height = calculate_content_height(&[], "", 80);
-        assert_eq!(height, 0);
+        assert_eq!(height, 1); // 1 for top padding
     }
 
     #[test]
     fn calculate_content_height_single_message() {
         let messages = vec![user_message("hello")];
         let height = calculate_content_height(&messages, "", 80);
-        // 3 (user message with padding) + 1 (spacing) = 4
-        assert_eq!(height, 4);
+        // 1 (top padding) + 3 (user message with padding) + 1 (spacing) = 5
+        assert_eq!(height, 5);
     }
 
     #[test]
@@ -342,8 +343,8 @@ mod tests {
             user_message("third"),
         ];
         let height = calculate_content_height(&messages, "", 80);
-        // (3 + 1) + (1 + 1) + (3 + 1) = 10
-        assert_eq!(height, 10);
+        // 1 (top padding) + (3 + 1) + (1 + 1) + (3 + 1) = 11
+        assert_eq!(height, 11);
     }
 
     #[test]
@@ -351,14 +352,14 @@ mod tests {
         let messages = vec![user_message("hello")];
         let streaming = "streaming text";
         let height = calculate_content_height(&messages, streaming, 80);
-        // 4 (user message with padding + spacing) + 1 (streaming) = 5
-        assert_eq!(height, 5);
+        // 1 (top padding) + 3 (user message) + 1 (spacing) + 1 (streaming) = 6
+        assert_eq!(height, 6);
     }
 
     #[test]
     fn calculate_content_height_streaming_multiline() {
         let streaming = "line one\nline two";
         let height = calculate_content_height(&[], streaming, 80);
-        assert_eq!(height, 2);
+        assert_eq!(height, 3); // 1 (top padding) + 2 (streaming lines)
     }
 }
