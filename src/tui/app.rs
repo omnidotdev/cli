@@ -293,6 +293,18 @@ pub struct App {
 
     /// Current reasoning effort level for thinking-capable models.
     pub reasoning_effort: ReasoningEffort,
+
+    /// Queued user messages to be processed when agent is available.
+    pub pending_messages: Vec<String>,
+
+    /// Track first Esc press for double-Esc cancellation.
+    pub esc_pressed_once: bool,
+
+    /// Track first backspace on empty input for double-backspace delete.
+    pub backspace_on_empty_once: bool,
+
+    /// Handle to the spawned chat task for cancellation.
+    pub chat_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Default for App {
@@ -437,6 +449,10 @@ impl App {
             prompt_area: None,
             tool_message_areas: Vec::new(),
             reasoning_effort: ReasoningEffort::default(),
+            pending_messages: Vec::new(),
+            esc_pressed_once: false,
+            backspace_on_empty_once: false,
+            chat_handle: None,
         }
     }
 
@@ -874,8 +890,11 @@ impl App {
     }
 
     /// Finalize streaming text into an assistant message.
-    pub fn finalize_streaming(&mut self) {
+    pub fn finalize_streaming(&mut self, cancelled: bool) {
         self.finalize_streaming_thinking();
+        if cancelled && !self.streaming_text.is_empty() {
+            self.streaming_text.push_str("\n\n--- Cancelled ---");
+        }
         if !self.streaming_text.is_empty() {
             let text = std::mem::take(&mut self.streaming_text);
             self.add_assistant_message(text);
@@ -1155,5 +1174,31 @@ mod tests {
         assert_eq!(app.is_tool_message_at(20, 40), Some(8));
         assert_eq!(app.is_tool_message_at(30, 40), Some(12));
         assert_eq!(app.is_tool_message_at(15, 40), None);
+    }
+
+    #[test]
+    fn test_pending_messages_default_empty() {
+        let app = App::new();
+        assert!(app.pending_messages.is_empty());
+    }
+
+    #[test]
+    fn test_esc_and_backspace_flags_default_false() {
+        let app = App::new();
+        assert!(!app.esc_pressed_once);
+        assert!(!app.backspace_on_empty_once);
+    }
+
+    #[test]
+    fn test_finalize_streaming_cancelled() {
+        let mut app = App::new();
+        app.streaming_text = "partial response".to_string();
+        app.finalize_streaming(true);
+        assert_eq!(app.messages.len(), 1);
+        if let DisplayMessage::Assistant { text } = &app.messages[0] {
+            assert!(text.ends_with("--- Cancelled ---"));
+        } else {
+            panic!("Expected Assistant message");
+        }
     }
 }

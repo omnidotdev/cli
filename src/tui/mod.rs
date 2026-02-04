@@ -223,11 +223,28 @@ async fn run_app(
                 ViewState::Session => {
                     // Session view with messages and bottom prompt
                     // Show activity status, or "Thinking..." if loading with no specific status
-                    let status = if app.loading {
-                        Some(app.activity_status.as_deref().unwrap_or("Thinking..."))
-                    } else {
-                        None
+                    let status = {
+                        let queue_count = app.pending_messages.len();
+                        let queue_suffix = if queue_count > 0 {
+                            format!(" [{queue_count}]")
+                        } else {
+                            String::new()
+                        };
+                        
+                        if app.esc_pressed_once && app.loading {
+                            Some(format!("press esc to cancel{queue_suffix}"))
+                        } else if app.backspace_on_empty_once && queue_count > 0 {
+                            Some(format!("press backspace to delete last queued{queue_suffix}"))
+                        } else if app.loading {
+                            let base = app.activity_status.as_deref().unwrap_or("Thinking...");
+                            Some(format!("{base}{queue_suffix}"))
+                        } else if queue_count > 0 {
+                            Some(format!("[{queue_count}]"))
+                        } else {
+                            None
+                        }
                     };
+                    let status = status.as_deref();
                     render_session(
                         f,
                         area,
@@ -391,7 +408,7 @@ async fn run_app(
                     }
                     Some(ChatMessage::Tool { name, invocation, output, is_error }) => {
                         // Finalize any pending streaming text before tool message
-                        app.finalize_streaming();
+                        app.finalize_streaming(false);
                         // Clear activity status
                         app.activity_status = None;
                         // Add tool message
@@ -405,32 +422,50 @@ async fn run_app(
                     }
                     Some(ChatMessage::Done(agent)) => {
                         // Finalize streaming text into an assistant message
-                        app.finalize_streaming();
+                        app.finalize_streaming(false);
 
                         // Save conversation history
                         if let Err(e) = agent.save_history() {
                             tracing::warn!("failed to save history: {e}");
                         }
                         app.agent = Some(agent);
-                        app.loading = false;
                         app.activity_status = None;
                         app.chat_rx = None;
+                        app.chat_handle = None;
+                        
+                        // Process next queued message if any
+                        if app.pending_messages.is_empty() {
+                            app.loading = false;
+                        } else {
+                            let next_prompt = app.pending_messages.remove(0);
+                            app.input = next_prompt;
+                            start_chat(app, permission_tx.clone());
+                        }
                     }
                     Some(ChatMessage::Error(e, agent)) => {
                         // Finalize any partial streaming text
-                        app.finalize_streaming();
+                        app.finalize_streaming(false);
 
                         // Add error message
                         app.messages.push(DisplayMessage::tool_error("Error", &e));
 
                         app.agent = Some(agent);
                         let _ = write!(app.output, "\nError: {e}");
-                        app.loading = false;
                         app.activity_status = None;
                         app.chat_rx = None;
+                        app.chat_handle = None;
+                        
+                        // Process next queued message if any
+                        if app.pending_messages.is_empty() {
+                            app.loading = false;
+                        } else {
+                            let next_prompt = app.pending_messages.remove(0);
+                            app.input = next_prompt;
+                            start_chat(app, permission_tx.clone());
+                        }
                     }
                     None => {
-                        app.finalize_streaming();
+                        app.finalize_streaming(false);
                         app.loading = false;
                         app.activity_status = None;
                         app.chat_rx = None;
@@ -512,7 +547,7 @@ fn handle_key(
                 if app.loading {
                     // Cancel streaming
                     app.chat_rx = None;
-                    app.finalize_streaming();
+                    app.finalize_streaming(true);
                     app.loading = false;
                 } else if app.input.is_empty() {
                     return true; // Exit.
@@ -576,7 +611,16 @@ fn handle_key(
     // Handle regular keys
     match code {
         KeyCode::Enter => {
-            if !app.input.is_empty() && !app.loading {
+            // Queue message if loading
+            if !app.input.is_empty() && app.loading {
+                if app.pending_messages.len() < 10 {
+                    app.pending_messages.push(app.input.clone());
+                    app.clear_input();
+                    app.esc_pressed_once = false;
+                    app.backspace_on_empty_once = false;
+                }
+                // If queue full, just ignore (don't submit)
+            } else if !app.input.is_empty() && !app.loading {
                 // If dropdown is visible, execute selected item
                 if app.show_command_dropdown {
                     match dropdown_mode(&app.input) {
@@ -749,6 +793,8 @@ fn handle_key(
             }
         }
         KeyCode::Char(c) => {
+            app.backspace_on_empty_once = false; // Reset double-action flag
+            app.esc_pressed_once = false; // Reset other double-action flag too
             // Allow typing while agent is responding
             app.insert_char(c);
             // Update dropdown visibility
@@ -758,8 +804,19 @@ fn handle_key(
             }
         }
         KeyCode::Backspace => {
-            // Allow backspace while agent is responding
-            app.delete_char();
+            if app.input.is_empty() && !app.pending_messages.is_empty() {
+                // Double-backspace to delete last queued message
+                if app.backspace_on_empty_once {
+                    app.pending_messages.pop();
+                    app.backspace_on_empty_once = false;
+                } else {
+                    app.backspace_on_empty_once = true;
+                }
+            } else {
+                // Normal backspace - delete character
+                app.delete_char();
+                app.backspace_on_empty_once = false; // Reset on any actual typing
+            }
             // Update dropdown visibility
             app.show_command_dropdown = should_show_dropdown(&app.input);
             if app.show_command_dropdown {
@@ -767,10 +824,34 @@ fn handle_key(
             }
         }
         KeyCode::Esc => {
-            // Dismiss dropdown and clear input
-            if app.show_command_dropdown {
-                app.show_command_dropdown = false;
-                app.clear_input();
+            if app.loading {
+                // Double-Esc to cancel
+                if app.esc_pressed_once {
+                    // Second Esc - full cancellation
+                    // 1. Abort the spawned task
+                    if let Some(handle) = app.chat_handle.take() {
+                        handle.abort();
+                    }
+                    // 2. Clear the queue
+                    app.pending_messages.clear();
+                    // 3. Finalize streaming with cancelled marker
+                    app.finalize_streaming(true);
+                    // 4. Reset state
+                    app.loading = false;
+                    app.esc_pressed_once = false;
+                    app.backspace_on_empty_once = false;
+                    app.activity_status = None;
+                    app.chat_rx = None;
+                } else {
+                    // First Esc - set flag (hint shown via status)
+                    app.esc_pressed_once = true;
+                }
+            } else {
+                // Not loading - existing behavior
+                if app.show_command_dropdown {
+                    app.show_command_dropdown = false;
+                    app.clear_input();
+                }
             }
         }
         KeyCode::Left => app.move_left(),
@@ -1679,7 +1760,7 @@ fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMess
     let (tx, rx) = mpsc::unbounded_channel();
     app.chat_rx = Some(rx);
 
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
         let mut agent = agent;
         let tx_clone = tx.clone();
 
@@ -1742,6 +1823,7 @@ fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMess
             }
         }
     });
+    app.chat_handle = Some(handle);
 }
 
 #[cfg(test)]
