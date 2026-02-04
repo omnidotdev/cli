@@ -14,6 +14,7 @@ use ratatui::{
 };
 
 use super::prompt::{render_prompt, PromptMode};
+use super::text_layout::TextLayout;
 use crate::core::agent::AgentMode;
 use crate::tui::app::{LOGO_LINES, LOGO_SHADOW};
 
@@ -136,7 +137,13 @@ pub fn render_welcome(
 
     // Only render footer if terminal is wide enough
     if area.width >= MIN_WIDTH_FOR_FOOTER && area.height > 4 {
-        let tip_y = prompt_y + 8;
+        // Calculate prompt height based on visual lines
+        let estimated_width = area.width.saturating_sub(7).max(1) as usize;
+        let layout = TextLayout::new(input, estimated_width);
+        let prompt_visual_lines = layout.total_lines.min(6); // cap at 6
+        let prompt_box_height = prompt_visual_lines as u16 + 4; // +4 for padding
+
+        let tip_y = prompt_y + prompt_box_height + 1;
         let footer_y = area.y + area.height.saturating_sub(1);
 
         // Render ecosystem tip centered with yellow circle
