@@ -312,4 +312,235 @@ mod tests {
         let result = prepare_message_with_files("check @/nonexistent/file.txt");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn parse_at_mentions_single() {
+        let result = parse_at_mentions("check @src/main.rs");
+        assert_eq!(result, vec!["src/main.rs"]);
+    }
+
+    #[test]
+    fn parse_at_mentions_multiple() {
+        let result = parse_at_mentions("@file1.txt and @file2.txt");
+        assert_eq!(result, vec!["file1.txt", "file2.txt"]);
+    }
+
+    #[test]
+    fn parse_at_mentions_no_mentions() {
+        let result = parse_at_mentions("no mentions here");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn parse_at_mentions_at_start() {
+        let result = parse_at_mentions("@path/to/file.rs at start");
+        assert_eq!(result, vec!["path/to/file.rs"]);
+    }
+
+    #[test]
+    fn parse_at_mentions_multiple_spaces() {
+        let result = parse_at_mentions("@file1.txt   @file2.txt");
+        assert_eq!(result, vec!["file1.txt", "file2.txt"]);
+    }
+
+    #[test]
+    fn parse_at_mentions_with_newlines() {
+        let result = parse_at_mentions("@file1.txt\n@file2.txt");
+        assert_eq!(result, vec!["file1.txt", "file2.txt"]);
+    }
+
+    #[test]
+    fn parse_at_mentions_ignores_email() {
+        let result = parse_at_mentions("email user@example.com");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn parse_at_mentions_only_at_symbol() {
+        let result = parse_at_mentions("@");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn parse_at_mentions_at_with_space() {
+        let result = parse_at_mentions("@ ");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn parse_at_mentions_unicode_path() {
+        let result = parse_at_mentions("@src/café.rs");
+        assert_eq!(result, vec!["src/café.rs"]);
+    }
+
+    #[test]
+    fn parse_at_mentions_path_with_dots() {
+        let result = parse_at_mentions("@../src/main.rs");
+        assert_eq!(result, vec!["../src/main.rs"]);
+    }
+
+    #[test]
+    fn parse_at_mentions_path_with_underscores() {
+        let result = parse_at_mentions("@src/my_file_name.rs");
+        assert_eq!(result, vec!["src/my_file_name.rs"]);
+    }
+
+    #[test]
+    fn parse_at_mentions_path_with_hyphens() {
+        let result = parse_at_mentions("@src/my-file-name.rs");
+        assert_eq!(result, vec!["src/my-file-name.rs"]);
+    }
+
+    #[test]
+    fn read_file_for_context_success() {
+        // Create a temporary file for testing
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test_read_file_context.txt");
+        let test_content = "Hello, World!";
+
+        fs::write(&test_file, test_content).expect("Failed to write test file");
+
+        let result = read_file_for_context(test_file.to_str().unwrap());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), test_content);
+
+        // Cleanup
+        let _ = fs::remove_file(&test_file);
+    }
+
+    #[test]
+    fn read_file_for_context_missing() {
+        let result = read_file_for_context("/nonexistent/path/file.txt");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("file not found"));
+    }
+
+    #[test]
+    fn read_file_for_context_is_directory() {
+        let temp_dir = std::env::temp_dir();
+        let result = read_file_for_context(temp_dir.to_str().unwrap());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not a file"));
+    }
+
+    #[test]
+    fn read_file_for_context_too_large() {
+        // Create a file larger than MAX_FILE_SIZE
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test_large_file.txt");
+        let large_content = "x".repeat(MAX_FILE_SIZE + 1);
+
+        fs::write(&test_file, &large_content).expect("Failed to write test file");
+
+        let result = read_file_for_context(test_file.to_str().unwrap());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("file too large"));
+
+        // Cleanup
+        let _ = fs::remove_file(&test_file);
+    }
+
+    #[test]
+    fn prepare_message_format() {
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test_prepare_message.txt");
+        let test_content = "file content";
+
+        fs::write(&test_file, test_content).expect("Failed to write test file");
+
+        let file_path = test_file.to_str().unwrap();
+        let result = prepare_message_with_files(&format!("check @{file_path}"));
+
+        assert!(result.is_ok());
+        let message = result.unwrap();
+        assert!(message.contains("<file-context"));
+        assert!(message.contains(&format!("path=\"{file_path}\"")));
+        assert!(message.contains("file content"));
+        assert!(message.contains("</file-context>"));
+        assert!(message.contains("check @"));
+
+        // Cleanup
+        let _ = fs::remove_file(&test_file);
+    }
+
+    #[test]
+    fn prepare_message_multiple_files() {
+        let temp_dir = std::env::temp_dir();
+        let file1 = temp_dir.join("test_file1.txt");
+        let file2 = temp_dir.join("test_file2.txt");
+
+        fs::write(&file1, "content1").expect("Failed to write file1");
+        fs::write(&file2, "content2").expect("Failed to write file2");
+
+        let path1 = file1.to_str().unwrap();
+        let path2 = file2.to_str().unwrap();
+        let result = prepare_message_with_files(&format!("@{path1} and @{path2}"));
+
+        assert!(result.is_ok());
+        let message = result.unwrap();
+        assert!(message.contains("content1"));
+        assert!(message.contains("content2"));
+
+        // Cleanup
+        let _ = fs::remove_file(&file1);
+        let _ = fs::remove_file(&file2);
+    }
+
+    #[test]
+    fn prepare_message_total_size_limit() {
+        let temp_dir = std::env::temp_dir();
+        let test_file1 = temp_dir.join("test_total_size_1.txt");
+        let test_file2 = temp_dir.join("test_total_size_2.txt");
+        // Create files that together exceed MAX_TOTAL_SIZE
+        let half_size = (MAX_TOTAL_SIZE / 2) + 1000;
+        let large_content = "x".repeat(half_size);
+
+        fs::write(&test_file1, &large_content).expect("Failed to write test file 1");
+        fs::write(&test_file2, &large_content).expect("Failed to write test file 2");
+
+        let path1 = test_file1.to_str().unwrap();
+        let path2 = test_file2.to_str().unwrap();
+        let result = prepare_message_with_files(&format!("@{path1} @{path2}"));
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err();
+        assert!(err_msg.contains("too large"));
+
+        // Cleanup
+        let _ = fs::remove_file(&test_file1);
+        let _ = fs::remove_file(&test_file2);
+    }
+
+    #[test]
+    fn prepare_message_preserves_user_text() {
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test_preserve.txt");
+
+        fs::write(&test_file, "file content").expect("Failed to write test file");
+
+        let file_path = test_file.to_str().unwrap();
+        let user_text = format!("Please review @{file_path} and fix the bugs");
+        let result = prepare_message_with_files(&user_text);
+
+        assert!(result.is_ok());
+        let message = result.unwrap();
+        assert!(message.contains("Please review"));
+        assert!(message.contains("and fix the bugs"));
+
+        // Cleanup
+        let _ = fs::remove_file(&test_file);
+    }
+
+    #[test]
+    fn parse_at_mentions_consecutive() {
+        let result = parse_at_mentions("@file1@file2");
+        // @ in middle of word should not trigger
+        assert_eq!(result, vec!["file1@file2"]);
+    }
+
+    #[test]
+    fn parse_at_mentions_with_tabs() {
+        let result = parse_at_mentions("@file1.txt\t@file2.txt");
+        assert_eq!(result, vec!["file1.txt", "file2.txt"]);
+    }
 }

@@ -5,11 +5,11 @@
 use std::path::PathBuf;
 
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Clear, Paragraph},
-    Frame,
 };
 
 /// Dropdown background color
@@ -371,15 +371,25 @@ mod tests {
     }
 
     #[test]
-    fn test_fuzzy_filter_files_case_insensitive() {
+    fn test_fuzzy_filter_case_insensitive() {
         let files = vec![
             PathBuf::from("src/Main.rs"),
             PathBuf::from("src/main.rs"),
             PathBuf::from("tests/test.rs"),
         ];
 
-        let results = fuzzy_filter_files("MAIN", &files);
+        let results = fuzzy_filter_files("main", &files);
         assert_eq!(results.len(), 2);
+        assert!(
+            results
+                .iter()
+                .any(|p| p.to_string_lossy().contains("Main.rs"))
+        );
+        assert!(
+            results
+                .iter()
+                .any(|p| p.to_string_lossy().contains("main.rs"))
+        );
     }
 
     #[test]
@@ -403,5 +413,169 @@ mod tests {
 
         let results = fuzzy_filter_files("", &files);
         assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_fuzzy_filter_sorts_by_length() {
+        let files = vec![
+            PathBuf::from("src/components/button/main.rs"),
+            PathBuf::from("src/main.rs"),
+            PathBuf::from("main.rs"),
+        ];
+
+        let results = fuzzy_filter_files("main", &files);
+        assert_eq!(results.len(), 3);
+        // Shorter paths should come first
+        assert_eq!(results[0], PathBuf::from("main.rs"));
+        assert_eq!(results[1], PathBuf::from("src/main.rs"));
+        assert_eq!(results[2], PathBuf::from("src/components/button/main.rs"));
+    }
+
+    #[test]
+    fn test_should_show_file_dropdown_word_boundary() {
+        // @ at start of input
+        assert!(should_show_file_dropdown("@", 1));
+        // @ after space
+        assert!(should_show_file_dropdown("hello @", 7));
+        // @ after space with query
+        assert!(should_show_file_dropdown("hello @src/", 11));
+        // @ at start with query
+        assert!(should_show_file_dropdown("@src/main.rs", 12));
+    }
+
+    #[test]
+    fn test_should_show_file_dropdown_middle_of_word() {
+        // @ in middle of word (email-like)
+        assert!(!should_show_file_dropdown("email@example.com", 6));
+        // @ in middle of word (not at boundary)
+        assert!(!should_show_file_dropdown("test@file", 5));
+        // @ in middle of word with cursor after
+        assert!(!should_show_file_dropdown("user@domain.com", 10));
+    }
+
+    #[test]
+    fn test_extract_file_query_basic() {
+        assert_eq!(extract_file_query("@src/main.rs", 12), "src/main.rs");
+        assert_eq!(extract_file_query("@file.txt", 9), "file.txt");
+    }
+
+    #[test]
+    fn test_extract_file_query_with_space_before() {
+        assert_eq!(extract_file_query("hello @src/main.rs", 18), "src/main.rs");
+        assert_eq!(extract_file_query("check @file.txt please", 15), "file.txt");
+    }
+
+    #[test]
+    fn test_extract_file_query_partial() {
+        assert_eq!(extract_file_query("@src/main", 9), "src/main");
+        assert_eq!(extract_file_query("@src/", 5), "src/");
+    }
+
+    #[test]
+    fn test_extract_file_query_no_at_symbol() {
+        assert_eq!(extract_file_query("hello world", 11), "");
+        assert_eq!(extract_file_query("no mention here", 15), "");
+    }
+
+    #[test]
+    fn test_extract_file_query_at_in_email() {
+        // @ in email should not trigger
+        assert_eq!(extract_file_query("user@example.com", 10), "");
+    }
+
+    #[test]
+    fn test_extract_file_query_cursor_before_at() {
+        assert_eq!(extract_file_query("@ hello", 0), "");
+    }
+
+    #[test]
+    fn test_extract_file_query_cursor_in_middle() {
+        assert_eq!(extract_file_query("@src/main.rs", 6), "src/m");
+    }
+
+    #[test]
+    fn test_list_project_files_filters_binaries() {
+        // This test verifies the binary extension filtering logic
+        // We can't easily test the full function without a real project,
+        // but we can verify the BINARY_EXTENSIONS constant is correct
+        assert!(BINARY_EXTENSIONS.contains(&"exe"));
+        assert!(BINARY_EXTENSIONS.contains(&"dll"));
+        assert!(BINARY_EXTENSIONS.contains(&"so"));
+        assert!(BINARY_EXTENSIONS.contains(&"dylib"));
+        assert!(BINARY_EXTENSIONS.contains(&"png"));
+        assert!(BINARY_EXTENSIONS.contains(&"jpg"));
+        assert!(BINARY_EXTENSIONS.contains(&"mp4"));
+        assert!(BINARY_EXTENSIONS.contains(&"zip"));
+    }
+
+    #[test]
+    fn test_fuzzy_filter_unicode_paths() {
+        let files = vec![
+            PathBuf::from("src/café.rs"),
+            PathBuf::from("src/main.rs"),
+            PathBuf::from("tests/tëst.rs"),
+        ];
+
+        let results = fuzzy_filter_files("café", &files);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0], PathBuf::from("src/café.rs"));
+    }
+
+    #[test]
+    fn test_fuzzy_filter_no_matches() {
+        let files = vec![PathBuf::from("src/main.rs"), PathBuf::from("tests/test.rs")];
+
+        let results = fuzzy_filter_files("xyz", &files);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_should_show_file_dropdown_cursor_at_end() {
+        assert!(should_show_file_dropdown("@", 1));
+        assert!(should_show_file_dropdown("@src", 4));
+    }
+
+    #[test]
+    fn test_should_show_file_dropdown_cursor_beyond_text() {
+        // Cursor position beyond text length should return false
+        assert!(!should_show_file_dropdown("@src", 10));
+    }
+
+    #[test]
+    fn test_extract_file_query_empty_input() {
+        assert_eq!(extract_file_query("", 0), "");
+    }
+
+    #[test]
+    fn test_extract_file_query_only_at_symbol() {
+        assert_eq!(extract_file_query("@", 1), "");
+    }
+
+    #[test]
+    fn test_fuzzy_filter_partial_path_match() {
+        let files = vec![
+            PathBuf::from("src/components/button.rs"),
+            PathBuf::from("src/components/input.rs"),
+            PathBuf::from("src/utils/helpers.rs"),
+        ];
+
+        let results = fuzzy_filter_files("button", &files);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0], PathBuf::from("src/components/button.rs"));
+    }
+
+    #[test]
+    fn test_fuzzy_filter_multiple_matches_sorted() {
+        let files = vec![
+            PathBuf::from("a/b/c/d/e/f/test.rs"),
+            PathBuf::from("test.rs"),
+            PathBuf::from("src/test.rs"),
+        ];
+
+        let results = fuzzy_filter_files("test", &files);
+        assert_eq!(results.len(), 3);
+        // Verify sorted by length
+        assert!(results[0].to_string_lossy().len() <= results[1].to_string_lossy().len());
+        assert!(results[1].to_string_lossy().len() <= results[2].to_string_lossy().len());
     }
 }
