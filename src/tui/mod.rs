@@ -345,8 +345,16 @@ async fn run_app(
                                         }
                                     }
                                     MouseEventKind::Down(_button) => {
-                                        if let Some(_message_index) = app.is_tool_message_at(mouse.row, mouse.column) {
-                                            // Tool message clicked - dialog opening will be handled in Task 4
+                                        if let Some(message_index) = app.is_tool_message_at(mouse.row, mouse.column) {
+                                            if let Some(DisplayMessage::Tool { name, invocation, output, .. }) = app.messages.get(message_index) {
+                                                let dialog = ExpandedToolDialog {
+                                                    tool_name: name.clone(),
+                                                    invocation: invocation.clone(),
+                                                    output: output.clone(),
+                                                    scroll_offset: 0,
+                                                };
+                                                app.active_dialog = Some(ActiveDialog::ToolOutput(dialog));
+                                            }
                                         }
                                     }
                                     _ => {}
