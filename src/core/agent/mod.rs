@@ -445,7 +445,7 @@ impl Agent {
 
         // Make a simple completion request (no tools, no streaming needed)
         let request = CompletionRequest {
-            model: "claude-3-5-haiku-latest".to_string(), // Use haiku for cheap/fast titling
+            model: self.model.clone(),
             max_tokens: 50,
             messages: vec![Message {
                 role: Role::User,
