@@ -286,8 +286,6 @@ fn render_hints(frame: &mut Frame, area: Rect, status_left: Option<&str>) {
         Line::from(vec![
             Span::styled("tab", Style::default().fg(Color::White)),
             Span::styled(" mode  ", Style::default().fg(DIMMED)),
-            Span::styled("/", Style::default().fg(Color::White)),
-            Span::styled(" commands  ", Style::default().fg(DIMMED)),
             Span::styled("ctrl+t", Style::default().fg(Color::White)),
             Span::styled(" effort", Style::default().fg(DIMMED)),
         ])
