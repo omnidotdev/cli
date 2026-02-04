@@ -175,8 +175,10 @@ pub fn render_prompt(
 
     render_hints(frame, hints_area, status_left);
 
-    let cursor_x = box_area.x + 2 + cursor_info.col.min(u16::MAX as usize) as u16;
-    let cursor_y = box_area.y + 1 + cursor_info.visible_line as u16;
+    let cursor_x = (box_area.x + 2 + cursor_info.col as u16)
+        .min(box_area.x + box_area.width.saturating_sub(1));
+    let cursor_y = (box_area.y + 1 + cursor_info.visible_line as u16)
+        .min(box_area.y + box_area.height.saturating_sub(1));
 
     ((cursor_x, cursor_y), box_area)
 }

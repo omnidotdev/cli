@@ -83,12 +83,17 @@ impl TextLayout {
         for (row, line) in self.lines.iter().enumerate() {
             if cursor_char >= line.char_start && cursor_char <= line.char_end {
                 let col = cursor_char - line.char_start;
+                // Clamp col to the actual line width to prevent cursor from leaking
+                let col = col.min(line.text.chars().count());
                 return (row, col);
             }
         }
         let last_row = self.lines.len().saturating_sub(1);
         if let Some(last_line) = self.lines.last() {
-            (last_row, last_line.char_end - last_line.char_start)
+            let col = last_line.char_end - last_line.char_start;
+            // Clamp col to the actual line width
+            let col = col.min(last_line.text.chars().count());
+            (last_row, col)
         } else {
             (0, 0)
         }
@@ -399,6 +404,19 @@ mod tests {
         let layout = TextLayout::new("hello", 10);
         assert_eq!(layout.cursor_to_visual(5), (0, 5)); // cursor at end
         assert_eq!(layout.cursor_to_visual(100), (0, 5)); // past end
+    }
+
+    #[test]
+    fn test_cursor_bounded_trailing_spaces() {
+        let layout = TextLayout::new("hello     ", 8);
+        let (row, col) = layout.cursor_to_visual(10);
+        assert_eq!(row, 0);
+        assert!(
+            col <= layout.lines[row].text.chars().count(),
+            "col {} exceeds line width {}",
+            col,
+            layout.lines[row].text.chars().count()
+        );
     }
 
     #[test]
