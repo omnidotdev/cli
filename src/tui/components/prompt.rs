@@ -9,6 +9,7 @@ use ratatui::{
 };
 
 use super::command_palette::CENTERED_MAX_WIDTH;
+use super::text_layout::TextLayout;
 use crate::core::agent::AgentMode;
 
 const BRAND_TEAL: Color = Color::Rgb(77, 201, 176);
@@ -199,37 +200,9 @@ fn build_prompt_content(
     let (wrapped, visual_line, cursor_col) = if input.is_empty() {
         (vec![placeholder.to_string()], 0, 0)
     } else {
-        let wrapped: Vec<String> = input
-            .split('\n')
-            .flat_map(|line| wrap_line(line, text_width))
-            .collect();
-
-        let before_cursor = &input[..cursor];
-        let mut visual_line = 0;
-        let mut cursor_col = 0;
-
-        for (i, line) in input.split('\n').enumerate() {
-            let line_byte_start: usize = input.split('\n').take(i).map(|l| l.len() + 1).sum();
-            let line_byte_end = line_byte_start + line.len();
-
-            if cursor <= line_byte_start {
-                break;
-            }
-            if cursor <= line_byte_end {
-                let chars_before = before_cursor[line_byte_start..].chars().count();
-                let wrapped_row = chars_before / text_width;
-                cursor_col = chars_before % text_width;
-                visual_line += wrapped_row;
-                break;
-            }
-            let chars = line.chars().count();
-            let line_wrapped = if chars == 0 {
-                1
-            } else {
-                chars.div_ceil(text_width)
-            };
-            visual_line += line_wrapped;
-        }
+        let layout = TextLayout::new(input, text_width);
+        let wrapped: Vec<String> = layout.lines.iter().map(|l| l.text.clone()).collect();
+        let (visual_line, cursor_col) = layout.cursor_to_visual(cursor);
 
         (wrapped, visual_line, cursor_col)
     };
