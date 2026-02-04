@@ -604,6 +604,10 @@ impl App {
         self.edit_buffer.delete_char_after();
     }
 
+    pub fn delete_range(&mut self, start: usize, end: usize) {
+        self.edit_buffer.delete_range(start, end);
+    }
+
     pub fn clear_input(&mut self) {
         self.edit_buffer.clear();
     }

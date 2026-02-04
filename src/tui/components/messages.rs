@@ -1,17 +1,19 @@
 //! Message rendering components.
 
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
+    Frame,
 };
 
 use super::markdown::MarkdownStreamParser;
+use super::prompt::find_at_mention_spans;
 use super::text_layout::TextLayout;
 use crate::core::agent::AgentMode;
-use crate::tui::message::{DisplayMessage, icons, tool_icon};
+use crate::core::session::FileReference;
+use crate::tui::message::{icons, tool_icon, DisplayMessage};
 
 const BRAND_TEAL: Color = Color::Rgb(77, 201, 176);
 const PLAN_PURPLE: Color = Color::Rgb(160, 100, 200);
@@ -23,6 +25,7 @@ const SUCCESS_COLOR: Color = Color::Rgb(77, 201, 176);
 const SELECTION_BG: Color = Color::Rgb(60, 80, 100);
 const SELECTION_FG: Color = Color::White;
 const THINKING_PREFIX: Color = Color::Rgb(100, 160, 150);
+const FILE_REF_COLOR: Color = Color::Rgb(200, 160, 100);
 
 pub const DIFF_ADD: Color = Color::Rgb(100, 180, 100);
 pub const DIFF_DEL: Color = Color::Rgb(220, 100, 100);
@@ -62,12 +65,15 @@ pub fn render_message_with_scroll(
     selected_text: &mut String,
 ) {
     match message {
-        DisplayMessage::User { text, mode, .. } => {
+        DisplayMessage::User {
+            text, mode, files, ..
+        } => {
             render_user_message_with_scroll(
                 frame,
                 area,
                 text,
                 *mode,
+                files,
                 scroll_offset,
                 selection,
                 selected_text,
@@ -120,6 +126,7 @@ fn render_user_message_with_scroll(
     area: Rect,
     text: &str,
     mode: AgentMode,
+    files: &[FileReference],
     scroll_offset: u16,
     selection: Option<(u16, u16)>,
     selected_text: &mut String,
@@ -132,12 +139,17 @@ fn render_user_message_with_scroll(
     let text_width = area.width.saturating_sub(horizontal_padding).max(1) as usize;
     let layout = TextLayout::new(text, text_width);
     let content_height = layout.total_lines as u16;
-    let total_height = content_height + VERTICAL_PADDING;
+    let files_section_height = if files.is_empty() {
+        0
+    } else {
+        (files.len() as u16) + 2
+    };
+    let total_height = content_height + VERTICAL_PADDING + files_section_height;
     let visible_height = total_height.saturating_sub(scroll_offset).min(area.height);
 
     let mut lines: Vec<Line> = Vec::new();
 
-    lines.push(Line::from("")); // Top padding
+    lines.push(Line::from(""));
 
     for (i, wrapped_line) in layout.lines.iter().enumerate() {
         #[allow(clippy::cast_possible_truncation)]
@@ -158,13 +170,27 @@ fn render_user_message_with_scroll(
                 ),
             ]));
         } else {
+            let mut line_spans = vec![Span::raw(" ")];
+            line_spans.extend(parse_text_with_mentions(&wrapped_line.text));
+            lines.push(Line::from(line_spans));
+        }
+    }
+
+    if !files.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::raw(" "),
+            Span::styled("Referenced files:", Style::default().fg(DIMMED)),
+        ]));
+        for file in files {
             lines.push(Line::from(vec![
-                Span::raw(" "),
-                Span::raw(wrapped_line.text.clone()),
+                Span::raw("   "),
+                Span::styled(&file.path, Style::default().fg(FILE_REF_COLOR)),
             ]));
         }
     }
-    lines.push(Line::from("")); // Bottom padding
+
+    lines.push(Line::from(""));
 
     let visible_lines: Vec<Line> = lines.into_iter().skip(scroll_offset as usize).collect();
 
@@ -182,6 +208,33 @@ fn render_user_message_with_scroll(
 
     let render_area = Rect::new(area.x, area.y, area.width, visible_height);
     frame.render_widget(para, render_area);
+}
+
+fn parse_text_with_mentions(text: &str) -> Vec<Span<'static>> {
+    let mentions = find_at_mention_spans(text);
+    if mentions.is_empty() {
+        return vec![Span::raw(text.to_string())];
+    }
+
+    let mut spans = Vec::new();
+    let mut last_end = 0;
+
+    for (start, end) in mentions {
+        if start > last_end {
+            spans.push(Span::raw(text[last_end..start].to_string()));
+        }
+        spans.push(Span::styled(
+            text[start..end].to_string(),
+            Style::default().fg(FILE_REF_COLOR),
+        ));
+        last_end = end;
+    }
+
+    if last_end < text.len() {
+        spans.push(Span::raw(text[last_end..].to_string()));
+    }
+
+    spans
 }
 
 #[allow(clippy::cast_possible_truncation)]
@@ -420,10 +473,20 @@ fn render_reasoning_message_with_scroll(
 pub fn message_height(message: &DisplayMessage, width: u16) -> u16 {
     let width = width.max(1) as usize;
     match message {
-        DisplayMessage::User { text, mode: _, .. } => {
+        DisplayMessage::User {
+            text,
+            files,
+            mode: _,
+            ..
+        } => {
             let text_width = width.saturating_sub(3).max(1);
             let layout = TextLayout::new(text, text_width);
-            layout.total_lines as u16 + 2
+            let files_height = if files.is_empty() {
+                0
+            } else {
+                (files.len() as u16) + 2
+            };
+            layout.total_lines as u16 + 2 + files_height
         }
         DisplayMessage::Assistant { text } => {
             let layout = TextLayout::new(text, width);

@@ -1,11 +1,11 @@
 //! Reusable prompt component.
 
 use ratatui::{
-    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph, Wrap},
+    Frame,
 };
 
 use super::command_palette::CENTERED_MAX_WIDTH;
@@ -17,6 +17,7 @@ const PLAN_PURPLE: Color = Color::Rgb(160, 100, 200);
 const DIMMED: Color = Color::Rgb(100, 100, 110);
 const EFFORT_AMBER: Color = Color::Rgb(210, 160, 90);
 const INPUT_BG: Color = Color::Rgb(22, 24, 28);
+const FILE_REF_COLOR: Color = Color::Rgb(200, 160, 100);
 
 fn format_model_name(model: &str) -> String {
     let name = model
@@ -47,6 +48,61 @@ fn format_model_name(model: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Find all @-mention spans in text (byte offsets).
+/// Pattern: `@` followed by non-whitespace until whitespace or end.
+pub fn find_at_mention_spans(text: &str) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    let mut chars = text.char_indices().peekable();
+
+    while let Some((i, c)) = chars.next() {
+        if c == '@' {
+            let start = i;
+            let mut end = start + c.len_utf8();
+
+            while let Some(&(next_i, next_c)) = chars.peek() {
+                if next_c.is_whitespace() {
+                    break;
+                }
+                end = next_i + next_c.len_utf8();
+                chars.next();
+            }
+
+            if end > start + 1 {
+                spans.push((start, end));
+            }
+        }
+    }
+
+    spans
+}
+
+fn parse_input_with_mentions(text: &str, base_style: Style) -> Vec<Span<'static>> {
+    let mentions = find_at_mention_spans(text);
+    if mentions.is_empty() {
+        return vec![Span::styled(text.to_string(), base_style)];
+    }
+
+    let mut spans = Vec::new();
+    let mut last_end = 0;
+
+    for (start, end) in mentions {
+        if start > last_end {
+            spans.push(Span::styled(text[last_end..start].to_string(), base_style));
+        }
+        spans.push(Span::styled(
+            text[start..end].to_string(),
+            Style::default().fg(FILE_REF_COLOR),
+        ));
+        last_end = end;
+    }
+
+    if last_end < text.len() {
+        spans.push(Span::styled(text[last_end..].to_string(), base_style));
+    }
+
+    spans
 }
 
 fn format_provider_name(provider: &str) -> String {
@@ -239,10 +295,13 @@ fn build_prompt_content(
     let mut content: Vec<Line<'static>> = vec![Line::from("")];
 
     for line in wrapped.iter().skip(scroll_offset).take(max_visible_lines) {
-        content.push(Line::from(vec![
-            Span::raw(" "),
-            Span::styled(line.clone(), text_style),
-        ]));
+        let mut line_spans = vec![Span::raw(" ")];
+        if input.is_empty() {
+            line_spans.push(Span::styled(line.clone(), text_style));
+        } else {
+            line_spans.extend(parse_input_with_mentions(line, text_style));
+        }
+        content.push(Line::from(line_spans));
     }
 
     content.push(Line::from(""));

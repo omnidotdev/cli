@@ -197,6 +197,14 @@ impl EditBuffer {
         self.text.truncate(self.cursor);
     }
 
+    pub fn delete_range(&mut self, start: usize, end: usize) {
+        if start < end && end <= self.text.len() {
+            self.text.drain(start..end);
+            self.cursor = start;
+            self.preferred_column = None;
+        }
+    }
+
     /// Delete word before cursor.
     pub fn delete_word(&mut self) {
         if self.cursor == 0 {

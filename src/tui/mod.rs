@@ -41,10 +41,10 @@ use app::{
 };
 use components::{
     DropdownMode, InputAction, MESSAGE_PADDING_X, TextLayout, build_keybinding_map,
-    calculate_content_height, default_keybindings, dropdown_mode, filter_commands, filter_models,
-    line_color, render_command_dropdown, render_model_dropdown, render_model_selection_dialog,
-    render_session, render_session_list, render_welcome, should_show_dropdown,
-    file_picker,
+    calculate_content_height, default_keybindings, dropdown_mode, file_picker, filter_commands,
+    filter_models, find_at_mention_spans, line_color, render_command_dropdown,
+    render_model_dropdown, render_model_selection_dialog, render_session, render_session_list,
+    render_welcome, should_show_dropdown,
 };
 use message::DisplayMessage;
 use state::ViewState;
@@ -52,6 +52,12 @@ use state::ViewState;
 fn keybinding_map() -> &'static HashMap<(KeyCode, KeyModifiers), InputAction> {
     static MAP: OnceLock<HashMap<(KeyCode, KeyModifiers), InputAction>> = OnceLock::new();
     MAP.get_or_init(|| build_keybinding_map(&default_keybindings()))
+}
+
+fn find_at_mention_span_ending_at(text: &str, cursor_pos: usize) -> Option<(usize, usize)> {
+    find_at_mention_spans(text)
+        .into_iter()
+        .find(|&(_, end)| end == cursor_pos)
 }
 
 /// Run the TUI application.
@@ -902,6 +908,11 @@ fn handle_key(
                 } else {
                     app.backspace_on_empty_once = true;
                 }
+            } else if let Some((start, end)) =
+                find_at_mention_span_ending_at(app.input(), app.cursor())
+            {
+                app.delete_range(start, end);
+                app.backspace_on_empty_once = false;
             } else {
                 app.delete_char();
                 app.backspace_on_empty_once = false;
