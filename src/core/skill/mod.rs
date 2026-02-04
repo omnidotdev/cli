@@ -121,10 +121,10 @@ impl SkillRegistry {
                             }
 
                             if skills.contains_key(&skill.name) {
-                                tracing::warn!(
+                                tracing::debug!(
                                     skill = %skill.name,
                                     path = %skill_file.display(),
-                                    "duplicate skill, using latest"
+                                    "duplicate skill found, using latest"
                                 );
                             }
 
