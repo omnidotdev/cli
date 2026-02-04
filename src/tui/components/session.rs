@@ -64,11 +64,12 @@ pub fn render_session(
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(1),
+                Constraint::Length(1),
                 Constraint::Length(queued_total_height),
                 Constraint::Length(prompt_height),
             ])
             .split(area);
-        (chunks, 2, Some(1))
+        (chunks, 3, Some(2))
     } else {
         let chunks = Layout::default()
             .direction(Direction::Vertical)

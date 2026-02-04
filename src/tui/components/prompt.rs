@@ -15,6 +15,7 @@ use crate::core::agent::{AgentMode, ReasoningEffort};
 const BRAND_TEAL: Color = Color::Rgb(77, 201, 176);
 const PLAN_PURPLE: Color = Color::Rgb(160, 100, 200);
 const DIMMED: Color = Color::Rgb(100, 100, 110);
+const EFFORT_AMBER: Color = Color::Rgb(210, 160, 90);
 const INPUT_BG: Color = Color::Rgb(22, 24, 28);
 
 fn format_model_name(model: &str) -> String {
@@ -259,7 +260,10 @@ fn build_prompt_content(
         Span::raw("  "),
         Span::styled(display_provider, Style::default().fg(DIMMED)),
         Span::styled(" · ", Style::default().fg(DIMMED)),
-        Span::styled(reasoning_effort.to_string(), Style::default().fg(DIMMED)),
+        Span::styled(
+            reasoning_effort.to_string(),
+            Style::default().fg(EFFORT_AMBER),
+        ),
     ]);
     content.push(footer);
     content.push(Line::from(""));

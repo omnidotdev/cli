@@ -903,9 +903,7 @@ impl App {
         if self.pending_messages.is_empty() {
             return None;
         }
-        let text = self.pending_messages.remove(0);
-        self.add_user_message(text.clone());
-        Some(text)
+        Some(self.pending_messages.remove(0))
     }
 
     pub fn remove_last_queued_message(&mut self) {
