@@ -2,6 +2,7 @@
 
 use std::fmt;
 
+use super::highlighting;
 use ratatui::{
     style::{Color, Style},
     text::{Line, Span},
@@ -20,6 +21,58 @@ pub const DIFF_DEL: Color = Color::Rgb(180, 80, 80);
 pub const DIFF_HUNK: Color = Color::Rgb(80, 140, 180);
 /// Color for line numbers in gutter (dimmed)
 const DIMMED: Color = Color::Rgb(100, 100, 110);
+
+fn diff_extension(diff: &ParsedDiff) -> Option<&str> {
+    diff.file_path
+        .as_deref()
+        .and_then(|path| path.rsplit('.').next())
+}
+
+const fn diff_background(tag: DiffTag) -> Option<Color> {
+    match tag {
+        DiffTag::Add => Some(DIFF_ADD),
+        DiffTag::Delete => Some(DIFF_DEL),
+        _ => None,
+    }
+}
+
+fn highlight_line_spans(content: &str, language: Option<&str>) -> Vec<Span<'static>> {
+    let mut spans = match language {
+        Some(language) => highlighting::highlight_code(content, language),
+        None => vec![Span::raw(content.to_owned())],
+    };
+
+    if !content.ends_with('\n') {
+        while matches!(spans.last(), Some(span) if span.content.as_ref() == "\n") {
+            spans.pop();
+        }
+    }
+
+    if spans.is_empty() {
+        spans.push(Span::raw(String::new()));
+    }
+
+    spans
+}
+
+fn apply_background(spans: Vec<Span<'static>>, background: Option<Color>) -> Vec<Span<'static>> {
+    let Some(background) = background else {
+        return spans;
+    };
+
+    spans
+        .into_iter()
+        .map(|span| Span::styled(span.content, span.style.bg(background)))
+        .collect()
+}
+
+fn combine_split_spans(left: Vec<Span<'static>>, right: Vec<Span<'static>>) -> Line<'static> {
+    let mut spans = Vec::new();
+    spans.extend(left);
+    spans.push(Span::raw(" | "));
+    spans.extend(right);
+    Line::from(spans)
+}
 
 /// Tag indicating the type of diff line
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -197,7 +250,7 @@ fn parse_hunk_header(line: &str) -> Option<HunkHeader> {
 
 /// Render a diff line with line numbers in unified format
 #[allow(dead_code)]
-pub fn render_unified_line(line: &DiffLine) -> Line<'static> {
+pub fn render_unified_line(line: &DiffLine, extension: Option<&str>) -> Line<'static> {
     let old_num = line
         .old_line_num
         .map_or("    ".to_string(), |n| format!("{n:>4}"));
@@ -205,7 +258,7 @@ pub fn render_unified_line(line: &DiffLine) -> Line<'static> {
         .new_line_num
         .map_or("    ".to_string(), |n| format!("{n:>4}"));
 
-    let (prefix, content_style) = match line.tag {
+    let (prefix, prefix_style) = match line.tag {
         DiffTag::Add => ("+", Style::default().fg(DIFF_ADD)),
         DiffTag::Delete => ("-", Style::default().fg(DIFF_DEL)),
         DiffTag::Equal => (" ", Style::default()),
@@ -215,23 +268,32 @@ pub fn render_unified_line(line: &DiffLine) -> Line<'static> {
     let gutter_style = Style::default().fg(DIMMED);
 
     if line.tag == DiffTag::Header {
-        Line::from(vec![Span::styled(line.content.clone(), content_style)])
+        Line::from(vec![Span::styled(line.content.clone(), prefix_style)])
     } else {
-        Line::from(vec![
+        let content_spans = apply_background(
+            highlight_line_spans(&line.content, extension),
+            diff_background(line.tag),
+        );
+        let mut spans = vec![
             Span::styled(old_num, gutter_style),
             Span::raw(" "),
             Span::styled(new_num, gutter_style),
             Span::raw(" | "),
-            Span::styled(prefix, content_style),
-            Span::styled(line.content.clone(), content_style),
-        ])
+            Span::styled(prefix, prefix_style),
+        ];
+        spans.extend(content_spans);
+        Line::from(spans)
     }
 }
 
 /// Render a diff line with line numbers in split format
 #[allow(dead_code)]
-pub fn render_split_line(line: &DiffLine, side: SplitSide) -> Line<'static> {
-    let (line_num, content_style) = match (side, line.tag) {
+pub fn render_split_line(
+    line: &DiffLine,
+    side: SplitSide,
+    extension: Option<&str>,
+) -> Line<'static> {
+    let (line_num, prefix_style) = match (side, line.tag) {
         (SplitSide::Left, DiffTag::Delete) => (line.old_line_num, Style::default().fg(DIFF_DEL)),
         (SplitSide::Left, DiffTag::Equal) => (line.old_line_num, Style::default()),
         (SplitSide::Right, DiffTag::Add) => (line.new_line_num, Style::default().fg(DIFF_ADD)),
@@ -255,12 +317,17 @@ pub fn render_split_line(line: &DiffLine, side: SplitSide) -> Line<'static> {
             Style::default().fg(DIFF_HUNK),
         )])
     } else {
-        Line::from(vec![
+        let content_spans = apply_background(
+            highlight_line_spans(&line.content, extension),
+            diff_background(line.tag),
+        );
+        let mut spans = vec![
             Span::styled(num_str, gutter_style),
             Span::raw(" | "),
-            Span::styled(prefix, content_style),
-            Span::styled(line.content.clone(), content_style),
-        ])
+            Span::styled(prefix, prefix_style),
+        ];
+        spans.extend(content_spans);
+        Line::from(spans)
     }
 }
 
@@ -279,36 +346,42 @@ pub enum SplitSide {
 /// - `width < SPLIT_THRESHOLD`: Unified view (single column with +/- prefixes)
 #[allow(dead_code)]
 pub fn render_diff(diff: &ParsedDiff, width: u16) -> Vec<Line<'static>> {
+    let extension = diff_extension(diff);
     if width >= SPLIT_THRESHOLD {
-        render_split_view(diff, width)
+        render_split_view(diff, width, extension)
     } else {
-        render_unified_view(diff)
+        render_unified_view(diff, extension)
     }
 }
 
-fn render_unified_view(diff: &ParsedDiff) -> Vec<Line<'static>> {
+fn render_unified_view(diff: &ParsedDiff, extension: Option<&str>) -> Vec<Line<'static>> {
     diff.lines
         .iter()
         .map(|line| {
-            let (prefix, style) = match line.tag {
+            let (prefix, prefix_style) = match line.tag {
                 DiffTag::Add => ("+", Style::default().fg(DIFF_ADD)),
                 DiffTag::Delete => ("-", Style::default().fg(DIFF_DEL)),
                 DiffTag::Equal => (" ", Style::default()),
                 DiffTag::Header => ("", Style::default().fg(DIFF_HUNK)),
             };
 
-            let content = if line.tag == DiffTag::Header {
-                line.content.clone()
+            if line.tag == DiffTag::Header {
+                Line::from(Span::styled(line.content.clone(), prefix_style))
             } else {
-                format!("{prefix}{}", line.content)
-            };
-
-            Line::from(Span::styled(content, style))
+                let content_spans = apply_background(
+                    highlight_line_spans(&line.content, extension),
+                    diff_background(line.tag),
+                );
+                let mut spans = Vec::new();
+                spans.push(Span::styled(prefix, prefix_style));
+                spans.extend(content_spans);
+                Line::from(spans)
+            }
         })
         .collect()
 }
 
-fn render_split_view(diff: &ParsedDiff, width: u16) -> Vec<Line<'static>> {
+fn render_split_view(diff: &ParsedDiff, width: u16, extension: Option<&str>) -> Vec<Line<'static>> {
     let col_width = (width.saturating_sub(3) / 2) as usize;
     let mut lines = Vec::new();
 
@@ -327,11 +400,9 @@ fn render_split_view(diff: &ParsedDiff, width: u16) -> Vec<Line<'static>> {
             DiffTag::Equal => {
                 let left = truncate_or_pad(&line.content, col_width);
                 let right = truncate_or_pad(&line.content, col_width);
-                lines.push(Line::from(vec![
-                    Span::raw(left),
-                    Span::raw(" | "),
-                    Span::raw(right),
-                ]));
+                let left_spans = highlight_line_spans(&left, extension);
+                let right_spans = highlight_line_spans(&right, extension);
+                lines.push(combine_split_spans(left_spans, right_spans));
                 i += 1;
             }
             DiffTag::Delete => {
@@ -340,32 +411,34 @@ fn render_split_view(diff: &ParsedDiff, width: u16) -> Vec<Line<'static>> {
                     if next_line.tag == DiffTag::Add {
                         let left = truncate_or_pad(&line.content, col_width);
                         let right = truncate_or_pad(&next_line.content, col_width);
-                        lines.push(Line::from(vec![
-                            Span::styled(left, Style::default().fg(DIFF_DEL)),
-                            Span::raw(" | "),
-                            Span::styled(right, Style::default().fg(DIFF_ADD)),
-                        ]));
+                        let left_spans = apply_background(
+                            highlight_line_spans(&left, extension),
+                            Some(DIFF_DEL),
+                        );
+                        let right_spans = apply_background(
+                            highlight_line_spans(&right, extension),
+                            Some(DIFF_ADD),
+                        );
+                        lines.push(combine_split_spans(left_spans, right_spans));
                         i += 2;
                         continue;
                     }
                 }
                 let left = truncate_or_pad(&line.content, col_width);
                 let right = " ".repeat(col_width);
-                lines.push(Line::from(vec![
-                    Span::styled(left, Style::default().fg(DIFF_DEL)),
-                    Span::raw(" | "),
-                    Span::raw(right),
-                ]));
+                let left_spans =
+                    apply_background(highlight_line_spans(&left, extension), Some(DIFF_DEL));
+                let right_spans = vec![Span::raw(right)];
+                lines.push(combine_split_spans(left_spans, right_spans));
                 i += 1;
             }
             DiffTag::Add => {
                 let left = " ".repeat(col_width);
                 let right = truncate_or_pad(&line.content, col_width);
-                lines.push(Line::from(vec![
-                    Span::raw(left),
-                    Span::raw(" | "),
-                    Span::styled(right, Style::default().fg(DIFF_ADD)),
-                ]));
+                let left_spans = vec![Span::raw(left)];
+                let right_spans =
+                    apply_background(highlight_line_spans(&right, extension), Some(DIFF_ADD));
+                lines.push(combine_split_spans(left_spans, right_spans));
                 i += 1;
             }
         }
@@ -499,7 +572,7 @@ mod tests {
             old_line_num: Some(1),
             new_line_num: Some(1),
         };
-        let rendered = render_unified_line(&equal_line);
+        let rendered = render_unified_line(&equal_line, None);
         assert_eq!(rendered.spans.len(), 6);
         assert_eq!(rendered.spans[0].content, "   1");
         assert_eq!(rendered.spans[2].content, "   1");
@@ -512,7 +585,7 @@ mod tests {
             old_line_num: Some(2),
             new_line_num: None,
         };
-        let rendered = render_unified_line(&delete_line);
+        let rendered = render_unified_line(&delete_line, None);
         assert_eq!(rendered.spans[0].content, "   2");
         assert_eq!(rendered.spans[2].content, "    ");
         assert_eq!(rendered.spans[4].content, "-");
@@ -523,7 +596,7 @@ mod tests {
             old_line_num: None,
             new_line_num: Some(2),
         };
-        let rendered = render_unified_line(&add_line);
+        let rendered = render_unified_line(&add_line, None);
         assert_eq!(rendered.spans[0].content, "    ");
         assert_eq!(rendered.spans[2].content, "   2");
         assert_eq!(rendered.spans[4].content, "+");
@@ -537,7 +610,7 @@ mod tests {
             old_line_num: Some(10),
             new_line_num: None,
         };
-        let left_rendered = render_split_line(&delete_line, SplitSide::Left);
+        let left_rendered = render_split_line(&delete_line, SplitSide::Left, None);
         assert_eq!(left_rendered.spans[0].content, "  10");
         assert_eq!(left_rendered.spans[2].content, "-");
         assert_eq!(left_rendered.spans[3].content, "old content");
@@ -548,7 +621,7 @@ mod tests {
             old_line_num: None,
             new_line_num: Some(11),
         };
-        let right_rendered = render_split_line(&add_line, SplitSide::Right);
+        let right_rendered = render_split_line(&add_line, SplitSide::Right, None);
         assert_eq!(right_rendered.spans[0].content, "  11");
         assert_eq!(right_rendered.spans[2].content, "+");
         assert_eq!(right_rendered.spans[3].content, "new content");
@@ -559,11 +632,11 @@ mod tests {
             old_line_num: Some(5),
             new_line_num: Some(5),
         };
-        let left_rendered = render_split_line(&equal_line, SplitSide::Left);
+        let left_rendered = render_split_line(&equal_line, SplitSide::Left, None);
         assert_eq!(left_rendered.spans[0].content, "   5");
         assert_eq!(left_rendered.spans[2].content, " ");
 
-        let right_rendered = render_split_line(&equal_line, SplitSide::Right);
+        let right_rendered = render_split_line(&equal_line, SplitSide::Right, None);
         assert_eq!(right_rendered.spans[0].content, "   5");
         assert_eq!(right_rendered.spans[2].content, " ");
     }
@@ -576,12 +649,90 @@ mod tests {
             old_line_num: None,
             new_line_num: None,
         };
-        let unified = render_unified_line(&header);
+        let unified = render_unified_line(&header, None);
         assert_eq!(unified.spans.len(), 1);
         assert_eq!(unified.spans[0].content, "@@ -1,3 +1,4 @@");
 
-        let split_left = render_split_line(&header, SplitSide::Left);
+        let split_left = render_split_line(&header, SplitSide::Left, None);
         assert_eq!(split_left.spans.len(), 1);
         assert_eq!(split_left.spans[0].content, "@@ -1,3 +1,4 @@");
+    }
+
+    #[test]
+    fn test_render_diff_unified_at_narrow_width() {
+        let diff = "--- test.txt\n+++ test.txt\n@@ -1 +1 @@\n-old\n+new\n";
+        let parsed = parse_diff(diff);
+
+        let lines = render_diff(&parsed, 80);
+        assert_eq!(lines.len(), 3);
+
+        assert!(lines[0].spans[0].content.contains("@@"));
+        assert!(lines[1].spans[0].content.starts_with('-'));
+        assert!(lines[2].spans[0].content.starts_with('+'));
+    }
+
+    #[test]
+    fn test_render_diff_split_at_wide_width() {
+        let diff = "--- test.txt\n+++ test.txt\n@@ -1 +1 @@\n-old\n+new\n";
+        let parsed = parse_diff(diff);
+
+        let lines = render_diff(&parsed, 120);
+        assert_eq!(lines.len(), 2);
+
+        assert!(lines[0].spans[0].content.contains("@@"));
+        assert!(lines[1].spans.iter().any(|span| span.content == " | "));
+    }
+
+    #[test]
+    fn test_render_diff_threshold_boundary() {
+        let diff = "--- test.txt\n+++ test.txt\n@@ -1 +1 @@\n-old\n+new\n";
+        let parsed = parse_diff(diff);
+
+        let unified = render_diff(&parsed, 99);
+        let split = render_diff(&parsed, 100);
+
+        assert_eq!(unified.len(), 3);
+        assert_eq!(split.len(), 2);
+    }
+
+    #[test]
+    fn test_render_diff_split_delete_only() {
+        let diff = "--- test.txt\n+++ test.txt\n@@ -1,2 +1 @@\n-deleted\n context\n";
+        let parsed = parse_diff(diff);
+
+        let lines = render_diff(&parsed, 120);
+        assert_eq!(lines.len(), 3);
+
+        let delete_line = &lines[1];
+        let delete_text: String = delete_line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+        assert!(delete_text.contains("deleted"));
+    }
+
+    #[test]
+    fn test_render_diff_split_add_only() {
+        let diff = "--- test.txt\n+++ test.txt\n@@ -1 +1,2 @@\n context\n+added\n";
+        let parsed = parse_diff(diff);
+
+        let lines = render_diff(&parsed, 120);
+        assert_eq!(lines.len(), 3);
+
+        let add_line = &lines[2];
+        let add_text: String = add_line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+        assert!(add_text.contains("added"));
+    }
+
+    #[test]
+    fn test_truncate_or_pad() {
+        assert_eq!(truncate_or_pad("short", 10), "short     ");
+        assert_eq!(truncate_or_pad("exact_len!", 10), "exact_len!");
+        assert_eq!(truncate_or_pad("this is too long", 10), "this is t…");
     }
 }
