@@ -14,6 +14,7 @@ use crate::config::ModelInfo;
 const BRAND_TEAL: Color = Color::Rgb(77, 201, 176);
 const DIMMED: Color = Color::Rgb(100, 100, 110);
 const DROPDOWN_BG: Color = Color::Rgb(35, 38, 45);
+const SELECTED_BG: Color = Color::Rgb(50, 55, 65);
 
 /// Max width for centered UI elements (input box, command palette)
 pub const CENTERED_MAX_WIDTH: u16 = 72;
@@ -127,47 +128,71 @@ pub fn filter_models<'a>(input: &str, models: &'a [ModelInfo]) -> Vec<&'a ModelI
 
 /// Render the command dropdown above the prompt.
 ///
-/// Returns the height used by the dropdown.
+/// Returns the height used by the dropdown and the dropdown area.
 #[allow(clippy::cast_possible_truncation)]
 pub fn render_command_dropdown(
     frame: &mut Frame,
     prompt_area: Rect,
     input: &str,
     selected: usize,
-) -> u16 {
+) -> (u16, Rect) {
     let filtered = filter_commands(input);
+    // Inner width available for content (minus borders)
+    let inner_width = prompt_area.width.saturating_sub(2) as usize;
 
     // Build content lines
     let lines: Vec<Line> = if filtered.is_empty() {
-        vec![Line::from(Span::styled(
-            format!("  No commands matching '{input}'"),
-            Style::default().fg(DIMMED),
-        ))]
+        let msg = format!(" No commands matching '{input}'");
+        let padding = " ".repeat(inner_width.saturating_sub(msg.len()));
+        vec![Line::from(vec![
+            Span::styled(msg, Style::default().fg(DIMMED).bg(DROPDOWN_BG)),
+            Span::styled(padding, Style::default().bg(DROPDOWN_BG)),
+        ])]
     } else {
         filtered
             .iter()
             .enumerate()
             .map(|(i, cmd)| {
                 let is_selected = i == selected;
-                let prefix = if is_selected { "▸ " } else { "  " };
+                let bg = if is_selected {
+                    SELECTED_BG
+                } else {
+                    DROPDOWN_BG
+                };
+
+                let accent = if is_selected {
+                    Span::styled("▎", Style::default().fg(BRAND_TEAL).bg(bg))
+                } else {
+                    Span::styled(" ", Style::default().bg(bg))
+                };
 
                 let name_style = if is_selected {
-                    Style::default().fg(BRAND_TEAL).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(BRAND_TEAL)
+                        .bg(bg)
+                        .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(BRAND_TEAL)
+                    Style::default().fg(BRAND_TEAL).bg(bg)
                 };
 
                 let desc_style = if is_selected {
-                    Style::default().fg(Color::White)
+                    Style::default().fg(Color::White).bg(bg)
                 } else {
-                    Style::default().fg(DIMMED)
+                    Style::default().fg(DIMMED).bg(bg)
                 };
 
+                // Calculate padding to fill the row
+                // accent(1) + name + space(2) + desc + padding = inner_width
+                let content_len = 1 + cmd.name.len() + 2 + cmd.description.len();
+                let padding_len = inner_width.saturating_sub(content_len);
+                let padding = " ".repeat(padding_len);
+
                 Line::from(vec![
-                    Span::styled(prefix, name_style),
+                    accent,
                     Span::styled(cmd.name, name_style),
-                    Span::raw("  "),
+                    Span::styled("  ", Style::default().bg(bg)),
                     Span::styled(cmd.description, desc_style),
+                    Span::styled(padding, Style::default().bg(bg)),
                 ])
             })
             .collect()
@@ -194,12 +219,12 @@ pub fn render_command_dropdown(
     let para = Paragraph::new(lines).block(block);
     frame.render_widget(para, dropdown_area);
 
-    dropdown_height
+    (dropdown_height, dropdown_area)
 }
 
 /// Render the model dropdown above the prompt.
 ///
-/// Returns the height used by the dropdown.
+/// Returns the height used by the dropdown and the dropdown area.
 #[allow(clippy::cast_possible_truncation)]
 pub fn render_model_dropdown(
     frame: &mut Frame,
@@ -207,40 +232,62 @@ pub fn render_model_dropdown(
     input: &str,
     selected: usize,
     models: &[ModelInfo],
-) -> u16 {
+) -> (u16, Rect) {
     let filtered = filter_models(input, models);
+    let inner_width = prompt_area.width.saturating_sub(2) as usize;
 
     let lines: Vec<Line> = if filtered.is_empty() {
         let query = input.strip_prefix("/model ").unwrap_or("").trim();
-        vec![Line::from(Span::styled(
-            format!("  No models matching '{query}'"),
-            Style::default().fg(DIMMED),
-        ))]
+        let msg = format!(" No models matching '{query}'");
+        let padding = " ".repeat(inner_width.saturating_sub(msg.len()));
+        vec![Line::from(vec![
+            Span::styled(msg, Style::default().fg(DIMMED).bg(DROPDOWN_BG)),
+            Span::styled(padding, Style::default().bg(DROPDOWN_BG)),
+        ])]
     } else {
         filtered
             .iter()
             .enumerate()
             .map(|(i, model)| {
                 let is_selected = i == selected;
-                let prefix = if is_selected { "▸ " } else { "  " };
+                let bg = if is_selected {
+                    SELECTED_BG
+                } else {
+                    DROPDOWN_BG
+                };
+
+                let accent = if is_selected {
+                    Span::styled("▎", Style::default().fg(BRAND_TEAL).bg(bg))
+                } else {
+                    Span::styled(" ", Style::default().bg(bg))
+                };
 
                 let name_style = if is_selected {
-                    Style::default().fg(BRAND_TEAL).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(BRAND_TEAL)
+                        .bg(bg)
+                        .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(BRAND_TEAL)
+                    Style::default().fg(BRAND_TEAL).bg(bg)
                 };
 
                 let provider_style = if is_selected {
-                    Style::default().fg(Color::White)
+                    Style::default().fg(Color::White).bg(bg)
                 } else {
-                    Style::default().fg(DIMMED)
+                    Style::default().fg(DIMMED).bg(bg)
                 };
 
+                let provider_text = format!("({})", model.provider);
+                let content_len = 1 + model.id.len() + 2 + provider_text.len();
+                let padding_len = inner_width.saturating_sub(content_len);
+                let padding = " ".repeat(padding_len);
+
                 Line::from(vec![
-                    Span::styled(prefix, name_style),
+                    accent,
                     Span::styled(&model.id, name_style),
-                    Span::raw("  "),
-                    Span::styled(format!("({})", model.provider), provider_style),
+                    Span::styled("  ", Style::default().bg(bg)),
+                    Span::styled(provider_text, provider_style),
+                    Span::styled(padding, Style::default().bg(bg)),
                 ])
             })
             .collect()
@@ -265,5 +312,5 @@ pub fn render_model_dropdown(
     let para = Paragraph::new(lines).block(block);
     frame.render_widget(para, dropdown_area);
 
-    dropdown_height
+    (dropdown_height, dropdown_area)
 }

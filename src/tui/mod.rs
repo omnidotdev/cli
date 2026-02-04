@@ -279,16 +279,18 @@ async fn run_app(
             if app.show_command_dropdown && should_show_dropdown(app.input()) {
                 match dropdown_mode(app.input()) {
                     DropdownMode::Commands => {
-                        render_command_dropdown(f, prompt_area, app.input(), app.command_selection);
+                        let (_, area) = render_command_dropdown(f, prompt_area, app.input(), app.command_selection);
+                        app.set_dropdown_area(Some(area), filter_commands(app.input()).len());
                     }
                     DropdownMode::Models => {
-                        render_model_dropdown(
+                        let (_, area) = render_model_dropdown(
                             f,
                             prompt_area,
                             app.input(),
                             app.command_selection,
                             &app.agent_config.models,
                         );
+                        app.set_dropdown_area(Some(area), filter_models(app.input(), &app.agent_config.models).len());
                     }
                     DropdownMode::None => {}
                 }
