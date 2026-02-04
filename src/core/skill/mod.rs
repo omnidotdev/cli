@@ -47,7 +47,12 @@ impl SkillRegistry {
         let mut skills = HashMap::new();
 
         // Project-local paths (walk up from project root)
-        let local_patterns = [".omni/skill", ".opencode/skill", ".claude/skills"];
+        let local_patterns = [
+            ".omni/skill",
+            ".opencode/skill",
+            ".claude/skills",
+            ".agents/skills",
+        ];
 
         for pattern in local_patterns {
             let skill_dir = project_root.join(pattern);
@@ -70,11 +75,16 @@ impl SkillRegistry {
             }
         }
 
-        // Also check ~/.claude/skills for compatibility
+        // Also check ~/.claude/skills and ~/.agents/skills for compatibility
         if let Some(home) = dirs::home_dir() {
             let claude_skills = home.join(".claude/skills");
             if claude_skills.is_dir() {
                 Self::scan_directory(&claude_skills, &mut skills);
+            }
+
+            let agents_skills = home.join(".agents/skills");
+            if agents_skills.is_dir() {
+                Self::scan_directory(&agents_skills, &mut skills);
             }
         }
 
