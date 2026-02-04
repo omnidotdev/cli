@@ -83,16 +83,16 @@ impl TextLayout {
         for (row, line) in self.lines.iter().enumerate() {
             if cursor_char >= line.char_start && cursor_char <= line.char_end {
                 let col = cursor_char - line.char_start;
-                // Clamp col to the actual line width to prevent cursor from leaking
-                let col = col.min(line.text.chars().count());
+                // Clamp to width (char_end includes trailing spaces stripped from text)
+                let col = col.min(self.width);
                 return (row, col);
             }
         }
         let last_row = self.lines.len().saturating_sub(1);
         if let Some(last_line) = self.lines.last() {
             let col = last_line.char_end - last_line.char_start;
-            // Clamp col to the actual line width
-            let col = col.min(last_line.text.chars().count());
+            // Clamp to width to prevent cursor from leaking
+            let col = col.min(self.width);
             (last_row, col)
         } else {
             (0, 0)
@@ -411,11 +411,12 @@ mod tests {
         let layout = TextLayout::new("hello     ", 8);
         let (row, col) = layout.cursor_to_visual(10);
         assert_eq!(row, 0);
+        // Cursor can be at trailing space positions, but clamped to layout width
         assert!(
-            col <= layout.lines[row].text.chars().count(),
-            "col {} exceeds line width {}",
+            col <= layout.width,
+            "col {} exceeds layout width {}",
             col,
-            layout.lines[row].text.chars().count()
+            layout.width
         );
     }
 
