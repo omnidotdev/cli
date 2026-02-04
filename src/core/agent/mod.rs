@@ -1279,7 +1279,8 @@ fn format_tool_invocation(name: &str, input: &serde_json::Value) -> String {
             .char_indices()
             .take_while(|(i, _)| *i < MAX_LEN - 3)
             .last()
-            .map_or(0, |(i, c)| i + c.len_utf8());
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0);
         format!("{}...", &raw[..truncate_at])
     } else {
         raw
