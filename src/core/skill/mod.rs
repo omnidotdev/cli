@@ -91,55 +91,56 @@ impl SkillRegistry {
         Self { skills }
     }
 
-    /// Scan a directory for SKILL.md files
+    /// Scan a directory recursively for SKILL.md files
     fn scan_directory(dir: &Path, skills: &mut HashMap<String, Skill>) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
+        let mut dirs_to_scan = vec![dir.to_path_buf()];
 
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() {
+        while let Some(current_dir) = dirs_to_scan.pop() {
+            let Ok(entries) = std::fs::read_dir(&current_dir) else {
                 continue;
-            }
+            };
 
-            let skill_file = path.join("SKILL.md");
-            if !skill_file.exists() {
-                continue;
-            }
-
-            // Parse skill file
-            match parse_skill_file(&skill_file) {
-                Ok(skill) => {
-                    // Validate name matches directory
-                    let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-                    if skill.name != dir_name {
-                        tracing::warn!(
-                            skill = %skill.name,
-                            dir = %dir_name,
-                            "skill name doesn't match directory name"
-                        );
-                    }
-
-                    // Check for duplicates
-                    if skills.contains_key(&skill.name) {
-                        tracing::warn!(
-                            skill = %skill.name,
-                            path = %skill_file.display(),
-                            "duplicate skill, using latest"
-                        );
-                    }
-
-                    skills.insert(skill.name.clone(), skill);
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
                 }
-                Err(e) => {
-                    tracing::warn!(
-                        path = %skill_file.display(),
-                        error = %e,
-                        "failed to parse skill file"
-                    );
+
+                let skill_file = path.join("SKILL.md");
+                if skill_file.exists() {
+                    match parse_skill_file(&skill_file) {
+                        Ok(skill) => {
+                            let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+                            if skill.name != dir_name {
+                                tracing::warn!(
+                                    skill = %skill.name,
+                                    dir = %dir_name,
+                                    "skill name doesn't match directory name"
+                                );
+                            }
+
+                            if skills.contains_key(&skill.name) {
+                                tracing::warn!(
+                                    skill = %skill.name,
+                                    path = %skill_file.display(),
+                                    "duplicate skill, using latest"
+                                );
+                            }
+
+                            skills.insert(skill.name.clone(), skill);
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                path = %skill_file.display(),
+                                error = %e,
+                                "failed to parse skill file"
+                            );
+                        }
+                    }
                 }
+
+                dirs_to_scan.push(path);
             }
         }
     }
