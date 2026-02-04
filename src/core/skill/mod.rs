@@ -274,4 +274,51 @@ mod tests {
         let registry = SkillRegistry::default();
         assert!(registry.load_content("nonexistent").is_err());
     }
+
+    #[test]
+    fn discover_finds_agents_skills() {
+        let dir = TempDir::new().unwrap();
+        let skill_root = dir.path().join(".agents/skills");
+        fs::create_dir_all(&skill_root).unwrap();
+
+        create_skill(&skill_root, "agent-skill", "An agent skill");
+
+        let registry = SkillRegistry::discover(dir.path());
+        assert!(registry.contains("agent-skill"));
+    }
+
+    #[test]
+    fn discover_finds_nested_skills() {
+        let dir = TempDir::new().unwrap();
+        let skill_root = dir.path().join(".agents/skills/category");
+        fs::create_dir_all(&skill_root).unwrap();
+
+        create_skill(&skill_root, "nested-skill", "A nested skill");
+
+        let registry = SkillRegistry::discover(dir.path());
+        assert!(registry.contains("nested-skill"));
+    }
+
+    #[test]
+    fn recursive_scanning_multiple_levels() {
+        let dir = TempDir::new().unwrap();
+        let skill_root = dir.path().join(".omni/skill");
+        fs::create_dir_all(&skill_root).unwrap();
+
+        create_skill(&skill_root, "level-one", "Level 1");
+        create_skill(&skill_root.join("category"), "level-two", "Level 2");
+        create_skill(
+            &skill_root.join("category/subcategory"),
+            "level-three",
+            "Level 3",
+        );
+
+        let registry = SkillRegistry::discover(dir.path());
+        assert!(registry.contains("level-one"), "should find level 1 skill");
+        assert!(registry.contains("level-two"), "should find level 2 skill");
+        assert!(
+            registry.contains("level-three"),
+            "should find level 3 skill"
+        );
+    }
 }
