@@ -7,6 +7,7 @@ mod model_selection;
 mod prompt;
 mod session;
 mod session_list;
+mod text_layout;
 mod welcome;
 
 pub use command_palette::{
@@ -17,4 +18,5 @@ pub use model_selection::{render_model_selection_dialog, ModelSelectionDialog};
 pub use prompt::PLACEHOLDERS;
 pub use session::{calculate_content_height, render_session, MESSAGE_PADDING_X};
 pub use session_list::{render_session_list, SessionListDialog};
+pub use text_layout::{TextLayout, WrappedLine};
 pub use welcome::render_welcome;
