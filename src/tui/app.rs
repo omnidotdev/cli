@@ -5,7 +5,9 @@ use ratatui::layout::Rect;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use super::components::{EditBuffer, EditorView, ModelSelectionDialog, SessionListDialog};
+use super::components::{
+    EditBuffer, EditorView, InputAction, ModelSelectionDialog, SessionListDialog,
+};
 use super::message::{format_tool_invocation, DisplayMessage};
 use super::state::ViewState;
 
@@ -564,8 +566,36 @@ impl App {
         self.edit_buffer.delete_char_before();
     }
 
+    pub fn delete_char_after(&mut self) {
+        self.edit_buffer.delete_char_after();
+    }
+
     pub fn clear_input(&mut self) {
         self.edit_buffer.clear();
+    }
+
+    /// Execute an input action.
+    ///
+    /// This is the central dispatcher for keybinding-based input operations.
+    /// Note: `InsertChar` is a no-op here as it requires the char value.
+    pub fn execute_action(&mut self, action: &InputAction) {
+        match action {
+            InputAction::MoveLeft => self.move_left(),
+            InputAction::MoveRight => self.move_right(),
+            InputAction::MoveUp => self.move_up(),
+            InputAction::MoveDown => self.move_down(),
+            InputAction::MoveWordLeft => self.move_word_left(),
+            InputAction::MoveWordRight => self.move_word_right(),
+            InputAction::MoveToStart => self.set_cursor(0),
+            InputAction::MoveToEnd => self.set_cursor(self.edit_buffer.len()),
+            InputAction::DeleteCharBefore => self.delete_char(),
+            InputAction::DeleteCharAfter => self.delete_char_after(),
+            InputAction::InsertNewline => self.insert_char('\n'),
+            InputAction::DeleteToStart => self.delete_to_start(),
+            InputAction::DeleteToEnd => self.delete_to_end(),
+            InputAction::DeleteWord => self.delete_word(),
+            InputAction::InsertChar => {} // Handled separately with char value
+        }
     }
 
     /// Show a permission dialog.

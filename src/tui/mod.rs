@@ -5,8 +5,10 @@ mod components;
 mod message;
 mod state;
 
+use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use crossterm::{
@@ -36,13 +38,18 @@ use crate::core::session::SessionTarget;
 pub use app::App;
 use app::{ActiveAskUserDialog, ActiveDialog, ActivePermissionDialog, ChatMessage, ExpandedToolDialog};
 use components::{
-    DropdownMode, MESSAGE_PADDING_X, TextLayout, calculate_content_height, dropdown_mode,
-    filter_commands, filter_models, line_color, render_command_dropdown,
-    render_model_dropdown, render_model_selection_dialog, render_session, render_session_list,
-    render_welcome, should_show_dropdown,
+    DropdownMode, InputAction, MESSAGE_PADDING_X, TextLayout, build_keybinding_map,
+    calculate_content_height, default_keybindings, dropdown_mode, filter_commands, filter_models,
+    line_color, render_command_dropdown, render_model_dropdown, render_model_selection_dialog,
+    render_session, render_session_list, render_welcome, should_show_dropdown,
 };
 use message::DisplayMessage;
 use state::ViewState;
+
+fn keybinding_map() -> &'static HashMap<(KeyCode, KeyModifiers), InputAction> {
+    static MAP: OnceLock<HashMap<(KeyCode, KeyModifiers), InputAction>> = OnceLock::new();
+    MAP.get_or_init(|| build_keybinding_map(&default_keybindings()))
+}
 
 /// Run the TUI application.
 ///
@@ -855,10 +862,11 @@ fn handle_key(
                 }
             }
         }
-        KeyCode::Left => app.move_left(),
-        KeyCode::Right => app.move_right(),
-        KeyCode::Home => app.set_cursor(0),
-        KeyCode::End => app.set_cursor(app.edit_buffer.len()),
+        KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End => {
+            if let Some(action) = keybinding_map().get(&(code, modifiers)) {
+                app.execute_action(action);
+            }
+        }
         // Scrolling - use message scroll in session view
         KeyCode::PageUp => {
             if app.view_state == ViewState::Session {
