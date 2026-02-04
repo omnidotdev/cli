@@ -398,6 +398,15 @@ async fn run_app(
                                             }
                                         }
                                     }
+                                    MouseEventKind::Moved => {
+                                        // Only process hover when dropdown is visible (performance guard)
+                                        if app.show_command_dropdown {
+                                            if let Some(item_index) = app.is_in_dropdown_area(mouse.row, mouse.column) {
+                                                app.command_selection = item_index;
+                                            }
+                                            // If outside dropdown area, selection sticks to last hovered item
+                                        }
+                                    }
                                     _ => {}
                                 }
                             }
