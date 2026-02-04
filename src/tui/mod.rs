@@ -431,8 +431,7 @@ async fn run_app(
                         app.agent = Some(agent);
                         app.activity_status = None;
                         app.chat_rx = None;
-                        app.chat_handle = None;
-                        
+
                         // Process next queued message if any
                         if app.pending_messages.is_empty() {
                             app.loading = false;
@@ -453,8 +452,7 @@ async fn run_app(
                         let _ = write!(app.output, "\nError: {e}");
                         app.activity_status = None;
                         app.chat_rx = None;
-                        app.chat_handle = None;
-                        
+
                         // Process next queued message if any
                         if app.pending_messages.is_empty() {
                             app.loading = false;
@@ -1753,7 +1751,7 @@ fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMess
     let (tx, rx) = mpsc::unbounded_channel();
     app.chat_rx = Some(rx);
 
-    let handle = tokio::spawn(async move {
+    tokio::spawn(async move {
         let mut agent = agent;
         let tx_clone = tx.clone();
 
@@ -1816,7 +1814,6 @@ fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMess
             }
         }
     });
-    app.chat_handle = Some(handle);
 }
 
 #[cfg(test)]

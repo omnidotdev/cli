@@ -302,9 +302,6 @@ pub struct App {
 
     /// Track first backspace on empty input for double-backspace delete.
     pub backspace_on_empty_once: bool,
-
-    /// Handle to the spawned chat task for cancellation.
-    pub chat_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Default for App {
@@ -452,7 +449,6 @@ impl App {
             pending_messages: Vec::new(),
             esc_pressed_once: false,
             backspace_on_empty_once: false,
-            chat_handle: None,
         }
     }
 
