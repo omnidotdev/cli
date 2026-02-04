@@ -1,17 +1,23 @@
 //! `OpenAI` provider implementation.
 //!
 //! Provides streaming completions via the `OpenAI` Chat Completions API.
+//! Also supports `OpenAI`-compatible providers like `OpenRouter`, Together, Groq, etc.
 //!
 //! # Thinking/Reasoning Support
+//!
+//! ## Native `OpenAI`
 //!
 //! `OpenAI`'s o1/o3 models use "reasoning tokens" internally, but these are **not exposed**
 //! via the streaming API. The reasoning happens server-side and only the final completion
 //! tokens are streamed to the client. The only indication of reasoning is the token count
 //! in the `usage.output_tokens_details.reasoning_tokens` field of the response.
 //!
-//! As a result, this provider does **not** emit `ThinkingStart`, `ThinkingDelta`, or
-//! `ThinkingDone` events. The `reasoning_effort` parameter can be set to control how much
-//! reasoning the model does, but the reasoning content itself remains opaque.
+//! ## `OpenRouter`
+//!
+//! When using Claude models through `OpenRouter`, thinking/reasoning content IS supported
+//! and streamed to the client. `OpenRouter` returns reasoning via `delta.reasoning_details`
+//! in the streaming response. This provider auto-enables reasoning for Claude models on
+//! `OpenRouter` and emits `ThinkingStart`, `ThinkingDelta`, and `ThinkingDone` events.
 
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -89,11 +95,18 @@ struct OpenAiRequest {
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream_options: Option<StreamOptions>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning: Option<ReasoningConfig>,
 }
 
 #[derive(Debug, Serialize)]
 struct StreamOptions {
     include_usage: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct ReasoningConfig {
+    max_tokens: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -160,6 +173,8 @@ struct OpenAiDelta {
     content: Option<String>,
     #[serde(default)]
     tool_calls: Option<Vec<OpenAiToolCallDelta>>,
+    #[serde(default)]
+    reasoning_details: Option<Vec<ReasoningDetail>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -177,6 +192,28 @@ struct OpenAiFunctionDelta {
     name: Option<String>,
     #[serde(default)]
     arguments: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReasoningDetail {
+    #[serde(rename = "type")]
+    detail_type: String,
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    summary: Option<String>,
+    #[allow(dead_code)]
+    #[serde(default)]
+    data: Option<String>,
+    #[allow(dead_code)]
+    #[serde(default)]
+    id: Option<String>,
+    #[allow(dead_code)]
+    #[serde(default)]
+    format: Option<String>,
+    #[allow(dead_code)]
+    #[serde(default)]
+    index: Option<u32>,
 }
 
 /// Convert our messages to the format expected by the chat completions API.
@@ -377,6 +414,15 @@ impl LlmProvider for OpenAiProvider {
 
         let openai_tools = request.tools.as_ref().map(|t| convert_tools(t));
 
+        let model_lower = request.model.to_lowercase();
+        let reasoning = if self.provider_name == "openrouter"
+            && (model_lower.contains("claude") || model_lower.contains("anthropic"))
+        {
+            Some(ReasoningConfig { max_tokens: 8000 })
+        } else {
+            None
+        };
+
         let openai_request = OpenAiRequest {
             model: request.model,
             max_tokens: request.max_tokens,
@@ -386,6 +432,7 @@ impl LlmProvider for OpenAiProvider {
             stream_options: Some(StreamOptions {
                 include_usage: true,
             }),
+            reasoning,
         };
 
         let url = format!("{}/chat/completions", self.base_url);
@@ -415,6 +462,8 @@ impl LlmProvider for OpenAiProvider {
                 std::collections::HashMap::new();
             let text_block_index = 0_usize;
             let mut current_text = String::new();
+            let mut thinking_started = false;
+            let mut thinking_done = false;
 
             futures::pin_mut!(byte_stream);
 
@@ -431,9 +480,33 @@ impl LlmProvider for OpenAiProvider {
                     };
 
                     for choice in chunk.choices {
+                        // Handle reasoning details (OpenRouter)
+                        if let Some(details) = choice.delta.reasoning_details {
+                            for detail in details {
+                                if !thinking_started {
+                                    yield Ok(CompletionEvent::ThinkingStart);
+                                    thinking_started = true;
+                                }
+                                if detail.detail_type == "reasoning.text" {
+                                    if let Some(text) = detail.text {
+                                        yield Ok(CompletionEvent::ThinkingDelta(text));
+                                    }
+                                }
+                                if detail.detail_type == "reasoning.summary" {
+                                    if let Some(summary) = detail.summary {
+                                        yield Ok(CompletionEvent::ThinkingDelta(summary));
+                                    }
+                                }
+                            }
+                        }
+
                         // Handle text content
                         if let Some(text) = choice.delta.content {
                             if !text.is_empty() {
+                                if thinking_started && !thinking_done {
+                                    yield Ok(CompletionEvent::ThinkingDone);
+                                    thinking_done = true;
+                                }
                                 current_text.push_str(&text);
                                 yield Ok(CompletionEvent::TextDelta(text));
                             }
