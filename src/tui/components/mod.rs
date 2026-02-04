@@ -1,6 +1,8 @@
 //! TUI components for rendering different views.
 
 mod command_palette;
+mod diff;
+pub mod highlighting;
 mod markdown;
 mod messages;
 mod model_selection;
@@ -14,6 +16,7 @@ pub use command_palette::{
     dropdown_mode, filter_commands, filter_models, render_command_dropdown, render_model_dropdown,
     should_show_dropdown, DropdownMode,
 };
+
 pub use messages::line_color;
 pub use model_selection::{render_model_selection_dialog, ModelSelectionDialog};
 pub use prompt::PLACEHOLDERS;
