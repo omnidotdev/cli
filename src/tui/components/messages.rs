@@ -110,9 +110,11 @@ fn render_user_message_with_scroll(
     selected_text: &mut String,
 ) {
     const LEFT_BORDER_AND_PADDING: u16 = 2;
+    const RIGHT_PADDING: u16 = 1;
     const VERTICAL_PADDING: u16 = 2;
 
-    let text_width = area.width.saturating_sub(LEFT_BORDER_AND_PADDING).max(1) as usize;
+    let horizontal_padding = LEFT_BORDER_AND_PADDING + RIGHT_PADDING;
+    let text_width = area.width.saturating_sub(horizontal_padding).max(1) as usize;
     let layout = TextLayout::new(text, text_width);
     let content_height = layout.total_lines as u16;
     let total_height = content_height + VERTICAL_PADDING;
@@ -336,7 +338,7 @@ pub fn message_height(message: &DisplayMessage, width: u16) -> u16 {
     let width = width.max(1) as usize;
     match message {
         DisplayMessage::User { text, .. } => {
-            let text_width = width.saturating_sub(2).max(1);
+            let text_width = width.saturating_sub(3).max(1);
             let layout = TextLayout::new(text, text_width);
             layout.total_lines as u16 + 2
         }

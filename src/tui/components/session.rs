@@ -1,16 +1,16 @@
 //! Session screen component.
 
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
-    Frame,
 };
 
 use super::markdown::parse_markdown_line;
 use super::messages::{render_message_with_scroll, wrapped_line_height};
-use super::prompt::{render_prompt, PromptMode};
+use super::prompt::{PromptMode, render_prompt};
 use super::text_layout::TextLayout;
 use crate::core::agent::AgentMode;
 use crate::tui::app::Selection;
