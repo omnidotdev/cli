@@ -1,6 +1,7 @@
 //! CLI command parsing and execution.
 
 pub mod auth;
+pub mod init;
 
 use clap::{Args, Parser, Subcommand};
 
@@ -88,6 +89,16 @@ pub enum Commands {
     Auth {
         #[command(subcommand)]
         command: AuthCommands,
+    },
+
+    /// Initialize AGENTS.md for AI coding agents.
+    ///
+    /// Analyzes the codebase and generates documentation including
+    /// build commands, code style guidelines, and project conventions.
+    Init {
+        /// Custom path for AGENTS.md (defaults to current directory).
+        #[arg(short, long)]
+        path: Option<String>,
     },
 }
 

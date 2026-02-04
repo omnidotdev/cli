@@ -753,6 +753,14 @@ fn handle_key(
                     return false;
                 }
 
+                if trimmed == "/init" {
+                    let init_prompt = crate::cli::init::get_init_prompt(None);
+                    app.input = init_prompt;
+                    app.cursor = app.input.len();
+                    start_chat(app, permission_tx.clone());
+                    return false;
+                }
+
                 // Check if provider is configured before starting chat
                 if app.agent.is_none() {
                     app.active_dialog = Some(ActiveDialog::NoProvider);

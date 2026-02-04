@@ -6,7 +6,7 @@ use tracing_subscriber::EnvFilter;
 
 use omni_cli::{
     Config,
-    cli::{AuthCommands, Cli, Commands, ConfigCommands, SessionCommands},
+    cli::{AuthCommands, Cli, Commands, ConfigCommands, SessionCommands, init::get_init_prompt},
     core::session::SessionTarget,
 };
 
@@ -146,6 +146,28 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
 
         Commands::Auth { command } => {
             handle_auth_command(command)?;
+        }
+
+        Commands::Init { path } => {
+            let config = Config::load()?;
+            let provider = config.agent.create_provider()?;
+            let mut agent = omni_cli::core::Agent::with_context(
+                provider,
+                &config.agent.model,
+                config.agent.max_tokens,
+                None,
+            );
+
+            let prompt = get_init_prompt(path.as_deref());
+            let _response = agent
+                .chat(&prompt, |text| {
+                    print!("{text}");
+                    std::io::stdout().flush().ok();
+                })
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+            println!();
         }
     }
 

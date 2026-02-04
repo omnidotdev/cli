@@ -46,6 +46,10 @@ pub const COMMANDS: &[Command] = &[
         description: "Browse and switch sessions",
     },
     Command {
+        name: "/init",
+        description: "Generate AGENTS.md for AI coding agents",
+    },
+    Command {
         name: "/plan",
         description: "Switch to plan mode",
     },
