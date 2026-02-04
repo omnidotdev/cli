@@ -4,7 +4,7 @@ use rand::prelude::IndexedRandom;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use super::components::{ModelSelectionDialog, SessionListDialog};
+use super::components::{ModelSelectionDialog, SessionListDialog, TextLayout};
 use super::message::{format_tool_invocation, DisplayMessage};
 use super::state::ViewState;
 
@@ -254,6 +254,12 @@ pub struct App {
 
     /// Receiver for model fetch results.
     pub models_rx: Option<ModelsFetchRx>,
+
+    /// Width of prompt text area for visual line navigation
+    pub prompt_text_width: usize,
+
+    /// Preferred column position when navigating up/down
+    pub preferred_column: Option<usize>,
 }
 
 impl Default for App {
@@ -391,6 +397,8 @@ impl App {
             provider,
             cached_provider_models: None,
             models_rx: None,
+            prompt_text_width: 80,
+            preferred_column: None,
         }
     }
 
@@ -457,6 +465,7 @@ impl App {
                 .next_back()
                 .map_or(0, |(i, _)| i);
         }
+        self.preferred_column = None;
     }
 
     /// Move cursor right by one character.
@@ -468,6 +477,7 @@ impl App {
                 .nth(1)
                 .map_or(self.input.len(), |(i, _)| self.cursor + i);
         }
+        self.preferred_column = None;
     }
 
     /// Move cursor left by one word.
@@ -550,78 +560,51 @@ impl App {
 
     /// Move cursor up one line, preserving column position.
     pub fn move_up(&mut self) {
-        let (line, col) = self.cursor_line_col();
-        if line == 0 {
+        if self.input.is_empty() {
             return;
         }
+        let layout = TextLayout::new(&self.input, self.prompt_text_width);
+        let (row, col) = layout.cursor_to_visual(self.cursor);
 
-        // Find start of current line
-        let current_line_start = self.input[..self.cursor].rfind('\n').map_or(0, |i| i + 1);
+        // Store preferred column on first vertical move
+        if self.preferred_column.is_none() {
+            self.preferred_column = Some(col);
+        }
 
-        // Find start of previous line
-        let prev_line_start = if current_line_start > 0 {
-            self.input[..current_line_start - 1]
-                .rfind('\n')
-                .map_or(0, |i| i + 1)
-        } else {
-            0
-        };
+        if row == 0 {
+            return; // Already at top
+        }
 
-        // Previous line content (without newline)
-        let prev_line_end = current_line_start - 1;
-        let prev_line = &self.input[prev_line_start..prev_line_end];
-        let prev_line_len = prev_line.chars().count();
-
-        // Move to same column or end of previous line
-        let target_col = col.min(prev_line_len);
-        self.cursor = prev_line_start
-            + prev_line
-                .char_indices()
-                .nth(target_col)
-                .map_or(prev_line.len(), |(i, _)| i);
+        let target_col = self.preferred_column.unwrap_or(col);
+        self.cursor = layout.visual_to_cursor(row - 1, target_col);
     }
 
     /// Move cursor down one line, preserving column position.
     pub fn move_down(&mut self) {
-        let (line, col) = self.cursor_line_col();
-        let total_lines = self.input.matches('\n').count() + 1;
-        if line >= total_lines - 1 {
+        if self.input.is_empty() {
             return;
         }
+        let layout = TextLayout::new(&self.input, self.prompt_text_width);
+        let (row, col) = layout.cursor_to_visual(self.cursor);
 
-        // Find end of current line (position of newline)
-        let next_newline = self.input[self.cursor..]
-            .find('\n')
-            .map(|i| self.cursor + i);
+        // Store preferred column on first vertical move
+        if self.preferred_column.is_none() {
+            self.preferred_column = Some(col);
+        }
 
-        let Some(newline_pos) = next_newline else {
-            return;
-        };
+        if row >= layout.total_lines - 1 {
+            return; // Already at bottom
+        }
 
-        // Next line starts after the newline
-        let next_line_start = newline_pos + 1;
-
-        // Find end of next line
-        let next_line_end = self.input[next_line_start..]
-            .find('\n')
-            .map_or(self.input.len(), |i| next_line_start + i);
-
-        let next_line = &self.input[next_line_start..next_line_end];
-        let next_line_len = next_line.chars().count();
-
-        // Move to same column or end of next line
-        let target_col = col.min(next_line_len);
-        self.cursor = next_line_start
-            + next_line
-                .char_indices()
-                .nth(target_col)
-                .map_or(next_line.len(), |(i, _)| i);
+        let target_col = self.preferred_column.unwrap_or(col);
+        self.cursor = layout.visual_to_cursor(row + 1, target_col);
     }
 
     /// Insert character at cursor.
     pub fn insert_char(&mut self, c: char) {
         self.input.insert(self.cursor, c);
         self.cursor += c.len_utf8();
+        self.preferred_column = None;
     }
 
     /// Delete character before cursor.
@@ -634,6 +617,7 @@ impl App {
             self.input.drain(prev..self.cursor);
             self.cursor = prev;
         }
+        self.preferred_column = None;
     }
 
     /// Clear input and reset cursor.

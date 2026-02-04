@@ -767,10 +767,12 @@ fn handle_key(
                 } else {
                     app.command_selection - 1
                 };
-            } else if app.is_multiline() {
-                app.move_up();
             } else if app.view_state == ViewState::Session {
-                app.scroll_messages_up(1);
+                let old_cursor = app.cursor;
+                app.move_up();
+                if app.cursor == old_cursor {
+                    app.scroll_messages_up(1);
+                }
             } else {
                 app.scroll_up(1);
             }
@@ -790,10 +792,12 @@ fn handle_key(
                 } else {
                     app.command_selection + 1
                 };
-            } else if app.is_multiline() {
-                app.move_down();
             } else if app.view_state == ViewState::Session {
-                app.scroll_messages_down(1);
+                let old_cursor = app.cursor;
+                app.move_down();
+                if app.cursor == old_cursor {
+                    app.scroll_messages_down(1);
+                }
             } else {
                 app.scroll_down(1, 1000); // Welcome screen uses fixed max.
             }
