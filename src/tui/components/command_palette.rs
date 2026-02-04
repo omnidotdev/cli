@@ -1,11 +1,11 @@
 //! Command palette dropdown for slash commands.
 
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Clear, Paragraph},
+    Frame,
 };
 
 use crate::config::ModelInfo;
@@ -199,24 +199,18 @@ pub fn render_command_dropdown(
     };
 
     let content_lines = lines.len().max(1);
-    let dropdown_height = (content_lines + 2) as u16; // +2 for borders
+    #[allow(clippy::cast_possible_truncation)]
+    let dropdown_height = content_lines as u16;
     let dropdown_width = prompt_area.width;
 
-    // Position directly above the prompt (no gap)
     let dropdown_y = prompt_area.y.saturating_sub(dropdown_height);
     let dropdown_x = prompt_area.x;
 
     let dropdown_area = Rect::new(dropdown_x, dropdown_y, dropdown_width, dropdown_height);
 
-    // Clear area behind dropdown
     frame.render_widget(Clear, dropdown_area);
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(DIMMED))
-        .style(Style::default().bg(DROPDOWN_BG));
-
-    let para = Paragraph::new(lines).block(block);
+    let para = Paragraph::new(lines).style(Style::default().bg(DROPDOWN_BG));
     frame.render_widget(para, dropdown_area);
 
     (dropdown_height, dropdown_area)
@@ -294,7 +288,8 @@ pub fn render_model_dropdown(
     };
 
     let content_lines = lines.len().max(1);
-    let dropdown_height = (content_lines + 2) as u16;
+    #[allow(clippy::cast_possible_truncation)]
+    let dropdown_height = content_lines as u16;
     let dropdown_width = prompt_area.width;
 
     let dropdown_y = prompt_area.y.saturating_sub(dropdown_height);
@@ -304,12 +299,7 @@ pub fn render_model_dropdown(
 
     frame.render_widget(Clear, dropdown_area);
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(DIMMED))
-        .style(Style::default().bg(DROPDOWN_BG));
-
-    let para = Paragraph::new(lines).block(block);
+    let para = Paragraph::new(lines).style(Style::default().bg(DROPDOWN_BG));
     frame.render_widget(para, dropdown_area);
 
     (dropdown_height, dropdown_area)

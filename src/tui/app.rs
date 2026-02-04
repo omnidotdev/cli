@@ -916,18 +916,15 @@ impl App {
 
     /// Check if a point is within the command dropdown area.
     /// Returns the item index if clicked on a dropdown item, None otherwise.
-    /// Accounts for the top border when calculating item index.
     #[must_use]
     pub fn is_in_dropdown_area(&self, row: u16, col: u16) -> Option<usize> {
         self.command_dropdown_area.and_then(|area| {
-            // Must be inside bounds AND past the top border (row > area.y)
-            // row == area.y is the top border itself, not a valid item
-            if row > area.y
-                && row < area.y + area.height.saturating_sub(1) // exclude bottom border
+            if row >= area.y
+                && row < area.y + area.height
                 && col >= area.x
                 && col < area.x + area.width
             {
-                let item_index = (row - area.y - 1) as usize;
+                let item_index = (row - area.y) as usize;
                 if item_index < self.command_dropdown_item_count {
                     Some(item_index)
                 } else {
