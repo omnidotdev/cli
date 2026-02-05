@@ -4,11 +4,9 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 
-use crate::core::agent::error::{AgentError, Result};
-use crate::core::agent::provider::{
-    CompletionEvent, CompletionRequest, CompletionStream, LlmProvider,
-};
-use crate::core::agent::types::{ContentBlock, MessagesRequest, StreamEvent};
+use crate::error::{AgentError, Result};
+use crate::provider::{CompletionEvent, CompletionRequest, CompletionStream, LlmProvider};
+use crate::types::{ContentBlock, Delta, MessagesRequest, StreamEvent};
 
 const API_URL: &str = "https://api.anthropic.com/v1/messages";
 const API_VERSION: &str = "2023-06-01";
@@ -117,14 +115,14 @@ impl LlmProvider for AnthropicProvider {
 
                         StreamEvent::ContentBlockDelta { index, delta } => {
                             match delta {
-                                crate::core::agent::types::Delta::TextDelta { text } => {
+                                Delta::TextDelta { text } => {
                                     // Update accumulated block
                                     if let Some(ContentBlock::Text { text: t }) = current_blocks.get_mut(index) {
                                         t.push_str(&text);
                                     }
                                     yield Ok(CompletionEvent::TextDelta(text));
                                 }
-                                crate::core::agent::types::Delta::InputJsonDelta { partial_json } => {
+                                Delta::InputJsonDelta { partial_json } => {
                                     yield Ok(CompletionEvent::ToolInputDelta { index, partial_json });
                                 }
                             }

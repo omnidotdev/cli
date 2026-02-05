@@ -11,6 +11,7 @@ use crate::core::agent::{
     AgentMode, AnthropicProvider, LlmProvider, OpenAiProvider, UnifiedProvider,
 };
 
+pub use agent_core::permission::{AgentPermissions, PermissionPreset};
 pub use persona::{Persona, list_personas, load_persona, personas_dir};
 
 /// Model information with provider association.
@@ -39,69 +40,6 @@ pub enum ProviderApiType {
     Groq,
     /// Mistral API
     Mistral,
-}
-
-/// Permission action for agent operations.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum PermissionPreset {
-    /// Always allow without prompting.
-    Allow,
-    /// Always deny.
-    Deny,
-    /// Ask user each time.
-    #[default]
-    Ask,
-}
-
-/// Permission configuration for an agent.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct AgentPermissions {
-    /// File editing permission.
-    pub edit: PermissionPreset,
-    /// File writing (new files) permission.
-    pub write: PermissionPreset,
-    /// Destructive shell commands permission.
-    pub bash_write: PermissionPreset,
-    /// Read-only shell commands permission.
-    pub bash_read: PermissionPreset,
-    /// File reading permission.
-    pub read: PermissionPreset,
-    /// Web search permission.
-    pub web_search: PermissionPreset,
-    /// Code search permission.
-    pub code_search: PermissionPreset,
-}
-
-impl Default for AgentPermissions {
-    fn default() -> Self {
-        Self {
-            edit: PermissionPreset::Ask,
-            write: PermissionPreset::Ask,
-            bash_write: PermissionPreset::Ask,
-            bash_read: PermissionPreset::Allow,
-            read: PermissionPreset::Allow,
-            web_search: PermissionPreset::Ask,
-            code_search: PermissionPreset::Ask,
-        }
-    }
-}
-
-impl AgentPermissions {
-    /// Permissions for read-only plan mode.
-    #[must_use]
-    pub const fn plan_mode() -> Self {
-        Self {
-            edit: PermissionPreset::Deny,
-            write: PermissionPreset::Deny,
-            bash_write: PermissionPreset::Deny,
-            bash_read: PermissionPreset::Allow,
-            read: PermissionPreset::Allow,
-            web_search: PermissionPreset::Ask,
-            code_search: PermissionPreset::Ask,
-        }
-    }
 }
 
 /// Individual agent definition.

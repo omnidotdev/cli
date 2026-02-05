@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "crates/agent-core"]
+resolver = "2"
+
 [package]
 name = "omnidotdev-cli"
 version = "0.4.0"
@@ -63,6 +67,9 @@ toml = "0.9"
 # Async utilities
 futures = "0.3"
 async-trait = "0.1"
+
+# Agent core
+agent-core = { path = "crates/agent-core" }
 
 # HTTP client
 reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls"] }

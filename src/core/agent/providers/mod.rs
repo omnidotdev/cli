@@ -1,9 +1,5 @@
 //! LLM provider implementations.
+//!
+//! Re-exports from agent-core.
 
-mod anthropic;
-mod openai;
-mod unified;
-
-pub use anthropic::AnthropicProvider;
-pub use openai::OpenAiProvider;
-pub use unified::UnifiedProvider;
+pub use agent_core::providers::{AnthropicProvider, OpenAiProvider, UnifiedProvider};

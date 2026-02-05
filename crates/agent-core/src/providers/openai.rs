@@ -7,11 +7,9 @@ use futures::StreamExt;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 
-use crate::core::agent::error::{AgentError, Result};
-use crate::core::agent::provider::{
-    CompletionEvent, CompletionRequest, CompletionStream, LlmProvider,
-};
-use crate::core::agent::types::{Content, ContentBlock, Message, Role, StopReason, Tool};
+use crate::error::{AgentError, Result};
+use crate::provider::{CompletionEvent, CompletionRequest, CompletionStream, LlmProvider};
+use crate::types::{Content, ContentBlock, Message, Role, StopReason, Tool};
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 

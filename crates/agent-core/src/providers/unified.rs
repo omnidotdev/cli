@@ -9,11 +9,9 @@ use llm::builder::{LLMBackend, LLMBuilder};
 use llm::chat::{ChatMessage, FunctionTool, StreamChunk, Tool as LlmTool};
 use llm::{FunctionCall, LLMProvider, ToolCall as LlmToolCall};
 
-use crate::core::agent::error::{AgentError, Result};
-use crate::core::agent::provider::{
-    CompletionEvent, CompletionRequest, CompletionStream, LlmProvider,
-};
-use crate::core::agent::types::{Content, ContentBlock, Message, Role, StopReason, Tool};
+use crate::error::{AgentError, Result};
+use crate::provider::{CompletionEvent, CompletionRequest, CompletionStream, LlmProvider};
+use crate::types::{Content, ContentBlock, Message, Role, StopReason, Tool};
 
 /// Unified LLM provider supporting multiple backends.
 pub struct UnifiedProvider {
