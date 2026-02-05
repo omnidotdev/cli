@@ -103,6 +103,25 @@ fn is_diff_file_header(line: &Line<'_>) -> bool {
     })
 }
 
+/// Extract stats from tool output for minimal display
+fn extract_tool_stats(name: &str, output: &str) -> String {
+    match name {
+        "read_file" | "Read" => {
+            let line_count = output.lines().count();
+            format!("→ {line_count} lines")
+        }
+        "list_dir" => {
+            let item_count = output.lines().filter(|l| !l.is_empty()).count();
+            format!("→ {item_count} items")
+        }
+        "memory_add" => "→ Saved".to_string(),
+        "memory_delete" => "→ Deleted".to_string(),
+        "plan_enter" => "→ Plan mode".to_string(),
+        "plan_exit" => "→ Build mode".to_string(),
+        _ => String::new(),
+    }
+}
+
 /// Render a `DisplayMessage` with scroll offset for partial visibility
 ///
 /// The `scroll_offset` parameter specifies how many lines to skip from the top
@@ -518,8 +537,20 @@ fn render_tool_message_with_scroll(
 
             all_lines.push(make_panel_line(vec![], 0));
         }
-        ToolRenderStyle::Minimal
-        | ToolRenderStyle::SummaryExpandable
+        ToolRenderStyle::Minimal => {
+            render_minimal_tool(
+                frame,
+                area,
+                name,
+                invocation,
+                output,
+                scroll_offset,
+                selection,
+                selected_text,
+            );
+            return;
+        }
+        ToolRenderStyle::SummaryExpandable
         | ToolRenderStyle::Structured
         | ToolRenderStyle::Interactive
         | ToolRenderStyle::CommandOutput => {
@@ -577,6 +608,61 @@ fn render_tool_message_with_scroll(
 
     let para = Paragraph::new(visible_lines);
     frame.render_widget(para, area);
+}
+
+/// Render a tool message as a single-line summary (no expansion)
+#[allow(clippy::too_many_arguments)]
+fn render_minimal_tool(
+    frame: &mut Frame,
+    area: Rect,
+    name: &str,
+    invocation: &str,
+    output: &str,
+    scroll_offset: u16,
+    selection: Option<(u16, u16)>,
+    selected_text: &mut String,
+) {
+    let icon = tool_icon(name);
+    let stats = extract_tool_stats(name, output);
+
+    let header_y = area.y;
+    let header_selected =
+        selection.is_some_and(|(min_y, max_y)| header_y >= min_y && header_y <= max_y);
+
+    let line = if header_selected {
+        let header_text = if invocation.is_empty() {
+            format!("{icon} {name} {stats}")
+        } else {
+            format!("{icon} {name}({invocation}) {stats}")
+        };
+        if !selected_text.is_empty() {
+            selected_text.push('\n');
+        }
+        selected_text.push_str(&header_text);
+        Line::from(Span::styled(
+            header_text,
+            Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
+        ))
+    } else {
+        Line::from(vec![
+            Span::styled(format!("{icon} "), Style::default().fg(SUCCESS_COLOR)),
+            Span::styled(name, Style::default().fg(Color::White)),
+            Span::styled(
+                if invocation.is_empty() {
+                    String::new()
+                } else {
+                    format!("({invocation})")
+                },
+                Style::default().fg(DIMMED),
+            ),
+            Span::styled(format!(" {stats}"), Style::default().fg(DIMMED)),
+        ])
+    };
+
+    if scroll_offset == 0 {
+        let para = Paragraph::new(vec![line]);
+        frame.render_widget(para, Rect::new(area.x, area.y, area.width, 1));
+    }
 }
 
 /// Calculate how many rows a line of text takes when wrapped to a given width
@@ -692,25 +778,30 @@ pub fn message_height(message: &DisplayMessage, width: u16, is_expanded: bool) -
                 classify_tool(name)
             };
 
-            if matches!(render_style, ToolRenderStyle::DiffPanel) {
-                let diff_portion = extract_diff_portion(output);
-                let parsed = parse_diff(diff_portion);
-                let diff_lines = render_diff(&parsed, width as u16);
-                let diff_line_count = diff_lines
-                    .iter()
-                    .filter(|l| !is_diff_file_header(l))
-                    .count();
-                #[allow(clippy::cast_possible_truncation)]
-                // 1 (tool header) + 4 (top pad + header + bottom pad + bottom pad) + diff lines
-                let height = 1 + 4 + diff_line_count as u16;
-                height
-            } else {
-                let line_count = output.lines().count();
-                if is_expanded || line_count <= MAX_TOOL_OUTPUT_LINES {
-                    let indicator = u16::from(is_expanded && line_count > MAX_TOOL_OUTPUT_LINES);
-                    1 + line_count as u16 + indicator
-                } else {
-                    1 + MAX_TOOL_OUTPUT_LINES as u16 + 1
+            match render_style {
+                ToolRenderStyle::Minimal => 1,
+                ToolRenderStyle::DiffPanel => {
+                    let diff_portion = extract_diff_portion(output);
+                    let parsed = parse_diff(diff_portion);
+                    let diff_lines = render_diff(&parsed, width as u16);
+                    let diff_line_count = diff_lines
+                        .iter()
+                        .filter(|l| !is_diff_file_header(l))
+                        .count();
+                    #[allow(clippy::cast_possible_truncation)]
+                    {
+                        1 + 4 + diff_line_count as u16
+                    }
+                }
+                _ => {
+                    let line_count = output.lines().count();
+                    if is_expanded || line_count <= MAX_TOOL_OUTPUT_LINES {
+                        let indicator =
+                            u16::from(is_expanded && line_count > MAX_TOOL_OUTPUT_LINES);
+                        1 + line_count as u16 + indicator
+                    } else {
+                        1 + MAX_TOOL_OUTPUT_LINES as u16 + 1
+                    }
                 }
             }
         }
