@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::process::Stdio;
 
-use similar::{ChangeTag, TextDiff};
+use similar::TextDiff;
 use tokio::process::Command;
 
 use super::AgentMode;
@@ -1343,7 +1343,7 @@ impl ToolRegistry {
         };
 
         // Generate diff for permission dialog
-        let diff = generate_diff(&content, &new_content);
+        let diff = generate_diff(&content, &new_content, path);
 
         // Request permission
         if let Some(perms) = permissions {
@@ -1907,10 +1907,10 @@ impl ToolRegistry {
             }
 
             let new_content = content.replacen(old_string, new_string, 1);
-            let diff = generate_diff(&content, &new_content);
+            let diff = generate_diff(&content, &new_content, path);
 
             use std::fmt::Write;
-            let _ = write!(all_diffs, "--- {path}\n+++ {path}\n{diff}\n");
+            let _ = writeln!(all_diffs, "{diff}");
             pending_edits.push((path.to_string(), new_content));
         }
 
@@ -2918,25 +2918,13 @@ fn format_document_symbols(symbols: &[crate::core::lsp::DocumentSymbol], indent:
         .join("\n")
 }
 
-/// Generate a unified diff between old and new content
-fn generate_diff(old: &str, new: &str) -> String {
+/// Generate a unified diff between old and new content with proper headers
+fn generate_diff(old: &str, new: &str, path: &str) -> String {
     let diff = TextDiff::from_lines(old, new);
-    let mut output = String::new();
-
-    for change in diff.iter_all_changes() {
-        let sign = match change.tag() {
-            ChangeTag::Delete => "-",
-            ChangeTag::Insert => "+",
-            ChangeTag::Equal => " ",
-        };
-        output.push_str(sign);
-        output.push_str(change.value());
-        if !change.value().ends_with('\n') {
-            output.push('\n');
-        }
-    }
-
-    output
+    diff.unified_diff()
+        .context_radius(3)
+        .header(&format!("a/{path}"), &format!("b/{path}"))
+        .to_string()
 }
 
 /// Convert HTML to plain text by stripping tags and decoding entities
