@@ -108,6 +108,8 @@ curl -X POST http://localhost:7890/api/agent \
 
 ## Development
 
+> **Note**: For TUI development and testing, use `cargo run` to launch the interactive interface.
+
 ### Version Syncing
 
 Omni CLI uses a dual-package setup (Rust crate + npm package) with automated version synchronization:

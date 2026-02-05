@@ -507,6 +507,8 @@ fn render_tool_message_with_scroll(
             }
             all_lines.push(make_panel_line(content_spans, content_len));
         }
+
+        all_lines.push(make_panel_line(vec![], 0));
     } else {
         let output_lines: Vec<&str> = output.lines().collect();
         let total_lines = output_lines.len();
@@ -673,8 +675,8 @@ pub fn message_height(message: &DisplayMessage, width: u16, is_expanded: bool) -
                     .filter(|l| !is_diff_file_header(l))
                     .count();
                 #[allow(clippy::cast_possible_truncation)]
-                // 1 (tool header) + 3 (padding + header + padding) + diff lines
-                let height = 1 + 3 + diff_line_count as u16;
+                // 1 (tool header) + 4 (top pad + header + bottom pad + bottom pad) + diff lines
+                let height = 1 + 4 + diff_line_count as u16;
                 height
             } else {
                 let line_count = output.lines().count();
