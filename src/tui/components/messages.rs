@@ -415,8 +415,8 @@ fn render_tool_message_with_scroll(
         ]));
     }
 
-    // Only render rich diffs for file modification tools (edit/write), not shell git diff commands
-    let is_file_modification_tool = name == "edit" || name == "write";
+    // Only render rich diffs for file modification tools, not shell git diff commands
+    let is_file_modification_tool = name == "edit_file" || name == "write_file";
     if is_file_modification_tool && is_diff_content(output) {
         let parsed = parse_diff(output);
         let diff_lines = render_diff(&parsed, area.width);
@@ -578,7 +578,7 @@ pub fn message_height(message: &DisplayMessage, width: u16, is_expanded: bool) -
             (layout.total_lines as u16).max(1)
         }
         DisplayMessage::Tool { name, output, .. } => {
-            let is_file_modification_tool = name == "edit" || name == "write";
+            let is_file_modification_tool = name == "edit_file" || name == "write_file";
             if is_file_modification_tool && is_diff_content(output) {
                 let parsed = parse_diff(output);
                 let diff_lines = render_diff(&parsed, width as u16);
