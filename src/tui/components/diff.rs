@@ -16,9 +16,9 @@ use ratatui::{
 pub const SPLIT_THRESHOLD: u16 = 100;
 
 /// Foreground color for added line markers (+)
-pub const DIFF_ADD_FG: Color = Color::Rgb(100, 180, 100);
+pub const DIFF_ADD_FG: Color = Color::Rgb(120, 180, 120);
 /// Foreground color for deleted line markers (-)
-pub const DIFF_DEL_FG: Color = Color::Rgb(220, 100, 100);
+pub const DIFF_DEL_FG: Color = Color::Rgb(240, 100, 120);
 /// Background color for added lines (subtle green tint)
 const DIFF_ADD_BG: Color = Color::Rgb(35, 50, 35);
 /// Background color for deleted lines (subtle red tint)
@@ -636,7 +636,7 @@ fn render_split_view(diff: &ParsedDiff, width: u16, extension: Option<&str>) -> 
             }
         }
 
-        spans.push(Span::styled(" | ", gutter_style));
+        spans.push(Span::raw("   "));
         spans.push(Span::styled(right_num, gutter_style));
         spans.push(Span::styled(format!("{right_marker} "), right_marker_style));
         spans.extend(right_spans);
@@ -897,10 +897,8 @@ mod tests {
         assert_eq!(lines.len(), 2);
 
         assert!(lines[0].spans[0].content.contains("test.txt"));
-        assert!(lines[1]
-            .spans
-            .iter()
-            .any(|span| span.content.contains(" | ")));
+        let content_line: String = lines[1].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(content_line.contains("old") && content_line.contains("new"));
     }
 
     #[test]

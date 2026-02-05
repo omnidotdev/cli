@@ -1,19 +1,20 @@
 //! Message rendering components.
 
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
-    Frame,
 };
 
+use super::diff::{parse_diff, render_diff};
 use super::markdown::MarkdownStreamParser;
 use super::prompt::find_at_mention_spans;
 use super::text_layout::TextLayout;
 use crate::core::agent::AgentMode;
 use crate::core::session::FileReference;
-use crate::tui::message::{icons, tool_icon, DisplayMessage};
+use crate::tui::message::{DisplayMessage, icons, tool_icon};
 
 const BRAND_TEAL: Color = Color::Rgb(77, 201, 176);
 const PLAN_PURPLE: Color = Color::Rgb(160, 100, 200);
@@ -30,6 +31,8 @@ const FILE_REF_COLOR: Color = Color::Rgb(200, 160, 100);
 pub const DIFF_ADD: Color = Color::Rgb(100, 180, 100);
 pub const DIFF_DEL: Color = Color::Rgb(220, 100, 100);
 pub const DIFF_HUNK: Color = Color::Rgb(80, 140, 180);
+const DIFF_PANEL_BG: Color = Color::Rgb(24, 26, 32);
+const DIFF_BORDER: Color = Color::Rgb(70, 100, 130);
 const MAX_TOOL_OUTPUT_LINES: usize = 12;
 
 pub fn line_color(line: &str) -> Color {
@@ -42,6 +45,62 @@ pub fn line_color(line: &str) -> Color {
     } else {
         DIMMED
     }
+}
+
+fn extract_file_path_from_invocation(invocation: &str) -> &str {
+    if let Some(start) = invocation.find('"') {
+        if let Some(end) = invocation[start + 1..].find('"') {
+            return &invocation[start + 1..start + 1 + end];
+        }
+    }
+    invocation.split_whitespace().next().unwrap_or(invocation)
+}
+
+fn extract_diff_portion(output: &str) -> &str {
+    if let Some(pos) = output.find("---") {
+        return &output[pos..];
+    }
+    output
+}
+
+fn is_diff_file_header(line: &Line<'_>) -> bool {
+    let Some(first_span) = line.spans.first() else {
+        return false;
+    };
+    if !first_span.content.starts_with(' ') && !first_span.content.starts_with('\u{2190}') {
+        return false;
+    }
+    let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+    let trimmed = text.trim();
+    if !trimmed.contains('/') {
+        return false;
+    }
+    let path = std::path::Path::new(trimmed);
+    path.extension().is_some_and(|ext| {
+        matches!(
+            ext.to_str(),
+            Some(
+                "rs" | "ts"
+                    | "tsx"
+                    | "js"
+                    | "jsx"
+                    | "json"
+                    | "toml"
+                    | "md"
+                    | "txt"
+                    | "yaml"
+                    | "yml"
+                    | "html"
+                    | "css"
+                    | "py"
+                    | "go"
+                    | "java"
+                    | "c"
+                    | "cpp"
+                    | "h"
+            )
+        )
+    })
 }
 
 /// Render a `DisplayMessage` with scroll offset for partial visibility
@@ -385,19 +444,54 @@ fn render_tool_message_with_scroll(
         ]));
     }
 
-    // File modification tools: render full output with diff coloring (no truncation)
-    // Other tools (e.g., shell git diff): use 12-line cap with expand-in-place
     let is_file_modification_tool = name == "edit_file" || name == "write_file";
     if is_file_modification_tool {
-        for line_text in output.lines() {
-            let color = line_color(line_text);
-            all_lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(line_text.to_string(), Style::default().fg(color)),
-            ]));
+        let file_path = extract_file_path_from_invocation(invocation);
+        let diff_portion = extract_diff_portion(output);
+
+        let action = if name == "write_file" {
+            "Write"
+        } else {
+            "Edit"
+        };
+        let header_text = format!("\u{2190} {action} {file_path}");
+        all_lines.push(Line::from(vec![
+            Span::raw(" "),
+            Span::styled("\u{258e} ", Style::default().fg(DIFF_BORDER)),
+            Span::styled(
+                header_text,
+                Style::default()
+                    .fg(Color::Rgb(200, 200, 220))
+                    .bg(DIFF_PANEL_BG),
+            ),
+            Span::styled(
+                " ".repeat(area.width.saturating_sub(10) as usize),
+                Style::default().bg(DIFF_PANEL_BG),
+            ),
+        ]));
+
+        let parsed = parse_diff(diff_portion);
+        let diff_lines = render_diff(&parsed, area.width.saturating_sub(4));
+
+        for diff_line in diff_lines {
+            if is_diff_file_header(&diff_line) {
+                continue;
+            }
+
+            let mut styled_spans: Vec<Span<'static>> = vec![
+                Span::raw(" "),
+                Span::styled(
+                    "\u{258e} ",
+                    Style::default().fg(DIFF_BORDER).bg(DIFF_PANEL_BG),
+                ),
+            ];
+            for span in diff_line.spans {
+                let new_style = span.style.bg(DIFF_PANEL_BG);
+                styled_spans.push(Span::styled(span.content, new_style));
+            }
+            all_lines.push(Line::from(styled_spans));
         }
     } else {
-        // Render regular output with 12-line cap
         let output_lines: Vec<&str> = output.lines().collect();
         let total_lines = output_lines.len();
         let show_expand_indicator = total_lines > MAX_TOOL_OUTPUT_LINES && !is_expanded;
@@ -553,15 +647,26 @@ pub fn message_height(message: &DisplayMessage, width: u16, is_expanded: bool) -
             (layout.total_lines as u16).max(1)
         }
         DisplayMessage::Tool { name, output, .. } => {
-            let line_count = output.lines().count();
             let is_file_modification_tool = name == "edit_file" || name == "write_file";
             if is_file_modification_tool {
-                1 + line_count as u16
-            } else if is_expanded || line_count <= MAX_TOOL_OUTPUT_LINES {
-                let indicator = u16::from(is_expanded && line_count > MAX_TOOL_OUTPUT_LINES);
-                1 + line_count as u16 + indicator
+                let diff_portion = extract_diff_portion(output);
+                let parsed = parse_diff(diff_portion);
+                let diff_lines = render_diff(&parsed, width as u16);
+                let diff_line_count = diff_lines
+                    .iter()
+                    .filter(|l| !is_diff_file_header(l))
+                    .count();
+                #[allow(clippy::cast_possible_truncation)]
+                let height = 1 + 1 + diff_line_count as u16;
+                height
             } else {
-                1 + MAX_TOOL_OUTPUT_LINES as u16 + 1
+                let line_count = output.lines().count();
+                if is_expanded || line_count <= MAX_TOOL_OUTPUT_LINES {
+                    let indicator = u16::from(is_expanded && line_count > MAX_TOOL_OUTPUT_LINES);
+                    1 + line_count as u16 + indicator
+                } else {
+                    1 + MAX_TOOL_OUTPUT_LINES as u16 + 1
+                }
             }
         }
     }

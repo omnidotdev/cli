@@ -36,15 +36,13 @@ use crate::core::agent::{
 use crate::core::session::SessionTarget;
 
 pub use app::App;
-use app::{
-    ActiveAskUserDialog, ActiveDialog, ActivePermissionDialog, ChatMessage,
-};
+use app::{ActiveAskUserDialog, ActiveDialog, ActivePermissionDialog, ChatMessage};
 use components::{
     DropdownMode, InputAction, MESSAGE_PADDING_X, TextLayout, build_keybinding_map,
     calculate_content_height, default_keybindings, dropdown_mode, file_picker, filter_commands,
-    filter_models, find_at_mention_spans, render_command_dropdown,
-    render_model_dropdown, render_model_selection_dialog, render_session, render_session_list,
-    render_welcome, should_show_dropdown,
+    filter_models, find_at_mention_spans, render_command_dropdown, render_model_dropdown,
+    render_model_selection_dialog, render_session, render_session_list, render_welcome,
+    should_show_dropdown,
 };
 use message::DisplayMessage;
 use state::ViewState;
