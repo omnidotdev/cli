@@ -301,6 +301,7 @@ async fn run_app(
                         app.prompt_scroll_offset,
                         &mut app.tool_message_areas,
                         app.reasoning_effort,
+                        &app.expanded_tool_messages,
                     )
                 }
             };

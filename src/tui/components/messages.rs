@@ -1,11 +1,11 @@
 //! Message rendering components.
 
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
+    Frame,
 };
 
 use super::markdown::MarkdownStreamParser;
@@ -13,7 +13,7 @@ use super::prompt::find_at_mention_spans;
 use super::text_layout::TextLayout;
 use crate::core::agent::AgentMode;
 use crate::core::session::FileReference;
-use crate::tui::message::{DisplayMessage, icons, tool_icon};
+use crate::tui::message::{icons, tool_icon, DisplayMessage};
 
 const BRAND_TEAL: Color = Color::Rgb(77, 201, 176);
 const PLAN_PURPLE: Color = Color::Rgb(160, 100, 200);
@@ -30,6 +30,7 @@ const FILE_REF_COLOR: Color = Color::Rgb(200, 160, 100);
 pub const DIFF_ADD: Color = Color::Rgb(100, 180, 100);
 pub const DIFF_DEL: Color = Color::Rgb(220, 100, 100);
 pub const DIFF_HUNK: Color = Color::Rgb(80, 140, 180);
+const MAX_TOOL_OUTPUT_LINES: usize = 12;
 
 fn format_line_badge(count: usize) -> String {
     match count {
@@ -51,6 +52,35 @@ pub fn line_color(line: &str) -> Color {
     }
 }
 
+/// Detect if output content looks like a unified diff.
+/// Checks first 10 lines for diff patterns.
+#[must_use]
+pub fn is_diff_content(output: &str) -> bool {
+    let lines: Vec<&str> = output.lines().take(10).collect();
+
+    // Pattern 1: git diff format
+    if lines.iter().any(|l| l.starts_with("diff --git")) {
+        return true;
+    }
+
+    // Pattern 2: unified diff header (--- followed by +++)
+    let has_old_file = lines.iter().any(|l| l.starts_with("---"));
+    let has_new_file = lines.iter().any(|l| l.starts_with("+++"));
+    if has_old_file && has_new_file {
+        return true;
+    }
+
+    // Pattern 3: hunk header
+    if lines
+        .iter()
+        .any(|l| l.starts_with("@@") && l.contains("@@"))
+    {
+        return true;
+    }
+
+    false
+}
+
 /// Render a `DisplayMessage` with scroll offset for partial visibility
 ///
 /// The `scroll_offset` parameter specifies how many lines to skip from the top
@@ -63,6 +93,8 @@ pub fn render_message_with_scroll(
     scroll_offset: u16,
     selection: Option<(u16, u16)>,
     selected_text: &mut String,
+    expanded_tool_messages: &std::collections::HashSet<usize>,
+    message_index: usize,
 ) {
     match message {
         DisplayMessage::User {
@@ -95,6 +127,7 @@ pub fn render_message_with_scroll(
             output,
             is_error,
         } => {
+            let is_expanded = expanded_tool_messages.contains(&message_index);
             render_tool_message_with_scroll(
                 frame,
                 area,
@@ -103,6 +136,7 @@ pub fn render_message_with_scroll(
                 output,
                 *is_error,
                 scroll_offset,
+                is_expanded,
                 selection,
                 selected_text,
             );
@@ -332,7 +366,7 @@ fn render_assistant_message_with_scroll(
     frame.render_widget(para, area);
 }
 
-/// Render a tool message with optional diff expansion
+/// Render a tool message with multi-line output display
 #[allow(clippy::cast_possible_truncation, clippy::too_many_arguments)]
 fn render_tool_message_with_scroll(
     frame: &mut Frame,
@@ -342,44 +376,50 @@ fn render_tool_message_with_scroll(
     output: &str,
     is_error: bool,
     scroll_offset: u16,
+    is_expanded: bool,
     selection: Option<(u16, u16)>,
     selected_text: &mut String,
 ) {
-    if scroll_offset > 0 {
-        return;
-    }
-
     let icon = if is_error {
         icons::ERROR
     } else {
         tool_icon(name)
     };
     let icon_color = if is_error { ERROR_COLOR } else { SUCCESS_COLOR };
-    let line_count = output.lines().count();
-    let badge = format_line_badge(line_count);
 
-    let header = if invocation.is_empty() {
-        format!("{icon} {name}")
+    let output_lines: Vec<&str> = output.lines().collect();
+    let total_lines = output_lines.len();
+    let show_expand_indicator = total_lines > MAX_TOOL_OUTPUT_LINES && !is_expanded;
+    let show_collapse_indicator = is_expanded && total_lines > MAX_TOOL_OUTPUT_LINES;
+
+    let lines_to_show = if is_expanded {
+        total_lines
     } else {
-        format!("{icon} {name}({invocation})")
+        total_lines.min(MAX_TOOL_OUTPUT_LINES)
     };
 
+    let mut all_lines: Vec<Line> = Vec::new();
+
     let header_y = area.y;
-    let is_selected =
+    let header_selected =
         selection.is_some_and(|(min_y, max_y)| header_y >= min_y && header_y <= max_y);
 
-    let line = if is_selected {
+    if header_selected {
         if !selected_text.is_empty() {
             selected_text.push('\n');
         }
-        let full_text = format!("{header} {badge}");
-        selected_text.push_str(&full_text);
-        Line::from(Span::styled(
-            full_text,
+        let header_text = if invocation.is_empty() {
+            format!("{icon} {name}")
+        } else {
+            format!("{icon} {name}({invocation})")
+        };
+        selected_text.push_str(&header_text);
+        all_lines.push(Line::from(Span::styled(
+            header_text,
             Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
-        ))
+        )));
     } else {
-        Line::from(vec![
+        all_lines.push(Line::from(vec![
             Span::styled(format!("{icon} "), Style::default().fg(icon_color)),
             Span::styled(name, Style::default().fg(Color::White)),
             Span::styled(
@@ -390,11 +430,49 @@ fn render_tool_message_with_scroll(
                 },
                 Style::default().fg(DIMMED),
             ),
-            Span::styled(format!(" {badge}"), Style::default().fg(DIMMED)),
-        ])
-    };
+        ]));
+    }
 
-    let para = Paragraph::new(vec![line]);
+    for (i, line_text) in output_lines.iter().take(lines_to_show).enumerate() {
+        #[allow(clippy::cast_possible_truncation)]
+        let line_y = area.y + 1 + i as u16;
+        let is_selected =
+            selection.is_some_and(|(min_y, max_y)| line_y >= min_y && line_y <= max_y);
+
+        if is_selected {
+            if !selected_text.is_empty() {
+                selected_text.push('\n');
+            }
+            selected_text.push_str(line_text);
+            all_lines.push(Line::from(Span::styled(
+                format!("  {line_text}"),
+                Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
+            )));
+        } else {
+            let color = line_color(line_text);
+            all_lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled((*line_text).to_string(), Style::default().fg(color)),
+            ]));
+        }
+    }
+
+    if show_expand_indicator {
+        let remaining = total_lines - MAX_TOOL_OUTPUT_LINES;
+        all_lines.push(Line::from(Span::styled(
+            format!("  \u{25B6} [+{remaining} more lines]"),
+            Style::default().fg(DIMMED),
+        )));
+    } else if show_collapse_indicator {
+        all_lines.push(Line::from(Span::styled(
+            "  \u{25BC} [collapse]".to_string(),
+            Style::default().fg(DIMMED),
+        )));
+    }
+
+    let visible_lines: Vec<Line> = all_lines.into_iter().skip(scroll_offset as usize).collect();
+
+    let para = Paragraph::new(visible_lines);
     frame.render_widget(para, area);
 }
 
@@ -532,5 +610,29 @@ mod tests {
     #[test]
     fn test_format_line_badge_large() {
         assert_eq!(format_line_badge(1000), "[1000 lines]");
+    }
+
+    #[test]
+    fn test_is_diff_content_git_diff() {
+        let diff = "diff --git a/file.rs b/file.rs\nindex 123..456 789\n";
+        assert!(is_diff_content(diff));
+    }
+
+    #[test]
+    fn test_is_diff_content_unified_diff() {
+        let diff = "--- a/file.rs\n+++ b/file.rs\n@@ -1,3 +1,4 @@\n";
+        assert!(is_diff_content(diff));
+    }
+
+    #[test]
+    fn test_is_diff_content_plain_text() {
+        let text = "Hello world\nThis is not a diff\n";
+        assert!(!is_diff_content(text));
+    }
+
+    #[test]
+    fn test_is_diff_content_code_output() {
+        let code = "fn main() {\n    println!(\"hello\");\n}\n";
+        assert!(!is_diff_content(code));
     }
 }

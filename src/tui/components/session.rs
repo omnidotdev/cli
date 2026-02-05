@@ -1,16 +1,16 @@
 //! Session screen component.
 
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Paragraph, Wrap},
+    Frame,
 };
 
 use super::markdown::parse_markdown_line;
 use super::messages::{render_message_with_scroll, wrapped_line_height};
-use super::prompt::{PromptMode, render_prompt};
+use super::prompt::{render_prompt, PromptMode};
 use super::text_layout::TextLayout;
 use crate::core::agent::{AgentMode, ReasoningEffort};
 use crate::tui::app::Selection;
@@ -43,6 +43,7 @@ pub fn render_session(
     prompt_scroll_offset: usize,
     tool_message_areas: &mut Vec<(Rect, usize)>,
     reasoning_effort: ReasoningEffort,
+    expanded_tool_messages: &std::collections::HashSet<usize>,
 ) -> ((u16, u16), Rect) {
     let padded_width = area.width.saturating_sub(MESSAGE_PADDING_X * 2);
     let prompt_text_width = padded_width.saturating_sub(4).max(1) as usize;
@@ -87,6 +88,7 @@ pub fn render_session(
         selection,
         selected_text,
         tool_message_areas,
+        expanded_tool_messages,
     );
 
     if let Some(idx) = queued_idx {
@@ -159,6 +161,7 @@ fn render_message_list(
     selection: Option<&Selection>,
     selected_text: &mut String,
     tool_message_areas: &mut Vec<(Rect, usize)>,
+    expanded_tool_messages: &std::collections::HashSet<usize>,
 ) {
     let padded_area = Rect::new(
         area.x + MESSAGE_PADDING_X,
@@ -216,6 +219,8 @@ fn render_message_list(
             clip_top,
             sel_bounds,
             selected_text,
+            expanded_tool_messages,
+            msg_index,
         );
 
         if matches!(message, DisplayMessage::Tool { .. }) && clip_top == 0 {

@@ -1,5 +1,7 @@
 //! TUI application state.
 
+use std::collections::HashSet;
+
 use rand::prelude::IndexedRandom;
 use ratatui::layout::Rect;
 use tokio::sync::mpsc;
@@ -304,6 +306,9 @@ pub struct App {
     /// Tool message areas for click detection (Rect, `message_index`)
     pub tool_message_areas: Vec<(Rect, usize)>,
 
+    /// Set of expanded tool message indices
+    pub expanded_tool_messages: HashSet<usize>,
+
     /// Current reasoning effort level for thinking-capable models.
     pub reasoning_effort: ReasoningEffort,
 
@@ -474,6 +479,7 @@ impl App {
             command_dropdown_area: None,
             command_dropdown_item_count: 0,
             tool_message_areas: Vec::new(),
+            expanded_tool_messages: HashSet::new(),
             reasoning_effort: ReasoningEffort::default(),
             esc_pressed_once: false,
             backspace_on_empty_once: false,
@@ -1003,6 +1009,21 @@ impl App {
                 None
             }
         })
+    }
+
+    /// Toggle the expand state of a tool message
+    pub fn toggle_tool_expand(&mut self, index: usize) {
+        if self.expanded_tool_messages.contains(&index) {
+            self.expanded_tool_messages.remove(&index);
+        } else {
+            self.expanded_tool_messages.insert(index);
+        }
+    }
+
+    /// Check if a tool message is expanded
+    #[must_use]
+    pub fn is_tool_expanded(&self, index: usize) -> bool {
+        self.expanded_tool_messages.contains(&index)
     }
 
     /// Update terminal dimensions and recalculate max scroll.
