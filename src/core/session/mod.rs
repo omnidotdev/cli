@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
 pub use compaction::{
-    compaction_prompt, CompactionResult, DEFAULT_COMPACTION_THRESHOLD, MIN_MESSAGES_TO_KEEP,
+    CompactionResult, DEFAULT_COMPACTION_THRESHOLD, MIN_MESSAGES_TO_KEEP, compaction_prompt,
 };
 pub use export::{ExportFormat, ExportedMessage, ExportedSession};
 pub use message::{
@@ -24,7 +24,7 @@ pub use message::{
 };
 pub use part::{FileReference, Part, PartTime, ReasoningPart, TextPart, ToolPart, ToolState};
 pub use share::{ShareOptions, ShareToken};
-pub use titling::{extract_title, titling_prompt, MAX_TITLE_LENGTH};
+pub use titling::{MAX_TITLE_LENGTH, extract_title, titling_prompt};
 
 use super::project::Project;
 

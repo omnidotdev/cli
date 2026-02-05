@@ -517,7 +517,7 @@ impl App {
     }
 
     #[must_use]
-    pub fn cursor(&self) -> usize {
+    pub const fn cursor(&self) -> usize {
         self.edit_buffer.cursor()
     }
 
@@ -961,7 +961,7 @@ impl App {
     }
 
     /// Set the file dropdown area bounds and item count.
-    pub fn set_file_dropdown_area(&mut self, area: Option<Rect>, item_count: usize) {
+    pub const fn set_file_dropdown_area(&mut self, area: Option<Rect>, item_count: usize) {
         self.file_dropdown_area = area;
         self.file_dropdown_item_count = item_count;
     }

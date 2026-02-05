@@ -900,19 +900,16 @@ fn handle_key(
             if !app.loading {
                 if app.show_file_dropdown {
                     let query = file_picker::extract_file_query(app.input(), app.cursor());
-                    let filtered = file_picker::fuzzy_filter_files(&query, &app.cached_project_files);
+                    let filtered =
+                        file_picker::fuzzy_filter_files(&query, &app.cached_project_files);
                     if let Some(selected_file) = filtered.get(app.file_selection) {
                         let path_str = selected_file.to_string_lossy();
                         let path_str = path_str.strip_prefix("./").unwrap_or(&path_str);
                         let input = app.input().to_string();
                         let cursor = app.cursor();
                         if let Some(at_pos) = find_at_position(&input, cursor) {
-                            let new_input = format!(
-                                "{}@{} {}",
-                                &input[..at_pos],
-                                path_str,
-                                &input[cursor..]
-                            );
+                            let new_input =
+                                format!("{}@{} {}", &input[..at_pos], path_str, &input[cursor..]);
                             let new_cursor = at_pos + 1 + path_str.len() + 1;
                             app.set_input(new_input);
                             app.set_cursor(new_cursor);
@@ -963,7 +960,8 @@ fn handle_key(
             }
             // Check for @ trigger for file dropdown
             let cursor_pos = app.cursor();
-            app.show_file_dropdown = file_picker::should_show_file_dropdown(app.input(), cursor_pos);
+            app.show_file_dropdown =
+                file_picker::should_show_file_dropdown(app.input(), cursor_pos);
             if app.show_file_dropdown {
                 app.file_selection = 0;
                 // Lazy load files on first @

@@ -21,6 +21,7 @@ pub struct InitArgs {
 
 /// Get the init prompt with the specified path.
 #[must_use]
+#[allow(clippy::literal_string_with_formatting_args)]
 pub fn get_init_prompt(path: Option<&str>) -> String {
     let path = path.unwrap_or(".");
     INIT_PROMPT.replace("{path}", path)

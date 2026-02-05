@@ -64,7 +64,7 @@ impl EditorView {
 
     #[must_use]
     #[allow(clippy::unused_self)]
-    pub fn get_visual_line_count(&self, _buffer: &EditBuffer, layout: &TextLayout) -> usize {
+    pub const fn get_visual_line_count(&self, _buffer: &EditBuffer, layout: &TextLayout) -> usize {
         layout.total_lines
     }
 

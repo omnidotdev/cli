@@ -156,7 +156,7 @@ pub fn render_welcome(
     if area.width >= MIN_WIDTH_FOR_FOOTER && area.height > 4 {
         let footer_y = area.y + area.height.saturating_sub(1);
 
-        let tip_y = actual_prompt_box.y + actual_prompt_box.height + 1;
+        let tip_y = actual_prompt_box.y + actual_prompt_box.height + 2;
         if !tip.is_empty() && tip_y < footer_y {
             let tip_with_dot = format!("● {tip}");
             let tip_width = tip_with_dot.chars().count() as u16;

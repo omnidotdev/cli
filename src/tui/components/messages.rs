@@ -1,11 +1,11 @@
 //! Message rendering components.
 
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
-    Frame,
 };
 
 use super::markdown::MarkdownStreamParser;
@@ -13,7 +13,7 @@ use super::prompt::find_at_mention_spans;
 use super::text_layout::TextLayout;
 use crate::core::agent::AgentMode;
 use crate::core::session::FileReference;
-use crate::tui::message::{icons, tool_icon, DisplayMessage};
+use crate::tui::message::{DisplayMessage, icons, tool_icon};
 
 const BRAND_TEAL: Color = Color::Rgb(77, 201, 176);
 const PLAN_PURPLE: Color = Color::Rgb(160, 100, 200);
