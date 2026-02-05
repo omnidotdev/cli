@@ -454,61 +454,58 @@ fn render_tool_message_with_scroll(
         } else {
             "Edit"
         };
-        let header_text = format!("\u{2190} {action} {file_path}");
-        let header_len = header_text.chars().count() + 3;
-        let header_padding = area.width.saturating_sub(header_len as u16) as usize;
-        all_lines.push(Line::from(vec![
-            Span::styled(" ", Style::default().bg(DIFF_PANEL_BG)),
-            Span::styled(
-                "\u{258e} ",
-                Style::default().fg(DIFF_BORDER).bg(DIFF_PANEL_BG),
-            ),
-            Span::styled(
+        let panel_width = area.width.saturating_sub(3) as usize;
+        let make_panel_line = |content_spans: Vec<Span<'static>>, content_char_len: usize| {
+            let mut spans = vec![
+                Span::raw("  "),
+                Span::styled(
+                    "\u{258e}",
+                    Style::default().fg(DIFF_BORDER).bg(DIFF_PANEL_BG),
+                ),
+            ];
+            spans.extend(content_spans);
+            let padding_needed = panel_width.saturating_sub(content_char_len);
+            if padding_needed > 0 {
+                spans.push(Span::styled(
+                    " ".repeat(padding_needed),
+                    Style::default().bg(DIFF_PANEL_BG),
+                ));
+            }
+            Line::from(spans)
+        };
+
+        all_lines.push(make_panel_line(vec![], 0));
+
+        let header_text = format!(" \u{2190} {action} {file_path}");
+        let header_len = header_text.chars().count();
+        all_lines.push(make_panel_line(
+            vec![Span::styled(
                 header_text,
                 Style::default()
                     .fg(Color::Rgb(200, 200, 220))
                     .bg(DIFF_PANEL_BG),
-            ),
-            Span::styled(
-                " ".repeat(header_padding),
-                Style::default().bg(DIFF_PANEL_BG),
-            ),
-        ]));
+            )],
+            header_len,
+        ));
+
+        all_lines.push(make_panel_line(vec![], 0));
 
         let parsed = parse_diff(diff_portion);
-        let content_width = area.width.saturating_sub(4);
-        let diff_lines = render_diff(&parsed, content_width);
+        let diff_lines = render_diff(&parsed, panel_width as u16);
 
         for diff_line in diff_lines {
             if is_diff_file_header(&diff_line) {
                 continue;
             }
 
-            let mut styled_spans: Vec<Span<'static>> = vec![
-                Span::styled(" ", Style::default().bg(DIFF_PANEL_BG)),
-                Span::styled(
-                    "\u{258e} ",
-                    Style::default().fg(DIFF_BORDER).bg(DIFF_PANEL_BG),
-                ),
-            ];
+            let mut content_spans: Vec<Span<'static>> = Vec::new();
             let mut content_len = 0usize;
             for span in diff_line.spans {
                 content_len += span.content.chars().count();
-                let bg = if span.style.bg.is_some() {
-                    span.style.bg
-                } else {
-                    Some(DIFF_PANEL_BG)
-                };
-                styled_spans.push(Span::styled(span.content, span.style.bg(bg.unwrap())));
+                let bg = span.style.bg.unwrap_or(DIFF_PANEL_BG);
+                content_spans.push(Span::styled(span.content, span.style.bg(bg)));
             }
-            let right_padding = content_width.saturating_sub(content_len as u16) as usize;
-            if right_padding > 0 {
-                styled_spans.push(Span::styled(
-                    " ".repeat(right_padding),
-                    Style::default().bg(DIFF_PANEL_BG),
-                ));
-            }
-            all_lines.push(Line::from(styled_spans));
+            all_lines.push(make_panel_line(content_spans, content_len));
         }
     } else {
         let output_lines: Vec<&str> = output.lines().collect();
