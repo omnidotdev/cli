@@ -122,6 +122,43 @@ fn extract_tool_stats(name: &str, output: &str) -> String {
     }
 }
 
+fn extract_summary_stats(name: &str, output: &str) -> (String, usize) {
+    let line_count = output.lines().filter(|l| !l.is_empty()).count();
+    match name {
+        "glob" | "Glob" => {
+            let count = if line_count == 0 { 0 } else { line_count };
+            (format!("→ {count} files"), line_count)
+        }
+        "grep" | "Grep" => {
+            let files: std::collections::HashSet<&str> =
+                output.lines().filter_map(|l| l.split(':').next()).collect();
+            let file_count = files.len();
+            (
+                format!("→ {line_count} matches in {file_count} files"),
+                line_count,
+            )
+        }
+        "memory_search" => (format!("→ {line_count} memories"), line_count),
+        "lsp" => {
+            let preview = output
+                .lines()
+                .next()
+                .unwrap_or("")
+                .chars()
+                .take(40)
+                .collect::<String>();
+            let preview = if preview.len() < output.lines().next().unwrap_or("").len() {
+                format!("{preview}...")
+            } else {
+                preview
+            };
+            (format!("→ {preview}"), line_count)
+        }
+        "skill" => ("→ Loaded".to_string(), line_count),
+        _ => (String::new(), line_count),
+    }
+}
+
 /// Render a `DisplayMessage` with scroll offset for partial visibility
 ///
 /// The `scroll_offset` parameter specifies how many lines to skip from the top
@@ -550,8 +587,21 @@ fn render_tool_message_with_scroll(
             );
             return;
         }
-        ToolRenderStyle::SummaryExpandable
-        | ToolRenderStyle::Structured
+        ToolRenderStyle::SummaryExpandable => {
+            render_summary_expandable_tool(
+                frame,
+                area,
+                name,
+                invocation,
+                output,
+                scroll_offset,
+                is_expanded,
+                selection,
+                selected_text,
+            );
+            return;
+        }
+        ToolRenderStyle::Structured
         | ToolRenderStyle::Interactive
         | ToolRenderStyle::CommandOutput => {
             let output_lines: Vec<&str> = output.lines().collect();
@@ -663,6 +713,104 @@ fn render_minimal_tool(
         let para = Paragraph::new(vec![line]);
         frame.render_widget(para, Rect::new(area.x, area.y, area.width, 1));
     }
+}
+
+/// Render a tool with summary header and expandable details
+#[allow(clippy::too_many_arguments)]
+fn render_summary_expandable_tool(
+    frame: &mut Frame,
+    area: Rect,
+    name: &str,
+    invocation: &str,
+    output: &str,
+    scroll_offset: u16,
+    is_expanded: bool,
+    selection: Option<(u16, u16)>,
+    selected_text: &mut String,
+) {
+    let icon = tool_icon(name);
+    let (summary, total_lines) = extract_summary_stats(name, output);
+
+    let mut all_lines: Vec<Line> = Vec::new();
+
+    let header_y = area.y;
+    let header_selected =
+        selection.is_some_and(|(min_y, max_y)| header_y >= min_y && header_y <= max_y);
+
+    if header_selected {
+        let header_text = if invocation.is_empty() {
+            format!("{icon} {name} {summary}")
+        } else {
+            format!("{icon} {name}({invocation}) {summary}")
+        };
+        if !selected_text.is_empty() {
+            selected_text.push('\n');
+        }
+        selected_text.push_str(&header_text);
+        all_lines.push(Line::from(Span::styled(
+            header_text,
+            Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
+        )));
+    } else {
+        all_lines.push(Line::from(vec![
+            Span::styled(format!("{icon} "), Style::default().fg(SUCCESS_COLOR)),
+            Span::styled(name, Style::default().fg(Color::White)),
+            Span::styled(
+                if invocation.is_empty() {
+                    String::new()
+                } else {
+                    format!("({invocation})")
+                },
+                Style::default().fg(DIMMED),
+            ),
+            Span::styled(format!(" {summary}"), Style::default().fg(DIMMED)),
+        ]));
+    }
+
+    let show_details = is_expanded || total_lines <= 3;
+    let show_expand_indicator = !is_expanded && total_lines > 3;
+    let show_collapse_indicator = is_expanded && total_lines > 3;
+
+    if show_details && total_lines > 0 {
+        for (i, line_text) in output.lines().enumerate() {
+            #[allow(clippy::cast_possible_truncation)]
+            let line_y = area.y + 1 + i as u16;
+            let is_selected =
+                selection.is_some_and(|(min_y, max_y)| line_y >= min_y && line_y <= max_y);
+
+            if is_selected {
+                if !selected_text.is_empty() {
+                    selected_text.push('\n');
+                }
+                selected_text.push_str(line_text);
+                all_lines.push(Line::from(Span::styled(
+                    format!("  {line_text}"),
+                    Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
+                )));
+            } else {
+                all_lines.push(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(line_text.to_string(), Style::default().fg(DIMMED)),
+                ]));
+            }
+        }
+    }
+
+    if show_expand_indicator {
+        all_lines.push(Line::from(Span::styled(
+            format!("  \u{25B6} [+{total_lines} more lines]"),
+            Style::default().fg(DIMMED),
+        )));
+    } else if show_collapse_indicator {
+        all_lines.push(Line::from(Span::styled(
+            "  \u{25BC} [collapse]".to_string(),
+            Style::default().fg(DIMMED),
+        )));
+    }
+
+    let visible_lines: Vec<Line> = all_lines.into_iter().skip(scroll_offset as usize).collect();
+    let para = Paragraph::new(visible_lines);
+    frame.render_widget(para, area);
 }
 
 /// Calculate how many rows a line of text takes when wrapped to a given width
@@ -791,6 +939,18 @@ pub fn message_height(message: &DisplayMessage, width: u16, is_expanded: bool) -
                     #[allow(clippy::cast_possible_truncation)]
                     {
                         1 + 4 + diff_line_count as u16
+                    }
+                }
+                ToolRenderStyle::SummaryExpandable => {
+                    let (_, total_lines) = extract_summary_stats(name, output);
+                    if is_expanded || total_lines <= 3 {
+                        let indicator = u16::from(is_expanded && total_lines > 3);
+                        #[allow(clippy::cast_possible_truncation)]
+                        {
+                            1 + total_lines as u16 + indicator
+                        }
+                    } else {
+                        2
                     }
                 }
                 _ => {
