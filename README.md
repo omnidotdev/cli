@@ -75,13 +75,13 @@ token = "omni_..."  # Generate with: omni config generate-token
 
 ### Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/health` | Health check (public) |
-| `POST` | `/api/agent` | Execute an agentic task |
+| Method | Path                | Description                |
+| ------ | ------------------- | -------------------------- |
+| `GET`  | `/health`           | Health check (public)      |
+| `POST` | `/api/agent`        | Execute an agentic task    |
 | `POST` | `/api/agent/stream` | Execute with SSE streaming |
-| `GET` | `/api/history` | Get task execution history |
-| `GET` | `/api/docs` | Swagger UI documentation |
+| `GET`  | `/api/history`      | Get task execution history |
+| `GET`  | `/api/docs`         | Swagger UI documentation   |
 
 ### Authentication
 
@@ -108,8 +108,6 @@ curl -X POST http://localhost:7890/api/agent \
 
 ## Development
 
-> **Note**: For TUI development and testing, use `cargo run` to launch the interactive interface.
-
 ### Version Syncing
 
 Omni CLI uses a dual-package setup (Rust crate + npm package) with automated version synchronization:
@@ -128,10 +126,10 @@ bun run version  # syncs `package.json` version → `Cargo.toml`
 
 Two GitHub workflows handle versioning:
 
-| Workflow | Trigger | Purpose |
-|----------|---------|---------|
-| `test.yml` | Push/PR to `master` | Runs tests and builds |
-| `release.yml` | Push to `master` | Creates releases via Changesets, builds multi-platform binaries |
+| Workflow      | Trigger             | Purpose                                                         |
+| ------------- | ------------------- | --------------------------------------------------------------- |
+| `test.yml`    | Push/PR to `master` | Runs tests and builds                                           |
+| `release.yml` | Push to `master`    | Creates releases via Changesets, builds multi-platform binaries |
 
 ### Release Process
 
