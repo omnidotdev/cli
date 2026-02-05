@@ -33,14 +33,6 @@ pub const DIFF_DEL: Color = Color::Rgb(220, 100, 100);
 pub const DIFF_HUNK: Color = Color::Rgb(80, 140, 180);
 const MAX_TOOL_OUTPUT_LINES: usize = 12;
 
-fn format_line_badge(count: usize) -> String {
-    match count {
-        0 => "[no output]".to_string(),
-        1 => "[1 line]".to_string(),
-        n => format!("[{n} lines]"),
-    }
-}
-
 pub fn line_color(line: &str) -> Color {
     if (line.starts_with('+') || line.starts_with('>')) && !line.starts_with("+++") {
         DIFF_ADD
@@ -609,27 +601,6 @@ pub fn queued_message_height(text: &str, width: u16) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_format_line_badge_empty() {
-        assert_eq!(format_line_badge(0), "[no output]");
-    }
-
-    #[test]
-    fn test_format_line_badge_singular() {
-        assert_eq!(format_line_badge(1), "[1 line]");
-    }
-
-    #[test]
-    fn test_format_line_badge_plural() {
-        assert_eq!(format_line_badge(5), "[5 lines]");
-        assert_eq!(format_line_badge(247), "[247 lines]");
-    }
-
-    #[test]
-    fn test_format_line_badge_large() {
-        assert_eq!(format_line_badge(1000), "[1000 lines]");
-    }
 
     #[test]
     fn test_is_diff_content_git_diff() {
