@@ -8,7 +8,6 @@ use ratatui::{
     Frame,
 };
 
-use super::diff::{parse_diff, render_diff};
 use super::markdown::MarkdownStreamParser;
 use super::prompt::find_at_mention_spans;
 use super::text_layout::TextLayout;
@@ -43,35 +42,6 @@ pub fn line_color(line: &str) -> Color {
     } else {
         DIMMED
     }
-}
-
-/// Detect if output content looks like a unified diff.
-/// Checks first 10 lines for diff patterns.
-#[must_use]
-pub fn is_diff_content(output: &str) -> bool {
-    let lines: Vec<&str> = output.lines().take(10).collect();
-
-    // Pattern 1: git diff format
-    if lines.iter().any(|l| l.starts_with("diff --git")) {
-        return true;
-    }
-
-    // Pattern 2: unified diff header (--- followed by +++)
-    let has_old_file = lines.iter().any(|l| l.starts_with("---"));
-    let has_new_file = lines.iter().any(|l| l.starts_with("+++"));
-    if has_old_file && has_new_file {
-        return true;
-    }
-
-    // Pattern 3: hunk header
-    if lines
-        .iter()
-        .any(|l| l.starts_with("@@") && l.contains("@@"))
-    {
-        return true;
-    }
-
-    false
 }
 
 /// Render a `DisplayMessage` with scroll offset for partial visibility
@@ -415,12 +385,17 @@ fn render_tool_message_with_scroll(
         ]));
     }
 
-    // Only render rich diffs for file modification tools, not shell git diff commands
+    // File modification tools: render full output with diff coloring (no truncation)
+    // Other tools (e.g., shell git diff): use 12-line cap with expand-in-place
     let is_file_modification_tool = name == "edit_file" || name == "write_file";
-    if is_file_modification_tool && is_diff_content(output) {
-        let parsed = parse_diff(output);
-        let diff_lines = render_diff(&parsed, area.width);
-        all_lines.extend(diff_lines);
+    if is_file_modification_tool {
+        for line_text in output.lines() {
+            let color = line_color(line_text);
+            all_lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(line_text.to_string(), Style::default().fg(color)),
+            ]));
+        }
     } else {
         // Render regular output with 12-line cap
         let output_lines: Vec<&str> = output.lines().collect();
@@ -578,19 +553,15 @@ pub fn message_height(message: &DisplayMessage, width: u16, is_expanded: bool) -
             (layout.total_lines as u16).max(1)
         }
         DisplayMessage::Tool { name, output, .. } => {
+            let line_count = output.lines().count();
             let is_file_modification_tool = name == "edit_file" || name == "write_file";
-            if is_file_modification_tool && is_diff_content(output) {
-                let parsed = parse_diff(output);
-                let diff_lines = render_diff(&parsed, width as u16);
-                1 + diff_lines.len() as u16
+            if is_file_modification_tool {
+                1 + line_count as u16
+            } else if is_expanded || line_count <= MAX_TOOL_OUTPUT_LINES {
+                let indicator = u16::from(is_expanded && line_count > MAX_TOOL_OUTPUT_LINES);
+                1 + line_count as u16 + indicator
             } else {
-                let line_count = output.lines().count();
-                if is_expanded || line_count <= MAX_TOOL_OUTPUT_LINES {
-                    let indicator = u16::from(is_expanded && line_count > MAX_TOOL_OUTPUT_LINES);
-                    1 + line_count as u16 + indicator
-                } else {
-                    1 + MAX_TOOL_OUTPUT_LINES as u16 + 1
-                }
+                1 + MAX_TOOL_OUTPUT_LINES as u16 + 1
             }
         }
     }
@@ -602,33 +573,4 @@ pub fn queued_message_height(text: &str, width: u16) -> u16 {
     let text_width = width.saturating_sub(3).max(1);
     let layout = TextLayout::new(text, text_width);
     layout.total_lines as u16 + 3
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_is_diff_content_git_diff() {
-        let diff = "diff --git a/file.rs b/file.rs\nindex 123..456 789\n";
-        assert!(is_diff_content(diff));
-    }
-
-    #[test]
-    fn test_is_diff_content_unified_diff() {
-        let diff = "--- a/file.rs\n+++ b/file.rs\n@@ -1,3 +1,4 @@\n";
-        assert!(is_diff_content(diff));
-    }
-
-    #[test]
-    fn test_is_diff_content_plain_text() {
-        let text = "Hello world\nThis is not a diff\n";
-        assert!(!is_diff_content(text));
-    }
-
-    #[test]
-    fn test_is_diff_content_code_output() {
-        let code = "fn main() {\n    println!(\"hello\");\n}\n";
-        assert!(!is_diff_content(code));
-    }
 }
