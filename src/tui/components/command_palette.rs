@@ -1,11 +1,11 @@
 //! Command palette dropdown for slash commands.
 
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Clear, Paragraph},
+    Frame,
 };
 
 use crate::config::ModelInfo;

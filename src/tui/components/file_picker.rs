@@ -5,11 +5,11 @@
 use std::path::PathBuf;
 
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Clear, Paragraph},
+    Frame,
 };
 
 /// Dropdown background color
@@ -369,16 +369,12 @@ mod tests {
 
         let results = fuzzy_filter_files("main", &files);
         assert_eq!(results.len(), 2);
-        assert!(
-            results
-                .iter()
-                .any(|p| p.to_string_lossy().contains("Main.rs"))
-        );
-        assert!(
-            results
-                .iter()
-                .any(|p| p.to_string_lossy().contains("main.rs"))
-        );
+        assert!(results
+            .iter()
+            .any(|p| p.to_string_lossy().contains("Main.rs")));
+        assert!(results
+            .iter()
+            .any(|p| p.to_string_lossy().contains("main.rs")));
     }
 
     #[test]
