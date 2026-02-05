@@ -601,9 +601,21 @@ fn render_tool_message_with_scroll(
             );
             return;
         }
-        ToolRenderStyle::Structured
-        | ToolRenderStyle::Interactive
-        | ToolRenderStyle::CommandOutput => {
+        ToolRenderStyle::Structured => {
+            render_structured_tool(
+                frame,
+                area,
+                name,
+                invocation,
+                output,
+                scroll_offset,
+                is_expanded,
+                selection,
+                selected_text,
+            );
+            return;
+        }
+        ToolRenderStyle::Interactive | ToolRenderStyle::CommandOutput => {
             let output_lines: Vec<&str> = output.lines().collect();
             let total_lines = output_lines.len();
             let show_expand_indicator = total_lines > MAX_TOOL_OUTPUT_LINES && !is_expanded;
@@ -813,6 +825,194 @@ fn render_summary_expandable_tool(
     frame.render_widget(para, area);
 }
 
+/// Render a tool with structured/formatted output
+#[allow(clippy::too_many_arguments)]
+fn render_structured_tool(
+    frame: &mut Frame,
+    area: Rect,
+    name: &str,
+    invocation: &str,
+    output: &str,
+    scroll_offset: u16,
+    is_expanded: bool,
+    selection: Option<(u16, u16)>,
+    selected_text: &mut String,
+) {
+    let icon = tool_icon(name);
+    let mut all_lines: Vec<Line> = Vec::new();
+
+    let header_y = area.y;
+    let header_selected =
+        selection.is_some_and(|(min_y, max_y)| header_y >= min_y && header_y <= max_y);
+
+    // Header line
+    if header_selected {
+        let header_text = if invocation.is_empty() {
+            format!("{icon} {name}")
+        } else {
+            format!("{icon} {name}({invocation})")
+        };
+        if !selected_text.is_empty() {
+            selected_text.push('\n');
+        }
+        selected_text.push_str(&header_text);
+        all_lines.push(Line::from(Span::styled(
+            header_text,
+            Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
+        )));
+    } else {
+        all_lines.push(Line::from(vec![
+            Span::styled(format!("{icon} "), Style::default().fg(SUCCESS_COLOR)),
+            Span::styled(name, Style::default().fg(Color::White)),
+            Span::styled(
+                if invocation.is_empty() {
+                    String::new()
+                } else {
+                    format!("({invocation})")
+                },
+                Style::default().fg(DIMMED),
+            ),
+        ]));
+    }
+
+    // Special handling for todo_write - one-liner confirmation
+    if name == "todo_write" {
+        let status_indicator = if output.contains("completed") {
+            "✓"
+        } else if output.contains("in_progress") {
+            "◐"
+        } else {
+            "□"
+        };
+        all_lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(
+                format!("{status_indicator} Task updated"),
+                Style::default().fg(DIMMED),
+            ),
+        ]));
+    } else {
+        // Render output lines with structured formatting
+        let output_lines: Vec<&str> = output.lines().collect();
+        let total_lines = output_lines.len();
+        let show_expand_indicator = total_lines > MAX_TOOL_OUTPUT_LINES && !is_expanded;
+        let show_collapse_indicator = is_expanded && total_lines > MAX_TOOL_OUTPUT_LINES;
+
+        let lines_to_show = if is_expanded {
+            total_lines
+        } else {
+            total_lines.min(MAX_TOOL_OUTPUT_LINES)
+        };
+
+        for (i, line_text) in output_lines.iter().take(lines_to_show).enumerate() {
+            #[allow(clippy::cast_possible_truncation)]
+            let line_y = area.y + 1 + i as u16;
+            let is_selected =
+                selection.is_some_and(|(min_y, max_y)| line_y >= min_y && line_y <= max_y);
+
+            if is_selected {
+                if !selected_text.is_empty() {
+                    selected_text.push('\n');
+                }
+                selected_text.push_str(line_text);
+                all_lines.push(Line::from(Span::styled(
+                    format!("  {line_text}"),
+                    Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
+                )));
+            } else {
+                // Apply structured formatting based on tool type
+                let formatted_line = format_structured_line(name, line_text);
+                all_lines.push(formatted_line);
+            }
+        }
+
+        if show_expand_indicator {
+            let remaining = total_lines - MAX_TOOL_OUTPUT_LINES;
+            all_lines.push(Line::from(Span::styled(
+                format!("  \u{25B6} [+{remaining} more lines]"),
+                Style::default().fg(DIMMED),
+            )));
+        } else if show_collapse_indicator {
+            all_lines.push(Line::from(Span::styled(
+                "  \u{25BC} [collapse]".to_string(),
+                Style::default().fg(DIMMED),
+            )));
+        }
+    }
+
+    let visible_lines: Vec<Line> = all_lines.into_iter().skip(scroll_offset as usize).collect();
+    let para = Paragraph::new(visible_lines);
+    frame.render_widget(para, area);
+}
+
+/// Format a single line for structured tool output
+fn format_structured_line(name: &str, line: &str) -> Line<'static> {
+    match name {
+        "todo_read" => {
+            // Format: "- [id] content (status)"
+            let status_icon = if line.contains("completed") {
+                "✓"
+            } else if line.contains("in_progress") {
+                "◐"
+            } else if line.contains("pending") {
+                "□"
+            } else {
+                " "
+            };
+            let color = if line.contains("completed") {
+                SUCCESS_COLOR
+            } else if line.contains("in_progress") {
+                Color::Rgb(200, 180, 100)
+            } else {
+                DIMMED
+            };
+            Line::from(vec![
+                Span::raw("  "),
+                Span::styled(format!("{status_icon} "), Style::default().fg(color)),
+                Span::styled(line.to_string(), Style::default().fg(DIMMED)),
+            ])
+        }
+        "github_issue" | "github_pr" | "github_pr_review" => {
+            // Highlight issue/PR state indicators
+            let color = if line.contains("open") || line.contains("OPEN") {
+                Color::Rgb(100, 200, 100)
+            } else if line.contains("closed")
+                || line.contains("CLOSED")
+                || line.contains("merged")
+                || line.contains("MERGED")
+            {
+                Color::Rgb(180, 100, 180)
+            } else {
+                DIMMED
+            };
+            Line::from(vec![
+                Span::raw("  "),
+                Span::styled(line.to_string(), Style::default().fg(color)),
+            ])
+        }
+        "web_search" | "code_search" => {
+            // URLs get dimmed, titles stay normal
+            let color = if line.starts_with("http") || line.contains("://") {
+                DIMMED
+            } else {
+                Color::White
+            };
+            Line::from(vec![
+                Span::raw("  "),
+                Span::styled(line.to_string(), Style::default().fg(color)),
+            ])
+        }
+        _ => {
+            // Default: use existing line_color for diff-style output
+            let color = line_color(line);
+            Line::from(vec![
+                Span::raw("  "),
+                Span::styled(line.to_string(), Style::default().fg(color)),
+            ])
+        }
+    }
+}
+
 /// Calculate how many rows a line of text takes when wrapped to a given width
 #[inline]
 #[allow(clippy::cast_possible_truncation)]
@@ -951,6 +1151,20 @@ pub fn message_height(message: &DisplayMessage, width: u16, is_expanded: bool) -
                         }
                     } else {
                         2
+                    }
+                }
+                ToolRenderStyle::Structured => {
+                    if name == "todo_write" {
+                        2
+                    } else {
+                        let line_count = output.lines().count();
+                        if is_expanded || line_count <= MAX_TOOL_OUTPUT_LINES {
+                            let indicator =
+                                u16::from(is_expanded && line_count > MAX_TOOL_OUTPUT_LINES);
+                            1 + line_count as u16 + indicator
+                        } else {
+                            1 + MAX_TOOL_OUTPUT_LINES as u16 + 1
+                        }
                     }
                 }
                 _ => {
