@@ -673,7 +673,8 @@ pub fn message_height(message: &DisplayMessage, width: u16, is_expanded: bool) -
                     .filter(|l| !is_diff_file_header(l))
                     .count();
                 #[allow(clippy::cast_possible_truncation)]
-                let height = 1 + 1 + diff_line_count as u16;
+                // 1 (tool header) + 3 (padding + header + padding) + diff lines
+                let height = 1 + 3 + diff_line_count as u16;
                 height
             } else {
                 let line_count = output.lines().count();
