@@ -37,6 +37,26 @@ fn diff_extension(diff: &ParsedDiff) -> Option<&str> {
         .and_then(|path| path.rsplit('.').next())
 }
 
+/// Convert new `LogicalLine` to legacy `DiffLine` for rendering compatibility
+fn logical_line_to_diff_line(
+    line: &LogicalLine,
+    old_line_num: Option<u32>,
+    new_line_num: Option<u32>,
+) -> DiffLine {
+    let tag = match line.line_type {
+        LineType::Context => DiffTag::Equal,
+        LineType::Add => DiffTag::Add,
+        LineType::Remove => DiffTag::Delete,
+        LineType::Empty => DiffTag::Header,
+    };
+    DiffLine {
+        tag,
+        content: line.content.clone(),
+        old_line_num,
+        new_line_num,
+    }
+}
+
 const fn diff_background(tag: DiffTag) -> Option<Color> {
     match tag {
         DiffTag::Add => Some(DIFF_ADD_BG),
@@ -75,7 +95,53 @@ fn apply_background(spans: Vec<Span<'static>>, background: Option<Color>) -> Vec
         .collect()
 }
 
-/// Tag indicating the type of diff line
+/// Type of line in a diff
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LineType {
+    /// Context line (unchanged)
+    Context,
+    /// Added line
+    Add,
+    /// Removed line
+    Remove,
+    /// Empty placeholder for split-view alignment
+    Empty,
+}
+
+/// A logical line in a diff with rendering metadata
+#[derive(Debug, Clone)]
+pub struct LogicalLine {
+    /// Line content (without +/- prefix)
+    pub content: String,
+    /// Line number (None for Empty lines or when hidden)
+    pub line_num: Option<u32>,
+    /// Type of change
+    pub line_type: LineType,
+    /// Whether to hide the line number (for wrapped continuations)
+    pub hide_line_number: bool,
+}
+
+/// A hunk (contiguous changed region) in a diff
+#[derive(Debug, Clone)]
+pub struct DiffHunk {
+    /// Starting line number in old file
+    pub old_start: u32,
+    /// Starting line number in new file
+    pub new_start: u32,
+    /// Lines in this hunk
+    pub lines: Vec<LogicalLine>,
+}
+
+/// Parsed diff with file path and hunks
+#[derive(Debug)]
+pub struct ParsedDiff {
+    /// File path extracted from headers
+    pub file_path: Option<String>,
+    /// Hunks in this diff
+    pub hunks: Vec<DiffHunk>,
+}
+
+/// Tag indicating the type of diff line (legacy, kept for compatibility)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum DiffTag {
@@ -89,7 +155,7 @@ pub enum DiffTag {
     Header,
 }
 
-/// A single line in a diff with metadata
+/// A single line in a diff with metadata (legacy, kept for compatibility)
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct DiffLine {
@@ -101,16 +167,6 @@ pub struct DiffLine {
     pub old_line_num: Option<u32>,
     /// Line number in new file (None for deleted lines)
     pub new_line_num: Option<u32>,
-}
-
-/// Parsed diff with file path and structured lines
-#[derive(Debug)]
-#[allow(dead_code)]
-pub struct ParsedDiff {
-    /// File path extracted from --- / +++ headers
-    pub file_path: Option<String>,
-    /// Structured diff lines
-    pub lines: Vec<DiffLine>,
 }
 
 /// Diff view widget with collapsible state
@@ -139,84 +195,110 @@ impl DiffView {
 
 impl fmt::Debug for DiffView {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let line_count: usize = self.diff.hunks.iter().map(|h| h.lines.len()).sum();
         f.debug_struct("DiffView")
             .field("file_path", &self.diff.file_path)
-            .field("line_count", &self.diff.lines.len())
+            .field("line_count", &line_count)
             .field("is_expanded", &self.is_expanded)
             .finish()
     }
 }
 
 /// Parse a unified diff string into structured data
-#[allow(dead_code)]
 pub fn parse_diff(diff_str: &str) -> ParsedDiff {
     let mut file_path: Option<String> = None;
-    let mut lines = Vec::new();
-    let mut old_line_num: u32 = 0;
-    let mut new_line_num: u32 = 0;
+    let mut hunks = Vec::new();
+    let mut current_hunk_lines = Vec::new();
+    let mut current_old_start = 1u32;
+    let mut current_new_start = 1u32;
+    let mut old_line_num = 1u32;
+    let mut new_line_num = 1u32;
 
     for line in diff_str.lines() {
         // Extract file path from --- / +++ headers
         if line.starts_with("--- ") {
             let path = line.strip_prefix("--- ").unwrap_or("");
             if path != "/dev/null" {
-                file_path = Some(path.to_string());
+                file_path = Some(strip_ab_prefix(path));
             }
             continue;
         }
         if line.starts_with("+++ ") {
             let path = line.strip_prefix("+++ ").unwrap_or("");
             if path != "/dev/null" && file_path.is_none() {
-                file_path = Some(path.to_string());
+                file_path = Some(strip_ab_prefix(path));
             }
             continue;
         }
 
         // Parse hunk header (@@ -old,count +new,count @@)
         if line.starts_with("@@") {
-            if let Some(header_content) = parse_hunk_header(line) {
-                old_line_num = header_content.old_start;
-                new_line_num = header_content.new_start;
-                lines.push(DiffLine {
-                    tag: DiffTag::Header,
-                    content: line.to_string(),
-                    old_line_num: None,
-                    new_line_num: None,
-                });
+            if let Some(header) = parse_hunk_header(line) {
+                // Save previous hunk if any
+                if !current_hunk_lines.is_empty() {
+                    hunks.push(DiffHunk {
+                        old_start: current_old_start,
+                        new_start: current_new_start,
+                        lines: current_hunk_lines,
+                    });
+                    current_hunk_lines = Vec::new();
+                }
+                current_old_start = header.old_start;
+                current_new_start = header.new_start;
+                old_line_num = header.old_start;
+                new_line_num = header.new_start;
             }
             continue;
         }
 
         // Parse diff lines
         if let Some(stripped) = line.strip_prefix('+') {
-            lines.push(DiffLine {
-                tag: DiffTag::Add,
+            current_hunk_lines.push(LogicalLine {
                 content: stripped.to_string(),
-                old_line_num: None,
-                new_line_num: Some(new_line_num),
+                line_num: Some(new_line_num),
+                line_type: LineType::Add,
+                hide_line_number: false,
             });
             new_line_num += 1;
         } else if let Some(stripped) = line.strip_prefix('-') {
-            lines.push(DiffLine {
-                tag: DiffTag::Delete,
+            current_hunk_lines.push(LogicalLine {
                 content: stripped.to_string(),
-                old_line_num: Some(old_line_num),
-                new_line_num: None,
+                line_num: Some(old_line_num),
+                line_type: LineType::Remove,
+                hide_line_number: false,
             });
             old_line_num += 1;
         } else if let Some(stripped) = line.strip_prefix(' ') {
-            lines.push(DiffLine {
-                tag: DiffTag::Equal,
+            current_hunk_lines.push(LogicalLine {
                 content: stripped.to_string(),
-                old_line_num: Some(old_line_num),
-                new_line_num: Some(new_line_num),
+                line_num: Some(old_line_num),
+                line_type: LineType::Context,
+                hide_line_number: false,
             });
             old_line_num += 1;
             new_line_num += 1;
         }
     }
 
-    ParsedDiff { file_path, lines }
+    // Save final hunk
+    if !current_hunk_lines.is_empty() {
+        hunks.push(DiffHunk {
+            old_start: current_old_start,
+            new_start: current_new_start,
+            lines: current_hunk_lines,
+        });
+    }
+
+    ParsedDiff { file_path, hunks }
+}
+
+/// Strip 'a/' or 'b/' prefix from file paths in diff headers
+fn strip_ab_prefix(path: &str) -> String {
+    if path.starts_with("a/") || path.starts_with("b/") {
+        path[2..].to_string()
+    } else {
+        path.to_string()
+    }
 }
 
 /// Hunk header metadata
@@ -364,36 +446,41 @@ fn render_unified_view(diff: &ParsedDiff, extension: Option<&str>) -> Vec<Line<'
 
     let gutter_style = Style::default().fg(DIMMED);
 
-    for line in &diff.lines {
-        if line.tag == DiffTag::Header {
-            continue;
+    for hunk in &diff.hunks {
+        for logical_line in &hunk.lines {
+            let (prefix, prefix_style, tag) = match logical_line.line_type {
+                LineType::Add => ("+", Style::default().fg(DIFF_ADD_FG), DiffTag::Add),
+                LineType::Remove => ("-", Style::default().fg(DIFF_DEL_FG), DiffTag::Delete),
+                LineType::Context => (" ", Style::default(), DiffTag::Equal),
+                LineType::Empty => (" ", Style::default(), DiffTag::Header),
+            };
+
+            let old_num = match logical_line.line_type {
+                LineType::Remove | LineType::Context => logical_line
+                    .line_num
+                    .map_or("    ".to_string(), |n| format!("{n:>4}")),
+                _ => "    ".to_string(),
+            };
+            let new_num = match logical_line.line_type {
+                LineType::Add | LineType::Context => logical_line
+                    .line_num
+                    .map_or("    ".to_string(), |n| format!("{n:>4}")),
+                _ => "    ".to_string(),
+            };
+
+            let content_spans = apply_background(
+                highlight_line_spans(&logical_line.content, extension),
+                diff_background(tag),
+            );
+            let mut spans = vec![
+                Span::styled(old_num, gutter_style),
+                Span::raw(" "),
+                Span::styled(new_num, gutter_style),
+                Span::styled(format!(" {prefix} "), prefix_style),
+            ];
+            spans.extend(content_spans);
+            result.push(Line::from(spans));
         }
-
-        let (prefix, prefix_style) = match line.tag {
-            DiffTag::Add => ("+", Style::default().fg(DIFF_ADD_FG)),
-            DiffTag::Delete => ("-", Style::default().fg(DIFF_DEL_FG)),
-            DiffTag::Equal | DiffTag::Header => (" ", Style::default()),
-        };
-
-        let old_num = line
-            .old_line_num
-            .map_or("    ".to_string(), |n| format!("{n:>4}"));
-        let new_num = line
-            .new_line_num
-            .map_or("    ".to_string(), |n| format!("{n:>4}"));
-
-        let content_spans = apply_background(
-            highlight_line_spans(&line.content, extension),
-            diff_background(line.tag),
-        );
-        let mut spans = vec![
-            Span::styled(old_num, gutter_style),
-            Span::raw(" "),
-            Span::styled(new_num, gutter_style),
-            Span::styled(format!(" {prefix} "), prefix_style),
-        ];
-        spans.extend(content_spans);
-        result.push(Line::from(spans));
     }
 
     result
@@ -419,75 +506,77 @@ fn render_split_view(diff: &ParsedDiff, width: u16, extension: Option<&str>) -> 
     let mut left_lines: Vec<SplitLine> = Vec::new();
     let mut right_lines: Vec<SplitLine> = Vec::new();
 
-    let mut i = 0;
-    while i < diff.lines.len() {
-        let line = &diff.lines[i];
+    for hunk in &diff.hunks {
+        let mut i = 0;
+        while i < hunk.lines.len() {
+            let logical_line = &hunk.lines[i];
 
-        match line.tag {
-            DiffTag::Header => {
-                i += 1;
-            }
-            DiffTag::Equal => {
-                left_lines.push(SplitLine {
-                    content: line.content.clone(),
-                    line_num: line.old_line_num,
-                    line_type: DiffTag::Equal,
-                });
-                right_lines.push(SplitLine {
-                    content: line.content.clone(),
-                    line_num: line.new_line_num,
-                    line_type: DiffTag::Equal,
-                });
-                i += 1;
-            }
-            DiffTag::Delete | DiffTag::Add => {
-                let mut removes: Vec<(String, Option<u32>)> = Vec::new();
-                let mut adds: Vec<(String, Option<u32>)> = Vec::new();
+            match logical_line.line_type {
+                LineType::Context => {
+                    left_lines.push(SplitLine {
+                        content: logical_line.content.clone(),
+                        line_num: logical_line.line_num,
+                        line_type: DiffTag::Equal,
+                    });
+                    right_lines.push(SplitLine {
+                        content: logical_line.content.clone(),
+                        line_num: logical_line.line_num,
+                        line_type: DiffTag::Equal,
+                    });
+                    i += 1;
+                }
+                LineType::Remove | LineType::Add => {
+                    let mut removes: Vec<(String, Option<u32>)> = Vec::new();
+                    let mut adds: Vec<(String, Option<u32>)> = Vec::new();
 
-                while i < diff.lines.len() {
-                    let current = &diff.lines[i];
-                    match current.tag {
-                        DiffTag::Delete => {
-                            removes.push((current.content.clone(), current.old_line_num));
-                            i += 1;
+                    while i < hunk.lines.len() {
+                        let current = &hunk.lines[i];
+                        match current.line_type {
+                            LineType::Remove => {
+                                removes.push((current.content.clone(), current.line_num));
+                                i += 1;
+                            }
+                            LineType::Add => {
+                                adds.push((current.content.clone(), current.line_num));
+                                i += 1;
+                            }
+                            _ => break,
                         }
-                        DiffTag::Add => {
-                            adds.push((current.content.clone(), current.new_line_num));
-                            i += 1;
+                    }
+
+                    let max_len = removes.len().max(adds.len());
+                    for j in 0..max_len {
+                        if j < removes.len() {
+                            left_lines.push(SplitLine {
+                                content: removes[j].0.clone(),
+                                line_num: removes[j].1,
+                                line_type: DiffTag::Delete,
+                            });
+                        } else {
+                            left_lines.push(SplitLine {
+                                content: String::new(),
+                                line_num: None,
+                                line_type: DiffTag::Header,
+                            });
                         }
-                        _ => break,
+
+                        if j < adds.len() {
+                            right_lines.push(SplitLine {
+                                content: adds[j].0.clone(),
+                                line_num: adds[j].1,
+                                line_type: DiffTag::Add,
+                            });
+                        } else {
+                            right_lines.push(SplitLine {
+                                content: String::new(),
+                                line_num: None,
+                                line_type: DiffTag::Header,
+                            });
+                        }
                     }
                 }
-
-                let max_len = removes.len().max(adds.len());
-                for j in 0..max_len {
-                    if j < removes.len() {
-                        left_lines.push(SplitLine {
-                            content: removes[j].0.clone(),
-                            line_num: removes[j].1,
-                            line_type: DiffTag::Delete,
-                        });
-                    } else {
-                        left_lines.push(SplitLine {
-                            content: String::new(),
-                            line_num: None,
-                            line_type: DiffTag::Header,
-                        });
-                    }
-
-                    if j < adds.len() {
-                        right_lines.push(SplitLine {
-                            content: adds[j].0.clone(),
-                            line_num: adds[j].1,
-                            line_type: DiffTag::Add,
-                        });
-                    } else {
-                        right_lines.push(SplitLine {
-                            content: String::new(),
-                            line_num: None,
-                            line_type: DiffTag::Header,
-                        });
-                    }
+                LineType::Empty => {
+                    i += 1;
                 }
             }
         }
@@ -597,28 +686,32 @@ mod tests {
 
         let parsed = parse_diff(diff);
         assert_eq!(parsed.file_path, Some("src/main.rs".to_string()));
-        assert_eq!(parsed.lines.len(), 6);
+        assert_eq!(parsed.hunks.len(), 1);
 
-        assert_eq!(parsed.lines[0].tag, DiffTag::Header);
+        let hunk = &parsed.hunks[0];
+        assert_eq!(hunk.old_start, 1);
+        assert_eq!(hunk.new_start, 1);
+        assert_eq!(hunk.lines.len(), 5);
 
-        assert_eq!(parsed.lines[1].tag, DiffTag::Equal);
-        assert_eq!(parsed.lines[1].content, "fn main() {");
-        assert_eq!(parsed.lines[1].old_line_num, Some(1));
-        assert_eq!(parsed.lines[1].new_line_num, Some(1));
+        assert_eq!(hunk.lines[0].line_type, LineType::Context);
+        assert_eq!(hunk.lines[0].content, "fn main() {");
+        assert_eq!(hunk.lines[0].line_num, Some(1));
 
-        assert_eq!(parsed.lines[2].tag, DiffTag::Delete);
-        assert_eq!(parsed.lines[2].content, "    println!(\"old\");");
-        assert_eq!(parsed.lines[2].old_line_num, Some(2));
-        assert_eq!(parsed.lines[2].new_line_num, None);
+        assert_eq!(hunk.lines[1].line_type, LineType::Remove);
+        assert_eq!(hunk.lines[1].content, "    println!(\"old\");");
+        assert_eq!(hunk.lines[1].line_num, Some(2));
 
-        assert_eq!(parsed.lines[3].tag, DiffTag::Add);
-        assert_eq!(parsed.lines[3].content, "    println!(\"new\");");
-        assert_eq!(parsed.lines[3].old_line_num, None);
-        assert_eq!(parsed.lines[3].new_line_num, Some(2));
+        assert_eq!(hunk.lines[2].line_type, LineType::Add);
+        assert_eq!(hunk.lines[2].content, "    println!(\"new\");");
+        assert_eq!(hunk.lines[2].line_num, Some(2));
 
-        assert_eq!(parsed.lines[4].tag, DiffTag::Add);
-        assert_eq!(parsed.lines[4].content, "    println!(\"added\");");
-        assert_eq!(parsed.lines[4].new_line_num, Some(3));
+        assert_eq!(hunk.lines[3].line_type, LineType::Add);
+        assert_eq!(hunk.lines[3].content, "    println!(\"added\");");
+        assert_eq!(hunk.lines[3].line_num, Some(3));
+
+        assert_eq!(hunk.lines[4].line_type, LineType::Context);
+        assert_eq!(hunk.lines[4].content, "}");
+        assert_eq!(hunk.lines[4].line_num, Some(3));
     }
 
     #[test]
@@ -635,14 +728,14 @@ mod tests {
 
     #[test]
     fn test_file_path_extraction() {
-        let diff = "--- src/lib.rs\n+++ src/lib.rs\n@@ -1 +1 @@\n-old\n+new\n";
+        let diff = "--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1 +1 @@\n-old\n+new\n";
         let parsed = parse_diff(diff);
         assert_eq!(parsed.file_path, Some("src/lib.rs".to_string()));
     }
 
     #[test]
     fn test_file_path_from_new_file() {
-        let diff = "--- /dev/null\n+++ src/new.rs\n@@ -0,0 +1 @@\n+new file\n";
+        let diff = "--- /dev/null\n+++ b/src/new.rs\n@@ -0,0 +1 @@\n+new file\n";
         let parsed = parse_diff(diff);
         assert_eq!(parsed.file_path, Some("src/new.rs".to_string()));
     }
@@ -661,30 +754,33 @@ mod tests {
 ";
 
         let parsed = parse_diff(diff);
+        assert_eq!(parsed.hunks.len(), 1);
 
-        let equal_line = parsed
+        let hunk = &parsed.hunks[0];
+        assert_eq!(hunk.old_start, 10);
+        assert_eq!(hunk.new_start, 10);
+
+        let context_line = hunk
             .lines
             .iter()
-            .find(|l| l.tag == DiffTag::Equal)
+            .find(|l| l.line_type == LineType::Context)
             .unwrap();
-        assert_eq!(equal_line.old_line_num, Some(10));
-        assert_eq!(equal_line.new_line_num, Some(10));
+        assert_eq!(context_line.line_num, Some(10));
 
-        let delete_line = parsed
+        let remove_line = hunk
             .lines
             .iter()
-            .find(|l| l.tag == DiffTag::Delete)
+            .find(|l| l.line_type == LineType::Remove)
             .unwrap();
-        assert_eq!(delete_line.old_line_num, Some(11));
-        assert_eq!(delete_line.new_line_num, None);
+        assert_eq!(remove_line.line_num, Some(11));
 
-        let add_lines: Vec<_> = parsed
+        let add_lines: Vec<_> = hunk
             .lines
             .iter()
-            .filter(|l| l.tag == DiffTag::Add)
+            .filter(|l| l.line_type == LineType::Add)
             .collect();
-        assert_eq!(add_lines[0].new_line_num, Some(11));
-        assert_eq!(add_lines[1].new_line_num, Some(13));
+        assert_eq!(add_lines[0].line_num, Some(11));
+        assert_eq!(add_lines[1].line_num, Some(13));
     }
 
     #[test]
