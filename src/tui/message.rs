@@ -31,6 +31,69 @@ pub fn tool_icon(name: &str) -> &'static str {
     }
 }
 
+/// Rendering style for tool output in the TUI.
+///
+/// Categorizes tools by how their output should be displayed:
+/// - `Minimal`: One-liner with stats, no expansion
+/// - `DiffPanel`: Visual diff rendering
+/// - `SummaryExpandable`: Summary line with expandable details
+/// - `CommandOutput`: Standard 12-line command output behavior
+/// - `Structured`: Basic formatted output
+/// - `Interactive`: Special handling for interactive tools
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum ToolRenderStyle {
+    /// One-liner with stats, no expansion
+    Minimal,
+    /// Visual diff rendering
+    DiffPanel,
+    /// Summary line with expandable details
+    SummaryExpandable,
+    /// Standard command output behavior
+    CommandOutput,
+    /// Basic formatted output
+    Structured,
+    /// Special handling for interactive tools
+    Interactive,
+}
+
+/// Classify a tool by name to determine its rendering style.
+///
+/// Maps tool names to their appropriate rendering style for TUI display.
+/// Unknown tools default to `CommandOutput`.
+///
+/// # Arguments
+/// * `name` - The name of the tool
+///
+/// # Returns
+/// The appropriate `ToolRenderStyle` for the given tool
+#[must_use]
+#[allow(dead_code)]
+pub fn classify_tool(name: &str) -> ToolRenderStyle {
+    match name {
+        // Minimal: one-liner with stats
+        "read_file" | "Read" | "list_dir" | "memory_add" | "memory_delete" | "plan_enter"
+        | "plan_exit" => ToolRenderStyle::Minimal,
+        // DiffPanel: visual diff rendering
+        "edit_file" | "Edit" | "write_file" | "Write" | "apply_patch" | "multi_edit" => {
+            ToolRenderStyle::DiffPanel
+        }
+        // SummaryExpandable: summary + expandable details
+        "glob" | "Glob" | "grep" | "Grep" | "memory_search" | "lsp" | "skill" => {
+            ToolRenderStyle::SummaryExpandable
+        }
+        // CommandOutput: standard 12-line behavior
+        "shell" | "Bash" | "bash" | "sandbox_exec" => ToolRenderStyle::CommandOutput,
+        // Structured: basic formatted output
+        "web_search" | "code_search" | "web_fetch" | "github_issue" | "github_pr"
+        | "github_pr_review" | "todo_read" | "todo_write" => ToolRenderStyle::Structured,
+        // Interactive: special handling
+        "ask_user" => ToolRenderStyle::Interactive,
+        // Default for unknown tools
+        _ => ToolRenderStyle::CommandOutput,
+    }
+}
+
 /// A message to display in the conversation.
 #[derive(Debug, Clone)]
 pub enum DisplayMessage {
