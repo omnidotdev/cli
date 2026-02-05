@@ -26,7 +26,6 @@ pub use editor_view::{EditorView, VisualCursor};
 
 #[allow(unused_imports)]
 pub use input_action::{build_keybinding_map, default_keybindings, InputAction, KeyBinding};
-pub use messages::line_color;
 pub use model_selection::{render_model_selection_dialog, ModelSelectionDialog};
 pub use prompt::{find_at_mention_spans, PLACEHOLDERS};
 pub use session::{calculate_content_height, render_session, MESSAGE_PADDING_X};

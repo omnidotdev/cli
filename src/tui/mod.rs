@@ -37,12 +37,12 @@ use crate::core::session::SessionTarget;
 
 pub use app::App;
 use app::{
-    ActiveAskUserDialog, ActiveDialog, ActivePermissionDialog, ChatMessage, ExpandedToolDialog,
+    ActiveAskUserDialog, ActiveDialog, ActivePermissionDialog, ChatMessage,
 };
 use components::{
     DropdownMode, InputAction, MESSAGE_PADDING_X, TextLayout, build_keybinding_map,
     calculate_content_height, default_keybindings, dropdown_mode, file_picker, filter_commands,
-    filter_models, find_at_mention_spans, line_color, render_command_dropdown,
+    filter_models, find_at_mention_spans, render_command_dropdown,
     render_model_dropdown, render_model_selection_dialog, render_session, render_session_list,
     render_welcome, should_show_dropdown,
 };
@@ -360,7 +360,6 @@ async fn run_app(
                     ActiveDialog::ModelSelection(d) => {
                         render_model_selection_dialog(f, d, app.agent_mode);
                     }
-                    ActiveDialog::ToolOutput(d) => render_tool_output_dialog(f, d),
                     ActiveDialog::NoProvider => render_no_provider_dialog(f),
                 }
             }
@@ -1444,106 +1443,6 @@ fn render_ask_user_dialog(frame: &mut ratatui::Frame, dialog: &ActiveAskUserDial
     );
 }
 
-fn render_tool_output_dialog(frame: &mut ratatui::Frame, dialog: &mut ExpandedToolDialog) {
-    use ratatui::layout::{Alignment, Rect};
-    use ratatui::text::{Line, Span};
-    use ratatui::widgets::Clear;
-
-    let area = frame.area();
-
-    let dialog_width = area.width * 80 / 100;
-    let max_height = area.height * 80 / 100;
-    let content_width = dialog_width.saturating_sub(4);
-
-    let needs_recache = content_width != dialog.cached_width || dialog.cached_lines.is_empty();
-    if needs_recache {
-        dialog.cached_lines = dialog
-            .output
-            .lines()
-            .map(|line| {
-                Line::from(Span::styled(
-                    line.to_owned(),
-                    Style::default().fg(line_color(line)),
-                ))
-            })
-            .collect();
-        dialog.cached_width = content_width;
-        dialog.total_lines = dialog.cached_lines.len();
-    }
-
-    let total_lines = dialog.total_lines;
-
-    #[allow(clippy::cast_possible_truncation)]
-    let content_height = (total_lines as u16).saturating_add(4);
-    let dialog_height = content_height.clamp(8, max_height);
-
-    let x = (area.width.saturating_sub(dialog_width)) / 2;
-    let y = (area.height.saturating_sub(dialog_height)) / 2;
-    let dialog_area = Rect::new(x, y, dialog_width, dialog_height);
-
-    frame.render_widget(Clear, dialog_area);
-
-    let border_color = Color::Rgb(100, 140, 180);
-    let block = Block::default()
-        .title(format!(" {} ", dialog.tool_name))
-        .title_style(Style::default().fg(border_color))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color));
-
-    let inner = block.inner(dialog_area);
-    frame.render_widget(block, dialog_area);
-
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(1),
-            Constraint::Length(1),
-        ])
-        .split(inner);
-
-    let invocation_style = Style::default().fg(Color::Rgb(180, 180, 190));
-    let invocation_line = Line::from(Span::styled(&dialog.invocation, invocation_style));
-    frame.render_widget(Paragraph::new(invocation_line), chunks[0]);
-
-    let visible_height = chunks[1].height as usize;
-    #[allow(clippy::cast_possible_truncation)]
-    {
-        dialog.visible_height = visible_height as u16;
-    }
-
-    let scroll = dialog.scroll_offset as usize;
-    let visible_lines: Vec<Line> = dialog
-        .cached_lines
-        .iter()
-        .skip(scroll)
-        .take(visible_height)
-        .cloned()
-        .collect();
-
-    let output_para = Paragraph::new(visible_lines);
-    frame.render_widget(output_para, chunks[1]);
-
-    let hint_style = Style::default().fg(Color::Rgb(100, 100, 110));
-    let scroll_indicator = if total_lines > visible_height {
-        format!(
-            " [{}-{}/{}] ",
-            scroll + 1,
-            (scroll + visible_height).min(total_lines),
-            total_lines
-        )
-    } else {
-        String::new()
-    };
-    let hint = Line::from(vec![
-        Span::styled("Esc to close", hint_style),
-        Span::styled(" | ", hint_style),
-        Span::styled("↑↓/jk to scroll", hint_style),
-        Span::styled(&scroll_indicator, hint_style),
-    ]);
-    frame.render_widget(Paragraph::new(hint).alignment(Alignment::Center), chunks[2]);
-}
-
 fn handle_dialog_key(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> bool {
     let Some(dialog) = app.active_dialog.take() else {
         return false;
@@ -1862,43 +1761,6 @@ fn handle_dialog_key(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> 
                 app.active_dialog = Some(ActiveDialog::ModelSelection(d));
             }
         },
-        ActiveDialog::ToolOutput(mut d) => {
-            #[allow(clippy::cast_possible_truncation)]
-            let total_lines = d.total_lines as u16;
-            let visible_height = d.visible_height;
-            let max_scroll = total_lines.saturating_sub(visible_height);
-
-            match code {
-                KeyCode::Esc => {}
-                KeyCode::Up | KeyCode::Char('k') => {
-                    d.scroll_offset = d.scroll_offset.saturating_sub(1);
-                    app.active_dialog = Some(ActiveDialog::ToolOutput(d));
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    d.scroll_offset = d.scroll_offset.saturating_add(1).min(max_scroll);
-                    app.active_dialog = Some(ActiveDialog::ToolOutput(d));
-                }
-                KeyCode::PageUp => {
-                    d.scroll_offset = d.scroll_offset.saturating_sub(10);
-                    app.active_dialog = Some(ActiveDialog::ToolOutput(d));
-                }
-                KeyCode::PageDown => {
-                    d.scroll_offset = d.scroll_offset.saturating_add(10).min(max_scroll);
-                    app.active_dialog = Some(ActiveDialog::ToolOutput(d));
-                }
-                KeyCode::Home => {
-                    d.scroll_offset = 0;
-                    app.active_dialog = Some(ActiveDialog::ToolOutput(d));
-                }
-                KeyCode::End => {
-                    d.scroll_offset = max_scroll;
-                    app.active_dialog = Some(ActiveDialog::ToolOutput(d));
-                }
-                _ => {
-                    app.active_dialog = Some(ActiveDialog::ToolOutput(d));
-                }
-            }
-        }
         ActiveDialog::NoProvider => {
             if code == KeyCode::Esc {
                 return false;

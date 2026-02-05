@@ -135,33 +135,12 @@ pub struct ActiveAskUserDialog {
     pub cursor: usize,
 }
 
-/// Expanded tool output dialog state.
-pub struct ExpandedToolDialog {
-    /// Name of the tool (e.g., "shell", "edit").
-    pub tool_name: String,
-    /// Invocation string (e.g., command or file path).
-    pub invocation: String,
-    /// Full output content.
-    pub output: String,
-    /// Current scroll offset for viewing large outputs.
-    pub scroll_offset: u16,
-    /// Total rendered line count (calculated once for scroll bounds).
-    pub total_lines: usize,
-    /// Cached rendered lines (avoids re-parsing/highlighting on every frame).
-    pub cached_lines: Vec<ratatui::text::Line<'static>>,
-    /// Width at which lines were cached (for invalidation on resize).
-    pub cached_width: u16,
-    /// Visible height for scroll calculations (updated on render).
-    pub visible_height: u16,
-}
-
 /// Currently active dialog, if any.
 pub enum ActiveDialog {
     Permission(ActivePermissionDialog),
     AskUser(ActiveAskUserDialog),
     SessionList(SessionListDialog),
     ModelSelection(ModelSelectionDialog),
-    ToolOutput(ExpandedToolDialog),
     NoProvider,
 }
 
@@ -1251,42 +1230,6 @@ mod tests {
         } else {
             panic!("Expected Assistant message");
         }
-    }
-
-    #[test]
-    fn test_tool_dialog_scroll_bounds_normal() {
-        let dialog = ExpandedToolDialog {
-            tool_name: "test".to_string(),
-            invocation: "test".to_string(),
-            output: "line\n".repeat(100),
-            scroll_offset: 0,
-            total_lines: 100,
-            cached_lines: vec![],
-            cached_width: 80,
-            visible_height: 20,
-        };
-
-        #[allow(clippy::cast_possible_truncation)]
-        let max_scroll = (dialog.total_lines as u16).saturating_sub(dialog.visible_height);
-        assert_eq!(max_scroll, 80);
-    }
-
-    #[test]
-    fn test_tool_dialog_scroll_bounds_content_smaller_than_visible() {
-        let dialog = ExpandedToolDialog {
-            tool_name: "test".to_string(),
-            invocation: "test".to_string(),
-            output: "line\n".repeat(10),
-            scroll_offset: 0,
-            total_lines: 10,
-            cached_lines: vec![],
-            cached_width: 80,
-            visible_height: 20,
-        };
-
-        #[allow(clippy::cast_possible_truncation)]
-        let max_scroll = (dialog.total_lines as u16).saturating_sub(dialog.visible_height);
-        assert_eq!(max_scroll, 0);
     }
 
     #[test]
