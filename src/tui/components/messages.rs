@@ -1,11 +1,11 @@
 //! Message rendering components.
 
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
+    Frame,
 };
 
 use super::diff::{parse_diff, render_diff};
@@ -14,7 +14,7 @@ use super::prompt::find_at_mention_spans;
 use super::text_layout::TextLayout;
 use crate::core::agent::AgentMode;
 use crate::core::session::FileReference;
-use crate::tui::message::{DisplayMessage, icons, tool_icon};
+use crate::tui::message::{classify_tool, icons, tool_icon, DisplayMessage, ToolRenderStyle};
 
 const BRAND_TEAL: Color = Color::Rgb(77, 201, 176);
 const PLAN_PURPLE: Color = Color::Rgb(160, 100, 200);
@@ -409,6 +409,14 @@ fn render_tool_message_with_scroll(
     };
     let icon_color = if is_error { ERROR_COLOR } else { SUCCESS_COLOR };
 
+    // Classify tool for render style dispatch
+    // Error states always use CommandOutput for full visibility
+    let render_style = if is_error {
+        ToolRenderStyle::CommandOutput
+    } else {
+        classify_tool(name)
+    };
+
     let mut all_lines: Vec<Line> = Vec::new();
 
     let header_y = area.y;
@@ -444,118 +452,124 @@ fn render_tool_message_with_scroll(
         ]));
     }
 
-    let is_file_modification_tool = name == "edit_file" || name == "write_file";
-    if is_file_modification_tool {
-        let file_path = extract_file_path_from_invocation(invocation);
-        let diff_portion = extract_diff_portion(output);
+    match render_style {
+        ToolRenderStyle::DiffPanel => {
+            let file_path = extract_file_path_from_invocation(invocation);
+            let diff_portion = extract_diff_portion(output);
 
-        let action = if name == "write_file" {
-            "Write"
-        } else {
-            "Edit"
-        };
-        let panel_width = area.width.saturating_sub(3) as usize;
-        let make_panel_line = |content_spans: Vec<Span<'static>>, content_char_len: usize| {
-            let mut spans = vec![
-                Span::raw("  "),
-                Span::styled(
-                    "\u{258e}",
-                    Style::default().fg(DIFF_BORDER).bg(DIFF_PANEL_BG),
-                ),
-            ];
-            spans.extend(content_spans);
-            let padding_needed = panel_width.saturating_sub(content_char_len);
-            if padding_needed > 0 {
-                spans.push(Span::styled(
-                    " ".repeat(padding_needed),
-                    Style::default().bg(DIFF_PANEL_BG),
-                ));
-            }
-            Line::from(spans)
-        };
-
-        all_lines.push(make_panel_line(vec![], 0));
-
-        let header_text = format!(" \u{2190} {action} {file_path}");
-        let header_len = header_text.chars().count();
-        all_lines.push(make_panel_line(
-            vec![Span::styled(
-                header_text,
-                Style::default()
-                    .fg(Color::Rgb(200, 200, 220))
-                    .bg(DIFF_PANEL_BG),
-            )],
-            header_len,
-        ));
-
-        all_lines.push(make_panel_line(vec![], 0));
-
-        let parsed = parse_diff(diff_portion);
-        let diff_lines = render_diff(&parsed, panel_width as u16);
-
-        for diff_line in diff_lines {
-            if is_diff_file_header(&diff_line) {
-                continue;
-            }
-
-            let mut content_spans: Vec<Span<'static>> = Vec::new();
-            let mut content_len = 0usize;
-            for span in diff_line.spans {
-                content_len += span.content.chars().count();
-                let bg = span.style.bg.unwrap_or(DIFF_PANEL_BG);
-                content_spans.push(Span::styled(span.content, span.style.bg(bg)));
-            }
-            all_lines.push(make_panel_line(content_spans, content_len));
-        }
-
-        all_lines.push(make_panel_line(vec![], 0));
-    } else {
-        let output_lines: Vec<&str> = output.lines().collect();
-        let total_lines = output_lines.len();
-        let show_expand_indicator = total_lines > MAX_TOOL_OUTPUT_LINES && !is_expanded;
-        let show_collapse_indicator = is_expanded && total_lines > MAX_TOOL_OUTPUT_LINES;
-
-        let lines_to_show = if is_expanded {
-            total_lines
-        } else {
-            total_lines.min(MAX_TOOL_OUTPUT_LINES)
-        };
-
-        for (i, line_text) in output_lines.iter().take(lines_to_show).enumerate() {
-            #[allow(clippy::cast_possible_truncation)]
-            let line_y = area.y + 1 + i as u16;
-            let is_selected =
-                selection.is_some_and(|(min_y, max_y)| line_y >= min_y && line_y <= max_y);
-
-            if is_selected {
-                if !selected_text.is_empty() {
-                    selected_text.push('\n');
-                }
-                selected_text.push_str(line_text);
-                all_lines.push(Line::from(Span::styled(
-                    format!("  {line_text}"),
-                    Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
-                )));
+            let action = if name == "write_file" {
+                "Write"
             } else {
-                let color = line_color(line_text);
-                all_lines.push(Line::from(vec![
+                "Edit"
+            };
+            let panel_width = area.width.saturating_sub(3) as usize;
+            let make_panel_line = |content_spans: Vec<Span<'static>>, content_char_len: usize| {
+                let mut spans = vec![
                     Span::raw("  "),
-                    Span::styled((*line_text).to_string(), Style::default().fg(color)),
-                ]));
-            }
-        }
+                    Span::styled(
+                        "\u{258e}",
+                        Style::default().fg(DIFF_BORDER).bg(DIFF_PANEL_BG),
+                    ),
+                ];
+                spans.extend(content_spans);
+                let padding_needed = panel_width.saturating_sub(content_char_len);
+                if padding_needed > 0 {
+                    spans.push(Span::styled(
+                        " ".repeat(padding_needed),
+                        Style::default().bg(DIFF_PANEL_BG),
+                    ));
+                }
+                Line::from(spans)
+            };
 
-        if show_expand_indicator {
-            let remaining = total_lines - MAX_TOOL_OUTPUT_LINES;
-            all_lines.push(Line::from(Span::styled(
-                format!("  \u{25B6} [+{remaining} more lines]"),
-                Style::default().fg(DIMMED),
-            )));
-        } else if show_collapse_indicator {
-            all_lines.push(Line::from(Span::styled(
-                "  \u{25BC} [collapse]".to_string(),
-                Style::default().fg(DIMMED),
-            )));
+            all_lines.push(make_panel_line(vec![], 0));
+
+            let header_text = format!(" \u{2190} {action} {file_path}");
+            let header_len = header_text.chars().count();
+            all_lines.push(make_panel_line(
+                vec![Span::styled(
+                    header_text,
+                    Style::default()
+                        .fg(Color::Rgb(200, 200, 220))
+                        .bg(DIFF_PANEL_BG),
+                )],
+                header_len,
+            ));
+
+            all_lines.push(make_panel_line(vec![], 0));
+
+            let parsed = parse_diff(diff_portion);
+            let diff_lines = render_diff(&parsed, panel_width as u16);
+
+            for diff_line in diff_lines {
+                if is_diff_file_header(&diff_line) {
+                    continue;
+                }
+
+                let mut content_spans: Vec<Span<'static>> = Vec::new();
+                let mut content_len = 0usize;
+                for span in diff_line.spans {
+                    content_len += span.content.chars().count();
+                    let bg = span.style.bg.unwrap_or(DIFF_PANEL_BG);
+                    content_spans.push(Span::styled(span.content, span.style.bg(bg)));
+                }
+                all_lines.push(make_panel_line(content_spans, content_len));
+            }
+
+            all_lines.push(make_panel_line(vec![], 0));
+        }
+        ToolRenderStyle::Minimal
+        | ToolRenderStyle::SummaryExpandable
+        | ToolRenderStyle::Structured
+        | ToolRenderStyle::Interactive
+        | ToolRenderStyle::CommandOutput => {
+            let output_lines: Vec<&str> = output.lines().collect();
+            let total_lines = output_lines.len();
+            let show_expand_indicator = total_lines > MAX_TOOL_OUTPUT_LINES && !is_expanded;
+            let show_collapse_indicator = is_expanded && total_lines > MAX_TOOL_OUTPUT_LINES;
+
+            let lines_to_show = if is_expanded {
+                total_lines
+            } else {
+                total_lines.min(MAX_TOOL_OUTPUT_LINES)
+            };
+
+            for (i, line_text) in output_lines.iter().take(lines_to_show).enumerate() {
+                #[allow(clippy::cast_possible_truncation)]
+                let line_y = area.y + 1 + i as u16;
+                let is_selected =
+                    selection.is_some_and(|(min_y, max_y)| line_y >= min_y && line_y <= max_y);
+
+                if is_selected {
+                    if !selected_text.is_empty() {
+                        selected_text.push('\n');
+                    }
+                    selected_text.push_str(line_text);
+                    all_lines.push(Line::from(Span::styled(
+                        format!("  {line_text}"),
+                        Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
+                    )));
+                } else {
+                    let color = line_color(line_text);
+                    all_lines.push(Line::from(vec![
+                        Span::raw("  "),
+                        Span::styled((*line_text).to_string(), Style::default().fg(color)),
+                    ]));
+                }
+            }
+
+            if show_expand_indicator {
+                let remaining = total_lines - MAX_TOOL_OUTPUT_LINES;
+                all_lines.push(Line::from(Span::styled(
+                    format!("  \u{25B6} [+{remaining} more lines]"),
+                    Style::default().fg(DIMMED),
+                )));
+            } else if show_collapse_indicator {
+                all_lines.push(Line::from(Span::styled(
+                    "  \u{25BC} [collapse]".to_string(),
+                    Style::default().fg(DIMMED),
+                )));
+            }
         }
     }
 
@@ -664,9 +678,21 @@ pub fn message_height(message: &DisplayMessage, width: u16, is_expanded: bool) -
             let layout = TextLayout::new(&prefixed_text, width);
             (layout.total_lines as u16).max(1)
         }
-        DisplayMessage::Tool { name, output, .. } => {
-            let is_file_modification_tool = name == "edit_file" || name == "write_file";
-            if is_file_modification_tool {
+        DisplayMessage::Tool {
+            name,
+            output,
+            is_error,
+            ..
+        } => {
+            // Classify tool for render style dispatch
+            // Error states always use CommandOutput for full visibility
+            let render_style = if *is_error {
+                ToolRenderStyle::CommandOutput
+            } else {
+                classify_tool(name)
+            };
+
+            if matches!(render_style, ToolRenderStyle::DiffPanel) {
                 let diff_portion = extract_diff_portion(output);
                 let parsed = parse_diff(diff_portion);
                 let diff_lines = render_diff(&parsed, width as u16);
