@@ -214,7 +214,8 @@ fn format_file_display(path: &std::path::Path, max_width: usize) -> (String, Str
     let name_len = file_name.len();
     let available_for_parent = max_width.saturating_sub(name_len + 3);
 
-    let parent_display = if parent.is_empty() {
+    // Don't show path if it's "." (current directory)
+    let parent_display = if parent.is_empty() || parent == "." {
         String::new()
     } else if parent.len() > available_for_parent {
         truncate_path_start(&parent, available_for_parent)
@@ -239,9 +240,6 @@ pub fn render_file_dropdown(
     let filtered = fuzzy_filter_files(query, files);
     let inner_width = prompt_area.width as usize;
 
-    let has_more = filtered.len() > MAX_VISIBLE_ITEMS;
-    let more_count = filtered.len().saturating_sub(MAX_VISIBLE_ITEMS);
-
     let lines: Vec<Line> = if filtered.is_empty() {
         let msg = " No files found";
         let padding = " ".repeat(inner_width.saturating_sub(msg.len()));
@@ -250,7 +248,7 @@ pub fn render_file_dropdown(
             Span::styled(padding, Style::default().bg(DROPDOWN_BG)),
         ])]
     } else {
-        let mut result: Vec<Line> = filtered
+        let result: Vec<Line> = filtered
             .iter()
             .take(MAX_VISIBLE_ITEMS)
             .enumerate()
@@ -306,15 +304,6 @@ pub fn render_file_dropdown(
                 }
             })
             .collect();
-
-        if has_more {
-            let more_msg = format!(" ... and {more_count} more");
-            let padding = " ".repeat(inner_width.saturating_sub(more_msg.len()));
-            result.push(Line::from(vec![
-                Span::styled(more_msg, Style::default().fg(DIMMED).bg(DROPDOWN_BG)),
-                Span::styled(padding, Style::default().bg(DROPDOWN_BG)),
-            ]));
-        }
 
         result
     };
