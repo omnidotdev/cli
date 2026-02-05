@@ -415,8 +415,9 @@ fn render_tool_message_with_scroll(
         ]));
     }
 
-    // If this is diff content, render with rich diff view (no truncation)
-    if is_diff_content(output) {
+    // Only render rich diffs for file modification tools (edit/write), not shell git diff commands
+    let is_file_modification_tool = name == "edit" || name == "write";
+    if is_file_modification_tool && is_diff_content(output) {
         let parsed = parse_diff(output);
         let diff_lines = render_diff(&parsed, area.width);
         all_lines.extend(diff_lines);
@@ -576,15 +577,20 @@ pub fn message_height(message: &DisplayMessage, width: u16, is_expanded: bool) -
             let layout = TextLayout::new(&prefixed_text, width);
             (layout.total_lines as u16).max(1)
         }
-        DisplayMessage::Tool { output, .. } => {
-            let line_count = output.lines().count();
-            if is_expanded || line_count <= MAX_TOOL_OUTPUT_LINES {
-                // header + all lines + optional collapse indicator
-                let indicator = u16::from(is_expanded && line_count > MAX_TOOL_OUTPUT_LINES);
-                1 + line_count as u16 + indicator
+        DisplayMessage::Tool { name, output, .. } => {
+            let is_file_modification_tool = name == "edit" || name == "write";
+            if is_file_modification_tool && is_diff_content(output) {
+                let parsed = parse_diff(output);
+                let diff_lines = render_diff(&parsed, width as u16);
+                1 + diff_lines.len() as u16
             } else {
-                // header + 12 lines + expand indicator
-                1 + MAX_TOOL_OUTPUT_LINES as u16 + 1
+                let line_count = output.lines().count();
+                if is_expanded || line_count <= MAX_TOOL_OUTPUT_LINES {
+                    let indicator = u16::from(is_expanded && line_count > MAX_TOOL_OUTPUT_LINES);
+                    1 + line_count as u16 + indicator
+                } else {
+                    1 + MAX_TOOL_OUTPUT_LINES as u16 + 1
+                }
             }
         }
     }
