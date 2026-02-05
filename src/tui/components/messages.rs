@@ -8,6 +8,7 @@ use ratatui::{
     Frame,
 };
 
+use super::diff::{parse_diff, render_diff};
 use super::markdown::MarkdownStreamParser;
 use super::prompt::find_at_mention_spans;
 use super::text_layout::TextLayout;
@@ -387,17 +388,6 @@ fn render_tool_message_with_scroll(
     };
     let icon_color = if is_error { ERROR_COLOR } else { SUCCESS_COLOR };
 
-    let output_lines: Vec<&str> = output.lines().collect();
-    let total_lines = output_lines.len();
-    let show_expand_indicator = total_lines > MAX_TOOL_OUTPUT_LINES && !is_expanded;
-    let show_collapse_indicator = is_expanded && total_lines > MAX_TOOL_OUTPUT_LINES;
-
-    let lines_to_show = if is_expanded {
-        total_lines
-    } else {
-        total_lines.min(MAX_TOOL_OUTPUT_LINES)
-    };
-
     let mut all_lines: Vec<Line> = Vec::new();
 
     let header_y = area.y;
@@ -433,41 +423,60 @@ fn render_tool_message_with_scroll(
         ]));
     }
 
-    for (i, line_text) in output_lines.iter().take(lines_to_show).enumerate() {
-        #[allow(clippy::cast_possible_truncation)]
-        let line_y = area.y + 1 + i as u16;
-        let is_selected =
-            selection.is_some_and(|(min_y, max_y)| line_y >= min_y && line_y <= max_y);
+    // If this is diff content, render with rich diff view (no truncation)
+    if is_diff_content(output) {
+        let parsed = parse_diff(output);
+        let diff_lines = render_diff(&parsed, area.width);
+        all_lines.extend(diff_lines);
+    } else {
+        // Render regular output with 12-line cap
+        let output_lines: Vec<&str> = output.lines().collect();
+        let total_lines = output_lines.len();
+        let show_expand_indicator = total_lines > MAX_TOOL_OUTPUT_LINES && !is_expanded;
+        let show_collapse_indicator = is_expanded && total_lines > MAX_TOOL_OUTPUT_LINES;
 
-        if is_selected {
-            if !selected_text.is_empty() {
-                selected_text.push('\n');
-            }
-            selected_text.push_str(line_text);
-            all_lines.push(Line::from(Span::styled(
-                format!("  {line_text}"),
-                Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
-            )));
+        let lines_to_show = if is_expanded {
+            total_lines
         } else {
-            let color = line_color(line_text);
-            all_lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled((*line_text).to_string(), Style::default().fg(color)),
-            ]));
-        }
-    }
+            total_lines.min(MAX_TOOL_OUTPUT_LINES)
+        };
 
-    if show_expand_indicator {
-        let remaining = total_lines - MAX_TOOL_OUTPUT_LINES;
-        all_lines.push(Line::from(Span::styled(
-            format!("  \u{25B6} [+{remaining} more lines]"),
-            Style::default().fg(DIMMED),
-        )));
-    } else if show_collapse_indicator {
-        all_lines.push(Line::from(Span::styled(
-            "  \u{25BC} [collapse]".to_string(),
-            Style::default().fg(DIMMED),
-        )));
+        for (i, line_text) in output_lines.iter().take(lines_to_show).enumerate() {
+            #[allow(clippy::cast_possible_truncation)]
+            let line_y = area.y + 1 + i as u16;
+            let is_selected =
+                selection.is_some_and(|(min_y, max_y)| line_y >= min_y && line_y <= max_y);
+
+            if is_selected {
+                if !selected_text.is_empty() {
+                    selected_text.push('\n');
+                }
+                selected_text.push_str(line_text);
+                all_lines.push(Line::from(Span::styled(
+                    format!("  {line_text}"),
+                    Style::default().bg(SELECTION_BG).fg(SELECTION_FG),
+                )));
+            } else {
+                let color = line_color(line_text);
+                all_lines.push(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled((*line_text).to_string(), Style::default().fg(color)),
+                ]));
+            }
+        }
+
+        if show_expand_indicator {
+            let remaining = total_lines - MAX_TOOL_OUTPUT_LINES;
+            all_lines.push(Line::from(Span::styled(
+                format!("  \u{25B6} [+{remaining} more lines]"),
+                Style::default().fg(DIMMED),
+            )));
+        } else if show_collapse_indicator {
+            all_lines.push(Line::from(Span::styled(
+                "  \u{25BC} [collapse]".to_string(),
+                Style::default().fg(DIMMED),
+            )));
+        }
     }
 
     let visible_lines: Vec<Line> = all_lines.into_iter().skip(scroll_offset as usize).collect();
@@ -548,7 +557,7 @@ fn render_reasoning_message_with_scroll(
 }
 
 #[allow(clippy::cast_possible_truncation)]
-pub fn message_height(message: &DisplayMessage, width: u16) -> u16 {
+pub fn message_height(message: &DisplayMessage, width: u16, is_expanded: bool) -> u16 {
     let width = width.max(1) as usize;
     match message {
         DisplayMessage::User {
@@ -575,7 +584,17 @@ pub fn message_height(message: &DisplayMessage, width: u16) -> u16 {
             let layout = TextLayout::new(&prefixed_text, width);
             (layout.total_lines as u16).max(1)
         }
-        DisplayMessage::Tool { .. } => 1,
+        DisplayMessage::Tool { output, .. } => {
+            let line_count = output.lines().count();
+            if is_expanded || line_count <= MAX_TOOL_OUTPUT_LINES {
+                // header + all lines + optional collapse indicator
+                let indicator = u16::from(is_expanded && line_count > MAX_TOOL_OUTPUT_LINES);
+                1 + line_count as u16 + indicator
+            } else {
+                // header + 12 lines + expand indicator
+                1 + MAX_TOOL_OUTPUT_LINES as u16 + 1
+            }
+        }
     }
 }
 

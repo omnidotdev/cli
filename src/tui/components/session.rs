@@ -184,7 +184,8 @@ fn render_message_list(
     let mut content_y: u16 = 1;
 
     for (msg_index, message) in messages.iter().enumerate() {
-        let msg_height = estimate_message_height(message, padded_area.width);
+        let is_expanded = expanded_tool_messages.contains(&msg_index);
+        let msg_height = estimate_message_height(message, padded_area.width, is_expanded);
         let msg_end = content_y + msg_height;
 
         // Skip messages entirely above the visible area
@@ -331,8 +332,8 @@ fn render_message_list(
 
 /// Estimate the height needed to render a message, accounting for text wrapping
 #[allow(clippy::cast_possible_truncation)]
-fn estimate_message_height(message: &DisplayMessage, width: u16) -> u16 {
-    super::messages::message_height(message, width)
+fn estimate_message_height(message: &DisplayMessage, width: u16, is_expanded: bool) -> u16 {
+    super::messages::message_height(message, width, is_expanded)
 }
 
 #[allow(clippy::cast_possible_truncation)]
@@ -345,7 +346,7 @@ pub fn calculate_content_height(
     let mut total: u16 = 1;
 
     for message in messages {
-        total = total.saturating_add(estimate_message_height(message, width));
+        total = total.saturating_add(estimate_message_height(message, width, false));
         total = total.saturating_add(1);
     }
 
@@ -392,7 +393,7 @@ mod tests {
     #[test]
     fn estimate_height_single_line() {
         let msg = user_message("hello");
-        let height = estimate_message_height(&msg, 80);
+        let height = estimate_message_height(&msg, 80, false);
         // 1 line + 2 padding = 3
         assert_eq!(height, 3);
     }
@@ -400,7 +401,7 @@ mod tests {
     #[test]
     fn estimate_height_multiline() {
         let msg = user_message("line one\nline two\nline three");
-        let height = estimate_message_height(&msg, 80);
+        let height = estimate_message_height(&msg, 80, false);
         // 3 lines + 2 padding = 5
         assert_eq!(height, 5);
     }
@@ -409,7 +410,7 @@ mod tests {
     fn estimate_height_wrapping() {
         // 20 chars on width 10: text_width = 10 - 2 = 8, wraps to 3 lines + 2 padding = 5
         let msg = user_message("12345678901234567890");
-        let height = estimate_message_height(&msg, 10);
+        let height = estimate_message_height(&msg, 10, false);
         assert_eq!(height, 5);
     }
 
@@ -417,7 +418,7 @@ mod tests {
     fn estimate_height_assistant() {
         // Assistant messages have no padding
         let msg = assistant_message("response text");
-        let height = estimate_message_height(&msg, 80);
+        let height = estimate_message_height(&msg, 80, false);
         assert_eq!(height, 1);
     }
 

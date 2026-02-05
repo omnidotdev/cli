@@ -149,7 +149,7 @@ impl fmt::Debug for DiffView {
 
 /// Parse a unified diff string into structured data
 #[allow(dead_code)]
-fn parse_diff(diff_str: &str) -> ParsedDiff {
+pub fn parse_diff(diff_str: &str) -> ParsedDiff {
     let mut file_path: Option<String> = None;
     let mut lines = Vec::new();
     let mut old_line_num: u32 = 0;
@@ -801,12 +801,10 @@ mod tests {
         assert_eq!(lines.len(), 2);
 
         assert!(lines[0].spans[0].content.contains("test.txt"));
-        assert!(
-            lines[1]
-                .spans
-                .iter()
-                .any(|span| span.content.contains(" | "))
-        );
+        assert!(lines[1]
+            .spans
+            .iter()
+            .any(|span| span.content.contains(" | ")));
     }
 
     #[test]

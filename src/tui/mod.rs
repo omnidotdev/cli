@@ -471,35 +471,10 @@ async fn run_app(
                                             app.show_command_dropdown = false;
                                             app.set_dropdown_area(None, 0);
                                         } else {
-                                            // Dropdown not visible - handle tool message clicks (existing logic)
+                                            // Dropdown not visible - handle tool message clicks
+                                            // Toggle expand state inline instead of opening dialog
                                             if let Some(message_index) = app.is_tool_message_at(mouse.row, mouse.column) {
-                                                if let Some(DisplayMessage::Tool { name, invocation, output, .. }) = app.messages.get(message_index) {
-                                                    let area = terminal.get_frame().area();
-                                                    let dialog_width = area.width * 80 / 100;
-                                                    let content_width = dialog_width.saturating_sub(4);
-
-                                                    let cached_lines: Vec<ratatui::text::Line<'static>> = output
-                                                        .lines()
-                                                        .map(|line| ratatui::text::Line::from(ratatui::text::Span::styled(
-                                                            line.to_owned(),
-                                                            Style::default().fg(line_color(line))
-                                                        )))
-                                                        .collect();
-                                                    let total_lines = cached_lines.len();
-                                                    let max_height = area.height * 80 / 100;
-                                                    let visible_height = max_height.saturating_sub(6);
-                                                    let dialog = ExpandedToolDialog {
-                                                        tool_name: name.clone(),
-                                                        invocation: invocation.clone(),
-                                                        output: output.clone(),
-                                                        scroll_offset: 0,
-                                                        total_lines,
-                                                        cached_lines,
-                                                        cached_width: content_width,
-                                                        visible_height,
-                                                    };
-                                                    app.active_dialog = Some(ActiveDialog::ToolOutput(dialog));
-                                                }
+                                                app.toggle_tool_expand(message_index);
                                             }
                                         }
                                     }
