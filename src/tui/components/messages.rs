@@ -455,9 +455,14 @@ fn render_tool_message_with_scroll(
             "Edit"
         };
         let header_text = format!("\u{2190} {action} {file_path}");
+        let header_len = header_text.chars().count() + 3;
+        let header_padding = area.width.saturating_sub(header_len as u16) as usize;
         all_lines.push(Line::from(vec![
-            Span::raw(" "),
-            Span::styled("\u{258e} ", Style::default().fg(DIFF_BORDER)),
+            Span::styled(" ", Style::default().bg(DIFF_PANEL_BG)),
+            Span::styled(
+                "\u{258e} ",
+                Style::default().fg(DIFF_BORDER).bg(DIFF_PANEL_BG),
+            ),
             Span::styled(
                 header_text,
                 Style::default()
@@ -465,13 +470,14 @@ fn render_tool_message_with_scroll(
                     .bg(DIFF_PANEL_BG),
             ),
             Span::styled(
-                " ".repeat(area.width.saturating_sub(10) as usize),
+                " ".repeat(header_padding),
                 Style::default().bg(DIFF_PANEL_BG),
             ),
         ]));
 
         let parsed = parse_diff(diff_portion);
-        let diff_lines = render_diff(&parsed, area.width.saturating_sub(4));
+        let content_width = area.width.saturating_sub(4);
+        let diff_lines = render_diff(&parsed, content_width);
 
         for diff_line in diff_lines {
             if is_diff_file_header(&diff_line) {
@@ -479,15 +485,28 @@ fn render_tool_message_with_scroll(
             }
 
             let mut styled_spans: Vec<Span<'static>> = vec![
-                Span::raw(" "),
+                Span::styled(" ", Style::default().bg(DIFF_PANEL_BG)),
                 Span::styled(
                     "\u{258e} ",
                     Style::default().fg(DIFF_BORDER).bg(DIFF_PANEL_BG),
                 ),
             ];
+            let mut content_len = 0usize;
             for span in diff_line.spans {
-                let new_style = span.style.bg(DIFF_PANEL_BG);
-                styled_spans.push(Span::styled(span.content, new_style));
+                content_len += span.content.chars().count();
+                let bg = if span.style.bg.is_some() {
+                    span.style.bg
+                } else {
+                    Some(DIFF_PANEL_BG)
+                };
+                styled_spans.push(Span::styled(span.content, span.style.bg(bg.unwrap())));
+            }
+            let right_padding = content_width.saturating_sub(content_len as u16) as usize;
+            if right_padding > 0 {
+                styled_spans.push(Span::styled(
+                    " ".repeat(right_padding),
+                    Style::default().bg(DIFF_PANEL_BG),
+                ));
             }
             all_lines.push(Line::from(styled_spans));
         }
