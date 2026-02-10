@@ -582,6 +582,16 @@ impl AgentConfig {
         );
 
         providers.insert(
+            "synapse".to_string(),
+            ProviderConfig {
+                api_type: ProviderApiType::OpenAi,
+                base_url: Some("http://localhost:6000/v1".to_string()),
+                api_key_env: None,
+                api_key: None,
+            },
+        );
+
+        providers.insert(
             "groq".to_string(),
             ProviderConfig {
                 api_type: ProviderApiType::Groq,
