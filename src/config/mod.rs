@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::core::agent::{
     AgentMode, AnthropicProvider, LlmProvider, OpenAiProvider, UnifiedProvider,
 };
+use synapse_client::SynapseClient;
 
 pub use agent_core::permission::{AgentPermissions, PermissionPreset};
 pub use persona::{Persona, list_personas, load_persona, personas_dir};
@@ -40,6 +41,8 @@ pub enum ProviderApiType {
     Groq,
     /// Mistral API
     Mistral,
+    /// Synapse AI router (uses synapse-client SDK)
+    Synapse,
 }
 
 /// Individual agent definition.
@@ -494,6 +497,20 @@ impl AgentConfig {
                     .ok_or_else(|| anyhow::anyhow!("API key not set for provider '{name}'"))?;
                 Ok(Box::new(UnifiedProvider::mistral(key)?))
             }
+            ProviderApiType::Synapse => {
+                let base_url = config
+                    .base_url
+                    .as_deref()
+                    .unwrap_or("http://localhost:6000");
+                let client = SynapseClient::new(base_url)
+                    .map_err(|e| anyhow::anyhow!("failed to create Synapse client: {e}"))?;
+                let client = if let Some(key) = Self::resolve_api_key(config) {
+                    client.with_api_key(key)
+                } else {
+                    client
+                };
+                Ok(Box::new(client))
+            }
         }
     }
 
@@ -584,8 +601,8 @@ impl AgentConfig {
         providers.insert(
             "synapse".to_string(),
             ProviderConfig {
-                api_type: ProviderApiType::OpenAi,
-                base_url: Some("http://localhost:6000/v1".to_string()),
+                api_type: ProviderApiType::Synapse,
+                base_url: Some("http://localhost:6000".to_string()),
                 api_key_env: None,
                 api_key: None,
             },
@@ -708,6 +725,20 @@ impl AgentConfig {
                     anyhow::anyhow!("API key not set for provider '{}'", self.provider)
                 })?;
                 Ok(Box::new(UnifiedProvider::mistral(key)?))
+            }
+            ProviderApiType::Synapse => {
+                let base_url = config
+                    .base_url
+                    .as_deref()
+                    .unwrap_or("http://localhost:6000");
+                let client = SynapseClient::new(base_url)
+                    .map_err(|e| anyhow::anyhow!("failed to create Synapse client: {e}"))?;
+                let client = if let Some(key) = Self::resolve_api_key(config) {
+                    client.with_api_key(key)
+                } else {
+                    client
+                };
+                Ok(Box::new(client))
             }
         }
     }

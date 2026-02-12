@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/agent-core"]
+members = ["."]
 resolver = "2"
 
 [package]
@@ -69,7 +69,11 @@ futures = "0.3"
 async-trait = "0.1"
 
 # Agent core
-agent-core = { path = "crates/agent-core" }
+agent-core = { git = "https://github.com/omnidotdev/agent-core.git" }
+
+# Synapse client
+# TODO: convert to git dep when synapse-stack is FOSS
+synapse-client = { path = "../../../synapse-stack/services/synapse-gateway/crates/synapse-client", features = ["agent-core"] }
 
 # HTTP client
 reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls"] }
