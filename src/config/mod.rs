@@ -7,43 +7,13 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::agent::{
-    AgentMode, AnthropicProvider, LlmProvider, OpenAiProvider, UnifiedProvider,
-};
+use agent_core::registry::{self, ProviderRegistry, resolve_api_key};
+use crate::core::agent::{AgentMode, LlmProvider};
 use synapse_client::SynapseClient;
 
 pub use agent_core::permission::{AgentPermissions, PermissionPreset};
+pub use agent_core::registry::{ModelInfo, ProviderApiType, ProviderConfig};
 pub use persona::{Persona, list_personas, load_persona, personas_dir};
-
-/// Model information with provider association.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelInfo {
-    /// Model identifier (e.g., "claude-sonnet-4-20250514", "gpt-4o")
-    pub id: String,
-    /// Provider name (e.g., "anthropic", "openai")
-    pub provider: String,
-}
-
-/// Provider API type.
-///
-/// Determines which API format to use for communication.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ProviderApiType {
-    /// Anthropic Messages API (unique streaming format)
-    #[default]
-    Anthropic,
-    /// `OpenAI` Chat Completions API (also used by compatible providers)
-    OpenAi,
-    /// Google Gemini API
-    Google,
-    /// Groq API
-    Groq,
-    /// Mistral API
-    Mistral,
-    /// Synapse AI router (uses synapse-client SDK)
-    Synapse,
-}
 
 /// Individual agent definition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,26 +29,6 @@ pub struct AgentDefinition {
     /// Permission defaults for this agent.
     #[serde(default)]
     pub permissions: AgentPermissions,
-}
-
-/// Individual provider configuration.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProviderConfig {
-    /// API type (anthropic or openai-compatible).
-    #[serde(rename = "type", default)]
-    pub api_type: ProviderApiType,
-
-    /// Base URL override (for OpenAI-compatible providers).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub base_url: Option<String>,
-
-    /// Environment variable name for API key.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub api_key_env: Option<String>,
-
-    /// Direct API key (discouraged, prefer `api_key_env`)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub api_key: Option<String>,
 }
 
 /// Application configuration.
@@ -344,95 +294,7 @@ pub struct AgentConfig {
 impl AgentConfig {
     /// Get the default model definitions.
     fn default_models() -> Vec<ModelInfo> {
-        vec![
-            // Anthropic
-            ModelInfo {
-                id: "claude-sonnet-4-20250514".to_string(),
-                provider: "anthropic".to_string(),
-            },
-            ModelInfo {
-                id: "claude-opus-4-20250514".to_string(),
-                provider: "anthropic".to_string(),
-            },
-            ModelInfo {
-                id: "claude-3-5-haiku-20241022".to_string(),
-                provider: "anthropic".to_string(),
-            },
-            // OpenAI
-            ModelInfo {
-                id: "gpt-4o".to_string(),
-                provider: "openai".to_string(),
-            },
-            ModelInfo {
-                id: "gpt-4-turbo".to_string(),
-                provider: "openai".to_string(),
-            },
-            ModelInfo {
-                id: "gpt-3.5-turbo".to_string(),
-                provider: "openai".to_string(),
-            },
-            ModelInfo {
-                id: "o1".to_string(),
-                provider: "openai".to_string(),
-            },
-            ModelInfo {
-                id: "o1-mini".to_string(),
-                provider: "openai".to_string(),
-            },
-            // Groq (fast inference)
-            ModelInfo {
-                id: "llama-3.3-70b-versatile".to_string(),
-                provider: "groq".to_string(),
-            },
-            ModelInfo {
-                id: "llama-3.1-8b-instant".to_string(),
-                provider: "groq".to_string(),
-            },
-            ModelInfo {
-                id: "mixtral-8x7b-32768".to_string(),
-                provider: "groq".to_string(),
-            },
-            // Google
-            ModelInfo {
-                id: "gemini-2.0-flash".to_string(),
-                provider: "google".to_string(),
-            },
-            ModelInfo {
-                id: "gemini-1.5-pro".to_string(),
-                provider: "google".to_string(),
-            },
-            // Mistral
-            ModelInfo {
-                id: "mistral-large-latest".to_string(),
-                provider: "mistral".to_string(),
-            },
-            ModelInfo {
-                id: "codestral-latest".to_string(),
-                provider: "mistral".to_string(),
-            },
-            // Together
-            ModelInfo {
-                id: "meta-llama/Llama-3.3-70B-Instruct-Turbo".to_string(),
-                provider: "together".to_string(),
-            },
-            ModelInfo {
-                id: "Qwen/Qwen2.5-Coder-32B-Instruct".to_string(),
-                provider: "together".to_string(),
-            },
-            // Kimi (Moonshot AI)
-            ModelInfo {
-                id: "kimi-k2.5".to_string(),
-                provider: "kimi".to_string(),
-            },
-            ModelInfo {
-                id: "moonshot-v1-128k".to_string(),
-                provider: "kimi".to_string(),
-            },
-            ModelInfo {
-                id: "moonshot-v1-32k".to_string(),
-                provider: "kimi".to_string(),
-            },
-        ]
+        registry::default_models()
     }
 
     /// Look up the provider for a model.
@@ -449,16 +311,8 @@ impl AgentConfig {
         {
             return Some(&info.provider);
         }
-        // Fallback: detect by prefix (case-insensitive)
-        if model_lower.starts_with("claude") {
-            Some("anthropic")
-        } else if model_lower.starts_with("gpt") || model_lower.starts_with("o1") {
-            Some("openai")
-        } else if model_lower.starts_with("kimi") || model_lower.starts_with("moonshot") {
-            Some("kimi")
-        } else {
-            None
-        }
+        // Fallback: detect by prefix
+        registry::detect_provider_by_prefix(model_id)
     }
 
     /// Create a provider by name.
@@ -471,47 +325,7 @@ impl AgentConfig {
             anyhow::anyhow!("unknown provider '{name}', check [agent.providers] config")
         })?;
 
-        match config.api_type {
-            ProviderApiType::Anthropic => {
-                let key = Self::resolve_api_key(config)
-                    .ok_or_else(|| anyhow::anyhow!("API key not set for provider '{name}'"))?;
-                Ok(Box::new(AnthropicProvider::new(key)?))
-            }
-            ProviderApiType::OpenAi => {
-                let api_key = Self::resolve_api_key(config);
-                let base_url = config.base_url.clone();
-                Ok(Box::new(OpenAiProvider::with_config(api_key, base_url)?))
-            }
-            ProviderApiType::Google => {
-                let key = Self::resolve_api_key(config)
-                    .ok_or_else(|| anyhow::anyhow!("API key not set for provider '{name}'"))?;
-                Ok(Box::new(UnifiedProvider::google(key)?))
-            }
-            ProviderApiType::Groq => {
-                let key = Self::resolve_api_key(config)
-                    .ok_or_else(|| anyhow::anyhow!("API key not set for provider '{name}'"))?;
-                Ok(Box::new(UnifiedProvider::groq(key)?))
-            }
-            ProviderApiType::Mistral => {
-                let key = Self::resolve_api_key(config)
-                    .ok_or_else(|| anyhow::anyhow!("API key not set for provider '{name}'"))?;
-                Ok(Box::new(UnifiedProvider::mistral(key)?))
-            }
-            ProviderApiType::Synapse => {
-                let base_url = config
-                    .base_url
-                    .as_deref()
-                    .unwrap_or("http://localhost:6000");
-                let client = SynapseClient::new(base_url)
-                    .map_err(|e| anyhow::anyhow!("failed to create Synapse client: {e}"))?;
-                let client = if let Some(key) = Self::resolve_api_key(config) {
-                    client.with_api_key(key)
-                } else {
-                    client
-                };
-                Ok(Box::new(client))
-            }
-        }
+        Self::build_registry().create_provider(name, config)
     }
 
     /// Get the default agent definitions.
@@ -555,115 +369,19 @@ impl AgentConfig {
     }
 
     /// Get the default provider configurations.
+    ///
+    /// Includes all shared providers from agent-core plus the
+    /// CLI-specific synapse provider.
     fn default_providers() -> HashMap<String, ProviderConfig> {
-        let mut providers = HashMap::new();
+        let mut providers = registry::default_providers();
 
-        providers.insert(
-            "anthropic".to_string(),
-            ProviderConfig {
-                api_type: ProviderApiType::Anthropic,
-                base_url: None,
-                api_key_env: Some("ANTHROPIC_API_KEY".to_string()),
-                api_key: None,
-            },
-        );
-
-        providers.insert(
-            "openai".to_string(),
-            ProviderConfig {
-                api_type: ProviderApiType::OpenAi,
-                base_url: None,
-                api_key_env: Some("OPENAI_API_KEY".to_string()),
-                api_key: None,
-            },
-        );
-
-        providers.insert(
-            "ollama".to_string(),
-            ProviderConfig {
-                api_type: ProviderApiType::OpenAi,
-                base_url: Some("http://localhost:11434/v1".to_string()),
-                api_key_env: None,
-                api_key: None,
-            },
-        );
-
-        providers.insert(
-            "lmstudio".to_string(),
-            ProviderConfig {
-                api_type: ProviderApiType::OpenAi,
-                base_url: Some("http://localhost:1234/v1".to_string()),
-                api_key_env: None,
-                api_key: None,
-            },
-        );
-
+        // CLI-specific: synapse provider
         providers.insert(
             "synapse".to_string(),
             ProviderConfig {
-                api_type: ProviderApiType::Synapse,
+                api_type: ProviderApiType::Custom("synapse".to_string()),
                 base_url: Some("http://localhost:6000".to_string()),
                 api_key_env: None,
-                api_key: None,
-            },
-        );
-
-        providers.insert(
-            "groq".to_string(),
-            ProviderConfig {
-                api_type: ProviderApiType::Groq,
-                base_url: None,
-                api_key_env: Some("GROQ_API_KEY".to_string()),
-                api_key: None,
-            },
-        );
-
-        providers.insert(
-            "google".to_string(),
-            ProviderConfig {
-                api_type: ProviderApiType::Google,
-                base_url: None,
-                api_key_env: Some("GOOGLE_API_KEY".to_string()),
-                api_key: None,
-            },
-        );
-
-        providers.insert(
-            "mistral".to_string(),
-            ProviderConfig {
-                api_type: ProviderApiType::Mistral,
-                base_url: None,
-                api_key_env: Some("MISTRAL_API_KEY".to_string()),
-                api_key: None,
-            },
-        );
-
-        providers.insert(
-            "openrouter".to_string(),
-            ProviderConfig {
-                api_type: ProviderApiType::OpenAi,
-                base_url: Some("https://openrouter.ai/api/v1".to_string()),
-                api_key_env: Some("OPENROUTER_API_KEY".to_string()),
-                api_key: None,
-            },
-        );
-
-        providers.insert(
-            "together".to_string(),
-            ProviderConfig {
-                api_type: ProviderApiType::OpenAi,
-                base_url: Some("https://api.together.xyz/v1".to_string()),
-                api_key_env: Some("TOGETHER_API_KEY".to_string()),
-                api_key: None,
-            },
-        );
-
-        providers.insert(
-            "kimi".to_string(),
-            ProviderConfig {
-                api_type: ProviderApiType::OpenAi,
-                base_url: Some("https://api.moonshot.cn/v1".to_string()),
-                api_key_env: Some("MOONSHOT_API_KEY".to_string()),
                 api_key: None,
             },
         );
@@ -671,16 +389,29 @@ impl AgentConfig {
         providers
     }
 
-    /// Resolve API key for a provider config.
-    fn resolve_api_key(config: &ProviderConfig) -> Option<String> {
-        // First try env var
-        if let Some(env_name) = &config.api_key_env {
-            if let Ok(key) = std::env::var(env_name) {
-                return Some(key);
-            }
-        }
-        // Fall back to direct key
-        config.api_key.clone()
+    /// Build a provider registry with the synapse factory registered.
+    fn build_registry() -> ProviderRegistry {
+        let mut registry = ProviderRegistry::new();
+
+        registry.register_factory(
+            "synapse",
+            Box::new(|_name, config| {
+                let base_url = config
+                    .base_url
+                    .as_deref()
+                    .unwrap_or("http://localhost:6000");
+                let client = SynapseClient::new(base_url)
+                    .map_err(|e| anyhow::anyhow!("failed to create Synapse client: {e}"))?;
+                let client = if let Some(key) = resolve_api_key(config) {
+                    client.with_api_key(key)
+                } else {
+                    client
+                };
+                Ok(Box::new(client) as Box<dyn LlmProvider>)
+            }),
+        );
+
+        registry
     }
 
     /// Create the configured LLM provider.
@@ -696,51 +427,7 @@ impl AgentConfig {
             )
         })?;
 
-        match config.api_type {
-            ProviderApiType::Anthropic => {
-                let key = Self::resolve_api_key(config).ok_or_else(|| {
-                    anyhow::anyhow!("API key not set for provider '{}'", self.provider)
-                })?;
-                Ok(Box::new(AnthropicProvider::new(key)?))
-            }
-            ProviderApiType::OpenAi => {
-                let api_key = Self::resolve_api_key(config);
-                let base_url = config.base_url.clone();
-                Ok(Box::new(OpenAiProvider::with_config(api_key, base_url)?))
-            }
-            ProviderApiType::Google => {
-                let key = Self::resolve_api_key(config).ok_or_else(|| {
-                    anyhow::anyhow!("API key not set for provider '{}'", self.provider)
-                })?;
-                Ok(Box::new(UnifiedProvider::google(key)?))
-            }
-            ProviderApiType::Groq => {
-                let key = Self::resolve_api_key(config).ok_or_else(|| {
-                    anyhow::anyhow!("API key not set for provider '{}'", self.provider)
-                })?;
-                Ok(Box::new(UnifiedProvider::groq(key)?))
-            }
-            ProviderApiType::Mistral => {
-                let key = Self::resolve_api_key(config).ok_or_else(|| {
-                    anyhow::anyhow!("API key not set for provider '{}'", self.provider)
-                })?;
-                Ok(Box::new(UnifiedProvider::mistral(key)?))
-            }
-            ProviderApiType::Synapse => {
-                let base_url = config
-                    .base_url
-                    .as_deref()
-                    .unwrap_or("http://localhost:6000");
-                let client = SynapseClient::new(base_url)
-                    .map_err(|e| anyhow::anyhow!("failed to create Synapse client: {e}"))?;
-                let client = if let Some(key) = Self::resolve_api_key(config) {
-                    client.with_api_key(key)
-                } else {
-                    client
-                };
-                Ok(Box::new(client))
-            }
-        }
+        Self::build_registry().create_provider(&self.provider, config)
     }
 }
 
@@ -796,7 +483,7 @@ mod tests {
             api_key: Some("sk-direct".to_string()),
         };
         assert_eq!(
-            AgentConfig::resolve_api_key(&config),
+            resolve_api_key(&config),
             Some("sk-direct".to_string())
         );
     }
@@ -875,5 +562,15 @@ mod tests {
         assert_eq!(config.provider_for_model("kimi-k2.5"), Some("kimi"));
         assert_eq!(config.provider_for_model("moonshot-v1-128k"), Some("kimi"));
         assert_eq!(config.provider_for_model("KIMI-K2.5"), Some("kimi"));
+    }
+
+    #[test]
+    fn synapse_provider_uses_custom_type() {
+        let config = AgentConfig::default();
+        let synapse = config.providers.get("synapse").unwrap();
+        assert_eq!(
+            synapse.api_type,
+            ProviderApiType::Custom("synapse".to_string())
+        );
     }
 }

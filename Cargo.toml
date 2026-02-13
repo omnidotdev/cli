@@ -142,3 +142,7 @@ or_fun_call = "allow"
 self_only_used_in_recursion = "allow"
 too_many_lines = "allow"
 match_same_arms = "allow"
+
+# TODO: remove patch after agent-core registry changes are published
+[patch."https://github.com/omnidotdev/agent-core.git"]
+agent-core = { path = "../../../agent-core" }
