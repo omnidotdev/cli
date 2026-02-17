@@ -370,23 +370,9 @@ impl AgentConfig {
 
     /// Get the default provider configurations.
     ///
-    /// Includes all shared providers from agent-core plus the
-    /// CLI-specific synapse provider.
+    /// Get the default provider configurations
     fn default_providers() -> HashMap<String, ProviderConfig> {
-        let mut providers = registry::default_providers();
-
-        // CLI-specific: synapse provider
-        providers.insert(
-            "synapse".to_string(),
-            ProviderConfig {
-                api_type: ProviderApiType::Custom("synapse".to_string()),
-                base_url: Some("http://localhost:6000".to_string()),
-                api_key_env: None,
-                api_key: None,
-            },
-        );
-
-        providers
+        registry::default_providers()
     }
 
     /// Build a provider registry with the synapse factory registered.
@@ -565,12 +551,9 @@ mod tests {
     }
 
     #[test]
-    fn synapse_provider_uses_custom_type() {
+    fn synapse_provider_uses_named_type() {
         let config = AgentConfig::default();
         let synapse = config.providers.get("synapse").unwrap();
-        assert_eq!(
-            synapse.api_type,
-            ProviderApiType::Custom("synapse".to_string())
-        );
+        assert_eq!(synapse.api_type, ProviderApiType::Synapse);
     }
 }
