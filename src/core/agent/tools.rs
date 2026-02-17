@@ -761,6 +761,37 @@ impl ToolRegistry {
                     "required": ["operation", "file_path"]
                 }),
             },
+            Tool {
+                name: "browser".to_string(),
+                description: "Control a browser via the Beacon gateway. Supports navigation, screenshots, clicking, typing, and JavaScript execution. Requires a running Beacon gateway.".to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["navigate", "screenshot", "click", "type", "execute", "status"],
+                            "description": "Browser action to perform"
+                        },
+                        "url": {
+                            "type": "string",
+                            "description": "URL to navigate to (for navigate/screenshot actions)"
+                        },
+                        "selector": {
+                            "type": "string",
+                            "description": "CSS selector for click/type actions"
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "Text to type (for type action)"
+                        },
+                        "script": {
+                            "type": "string",
+                            "description": "JavaScript to execute (for execute action)"
+                        }
+                    },
+                    "required": ["action"]
+                }),
+            },
         ];
 
         // Add mode-specific tools
@@ -868,6 +899,7 @@ impl ToolRegistry {
             "memory_delete" => self.execute_memory_delete(input),
             "skill" => self.execute_skill(input),
             "lsp" => self.execute_lsp(input).await,
+            "browser" => self.execute_browser(input).await,
             _ if name.starts_with("mcp_") => self.execute_mcp_tool(name, input),
             _ if name.starts_with("plugin_") => self.execute_plugin_tool(name, input).await,
             _ => Err(AgentError::ToolExecution(format!("unknown tool: {name}"))),
@@ -2849,6 +2881,135 @@ impl ToolRegistry {
         };
 
         Ok(output)
+    }
+
+    /// Execute a browser action via the Beacon gateway HTTP API
+    async fn execute_browser(&self, input: serde_json::Value) -> Result<String> {
+        let action = input["action"]
+            .as_str()
+            .ok_or_else(|| AgentError::ToolExecution("missing action".to_string()))?;
+
+        let base_url = std::env::var("BEACON_GATEWAY_URL")
+            .unwrap_or_else(|_| "http://localhost:18789".to_string());
+        let browser_url = format!("{base_url}/api/browser");
+
+        let client = reqwest::Client::new();
+
+        match action {
+            "navigate" => {
+                let url = input["url"]
+                    .as_str()
+                    .ok_or_else(|| AgentError::ToolExecution("navigate requires url".to_string()))?;
+
+                let resp = client
+                    .post(format!("{browser_url}/navigate"))
+                    .json(&serde_json::json!({ "url": url }))
+                    .send()
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("beacon request failed: {e}")))?;
+
+                let body = resp
+                    .text()
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("failed to read response: {e}")))?;
+
+                Ok(body)
+            }
+            "screenshot" => {
+                let url = input["url"].as_str();
+
+                let resp = client
+                    .post(format!("{browser_url}/screenshot"))
+                    .json(&serde_json::json!({ "url": url }))
+                    .send()
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("beacon request failed: {e}")))?;
+
+                let body = resp
+                    .text()
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("failed to read response: {e}")))?;
+
+                Ok(body)
+            }
+            "click" => {
+                let selector = input["selector"]
+                    .as_str()
+                    .ok_or_else(|| AgentError::ToolExecution("click requires selector".to_string()))?;
+
+                let resp = client
+                    .post(format!("{browser_url}/click"))
+                    .json(&serde_json::json!({ "selector": selector }))
+                    .send()
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("beacon request failed: {e}")))?;
+
+                if resp.status().is_success() {
+                    Ok("clicked".to_string())
+                } else {
+                    let body = resp.text().await.unwrap_or_default();
+                    Err(AgentError::ToolExecution(format!("click failed: {body}")))
+                }
+            }
+            "type" => {
+                let selector = input["selector"]
+                    .as_str()
+                    .ok_or_else(|| AgentError::ToolExecution("type requires selector".to_string()))?;
+                let text = input["text"]
+                    .as_str()
+                    .ok_or_else(|| AgentError::ToolExecution("type requires text".to_string()))?;
+
+                let resp = client
+                    .post(format!("{browser_url}/type"))
+                    .json(&serde_json::json!({ "selector": selector, "text": text }))
+                    .send()
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("beacon request failed: {e}")))?;
+
+                if resp.status().is_success() {
+                    Ok("typed".to_string())
+                } else {
+                    let body = resp.text().await.unwrap_or_default();
+                    Err(AgentError::ToolExecution(format!("type failed: {body}")))
+                }
+            }
+            "execute" => {
+                let script = input["script"]
+                    .as_str()
+                    .ok_or_else(|| AgentError::ToolExecution("execute requires script".to_string()))?;
+
+                let resp = client
+                    .post(format!("{browser_url}/execute"))
+                    .json(&serde_json::json!({ "script": script }))
+                    .send()
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("beacon request failed: {e}")))?;
+
+                let body = resp
+                    .text()
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("failed to read response: {e}")))?;
+
+                Ok(body)
+            }
+            "status" => {
+                let resp = client
+                    .get(format!("{browser_url}/status"))
+                    .send()
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("beacon request failed: {e}")))?;
+
+                let body = resp
+                    .text()
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("failed to read response: {e}")))?;
+
+                Ok(body)
+            }
+            _ => Err(AgentError::ToolExecution(format!(
+                "unknown browser action: {action}"
+            ))),
+        }
     }
 }
 
