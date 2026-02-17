@@ -375,7 +375,49 @@ impl AgentConfig {
         registry::default_providers()
     }
 
-    /// Build a provider registry with the synapse factory registered.
+    /// Discover models from synapse and merge into the model registry.
+    ///
+    /// Returns `true` if synapse was reachable and models were discovered.
+    pub async fn discover_synapse_models(&mut self) -> bool {
+        let Some(synapse_config) = self.providers.get("synapse") else {
+            return false;
+        };
+
+        let base_url = synapse_config
+            .base_url
+            .as_deref()
+            .unwrap_or("http://localhost:6000");
+
+        let Ok(client) = SynapseClient::new(base_url) else {
+            return false;
+        };
+
+        let client = if let Some(key) = resolve_api_key(synapse_config) {
+            client.with_api_key(key)
+        } else {
+            client
+        };
+
+        match client.list_models().await {
+            Ok(models) => {
+                for model in models {
+                    if !self.models.iter().any(|m| m.id == model.id) {
+                        self.models.push(ModelInfo {
+                            id: model.id,
+                            provider: "synapse".to_string(),
+                        });
+                    }
+                }
+                true
+            }
+            Err(e) => {
+                tracing::warn!("synapse model discovery failed: {e}");
+                false
+            }
+        }
+    }
+
+    /// Build a provider registry with the synapse factory registered
     fn build_registry() -> ProviderRegistry {
         let mut registry = ProviderRegistry::new();
 
@@ -391,6 +433,10 @@ impl AgentConfig {
                 let client = if let Some(key) = resolve_api_key(config) {
                     client.with_api_key(key)
                 } else {
+                    tracing::warn!(
+                        "no Synapse API key configured; set SYNAPSE_API_KEY or \
+                         add api_key under [agent.providers.synapse] in config"
+                    );
                     client
                 };
                 Ok(Box::new(client) as Box<dyn LlmProvider>)
@@ -414,6 +460,27 @@ impl AgentConfig {
         })?;
 
         Self::build_registry().create_provider(&self.provider, config)
+    }
+
+    /// Create the configured provider with synapse fallback.
+    ///
+    /// If synapse is the active provider and discovery failed (unreachable),
+    /// falls back to anthropic.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if neither the primary nor fallback provider can be created.
+    pub async fn create_provider_with_fallback(&mut self) -> anyhow::Result<Box<dyn LlmProvider>> {
+        let synapse_reachable = self.discover_synapse_models().await;
+
+        if self.provider == "synapse" && !synapse_reachable {
+            tracing::warn!(
+                "synapse is unreachable, falling back to anthropic"
+            );
+            self.provider = "anthropic".to_string();
+        }
+
+        self.create_provider()
     }
 }
 

@@ -41,8 +41,8 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         if cli.command.is_some() {
             anyhow::bail!("Cannot use both a prompt and a subcommand");
         }
-        let config = Config::load()?;
-        let provider = config.agent.create_provider()?;
+        let mut config = Config::load()?;
+        let provider = config.agent.create_provider_with_fallback().await?;
         return omni_cli::core::shell::run(
             provider,
             &config.agent.model,
@@ -74,8 +74,8 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             }
 
             let target = SessionTarget::from_flags(r#continue, session);
-            let config = Config::load()?;
-            let provider = config.agent.create_provider()?;
+            let mut config = Config::load()?;
+            let provider = config.agent.create_provider_with_fallback().await?;
             let mut agent = omni_cli::core::Agent::with_context(
                 provider,
                 &config.agent.model,
