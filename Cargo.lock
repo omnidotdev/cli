@@ -11,6 +11,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 [[package]]
 name = "agent-core"
 version = "0.1.0"
+source = "git+https://github.com/omnidotdev/agent-core.git#b932a92648f82fea2b979a5bf1b2e39815fefbad"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -3119,6 +3120,7 @@ dependencies = [
 [[package]]
 name = "synapse-client"
 version = "0.1.0"
+source = "git+https://github.com/omnidotdev/synapse-gateway.git#1237b3a2cc50c734f212754b0bb4b04eb927340b"
 dependencies = [
  "agent-core",
  "anyhow",

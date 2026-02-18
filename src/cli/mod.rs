@@ -81,6 +81,12 @@ pub enum Commands {
         #[command(subcommand)]
         command: SessionCommands,
     },
+
+    /// Check Synapse connectivity and status.
+    Synapse {
+        #[command(subcommand)]
+        command: SynapseCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -141,6 +147,12 @@ pub enum SessionCommands {
         #[arg(short, long)]
         secret: String,
     },
+}
+
+#[derive(Subcommand)]
+pub enum SynapseCommands {
+    /// Check if Synapse is reachable and list available models.
+    Status,
 }
 
 #[cfg(test)]

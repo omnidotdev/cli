@@ -6,7 +6,7 @@ use tracing_subscriber::EnvFilter;
 
 use omni_cli::{
     Config,
-    cli::{Cli, Commands, ConfigCommands, SessionCommands},
+    cli::{Cli, Commands, ConfigCommands, SessionCommands, SynapseCommands},
     core::session::SessionTarget,
 };
 
@@ -143,6 +143,10 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         Commands::Session { command } => {
             handle_session_command(command)?;
         }
+
+        Commands::Synapse { command } => {
+            handle_synapse_command(command).await?;
+        }
     }
 
     Ok(())
@@ -238,6 +242,73 @@ fn handle_session_command(command: SessionCommands) -> anyhow::Result<()> {
         SessionCommands::Unshare { token, secret } => {
             manager.revoke_share(&token, &secret)?;
             println!("Share revoked");
+        }
+    }
+
+    Ok(())
+}
+
+async fn handle_synapse_command(command: SynapseCommands) -> anyhow::Result<()> {
+    match command {
+        SynapseCommands::Status => {
+            let config = Config::load()?;
+            let synapse_config = config.agent.providers.get("synapse");
+
+            let base_url = synapse_config
+                .and_then(|c| c.base_url.as_deref())
+                .unwrap_or("http://localhost:6000");
+
+            println!("Synapse endpoint: {base_url}");
+            println!();
+
+            // Health check
+            let health_url = format!("{base_url}/health");
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(5))
+                .build()?;
+
+            match client.get(&health_url).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    println!("  Health:  ok");
+                }
+                Ok(resp) => {
+                    println!("  Health:  unhealthy (HTTP {})", resp.status());
+                    return Ok(());
+                }
+                Err(e) => {
+                    println!("  Health:  unreachable ({e})");
+                    return Ok(());
+                }
+            }
+
+            // Model discovery
+            let models_url = format!("{base_url}/v1/models");
+            match client.get(&models_url).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    let body: serde_json::Value = resp.json().await?;
+                    if let Some(data) = body.get("data").and_then(|d| d.as_array()) {
+                        println!("  Models:  {} available", data.len());
+                        println!();
+                        for model in data {
+                            if let Some(id) = model.get("id").and_then(|v| v.as_str()) {
+                                let owner = model
+                                    .get("owned_by")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown");
+                                println!("    {id}  ({owner})");
+                            }
+                        }
+                    } else {
+                        println!("  Models:  (unexpected response format)");
+                    }
+                }
+                Ok(resp) => {
+                    println!("  Models:  failed (HTTP {})", resp.status());
+                }
+                Err(e) => {
+                    println!("  Models:  failed ({e})");
+                }
+            }
         }
     }
 
