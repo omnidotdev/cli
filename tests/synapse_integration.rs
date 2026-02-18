@@ -70,7 +70,10 @@ async fn synapse_client_reports_correct_model_metadata() {
     let client = synapse_client::SynapseClient::new(&base_url).unwrap();
     let models = client.list_models().await.unwrap();
 
-    let claude = models.iter().find(|m| m.id == "claude-sonnet-4-20250514").unwrap();
+    let claude = models
+        .iter()
+        .find(|m| m.id == "claude-sonnet-4-20250514")
+        .unwrap();
     assert_eq!(claude.owned_by, "anthropic");
     assert_eq!(claude.object, "model");
 }
@@ -108,7 +111,12 @@ async fn config_discovers_models_from_mock_synapse() {
     assert!(discovered, "should discover models from mock synapse");
 
     // Models from mock server should be merged into config
-    assert!(config.models.iter().any(|m| m.id == "claude-sonnet-4-20250514"));
+    assert!(
+        config
+            .models
+            .iter()
+            .any(|m| m.id == "claude-sonnet-4-20250514")
+    );
     assert!(config.models.iter().any(|m| m.id == "gpt-4o"));
 }
 
@@ -141,7 +149,10 @@ async fn config_fallback_when_synapse_unreachable() {
     // Provider should still be created (anthropic fallback)
     // It may fail if ANTHROPIC_API_KEY is not set, but the provider
     // field should have changed to anthropic
-    assert_eq!(config.provider, "anthropic", "should fall back to anthropic");
+    assert_eq!(
+        config.provider, "anthropic",
+        "should fall back to anthropic"
+    );
     // The result depends on whether an API key is available, but
     // the fallback itself should have occurred
     drop(result);

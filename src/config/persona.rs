@@ -25,6 +25,94 @@ pub struct Persona {
     /// System prompt content.
     #[serde(default)]
     pub system_prompt: Option<String>,
+
+    /// Knowledge configuration (inline chunks + pack references).
+    #[serde(default)]
+    pub knowledge: KnowledgeConfig,
+}
+
+/// Knowledge configuration for a persona
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct KnowledgeConfig {
+    /// Inline knowledge chunks owned by this persona
+    #[serde(default)]
+    pub inline: Vec<KnowledgeChunk>,
+
+    /// References to external knowledge packs on Manifold
+    #[serde(default)]
+    pub packs: Vec<KnowledgePackRef>,
+}
+
+/// A single knowledge chunk
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeChunk {
+    /// Human-readable topic label
+    #[serde(default)]
+    pub topic: Option<String>,
+
+    /// Machine-readable tags for selection
+    #[serde(default)]
+    pub tags: Vec<String>,
+
+    /// Freeform knowledge content (markdown)
+    pub content: String,
+
+    /// Behavioral rules injected alongside this chunk
+    #[serde(default)]
+    pub rules: Vec<String>,
+
+    /// Injection priority
+    #[serde(default)]
+    pub priority: KnowledgePriority,
+}
+
+/// When to inject a knowledge chunk
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KnowledgePriority {
+    /// Inject every turn (core identity facts)
+    Always,
+    /// Inject when tags match user message
+    #[default]
+    Relevant,
+}
+
+/// Reference to an external knowledge pack on Manifold
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgePackRef {
+    /// Manifold artifact path: `@{namespace}/knowledge/{artifact}`
+    #[serde(rename = "ref")]
+    pub pack_ref: String,
+
+    /// Semver version constraint
+    pub version: Option<String>,
+
+    /// Override priority for all chunks in this pack
+    pub priority: Option<KnowledgePriority>,
+}
+
+/// A knowledge pack published to Manifold
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgePack {
+    /// Schema URL
+    #[serde(rename = "$schema")]
+    pub schema: Option<String>,
+
+    /// Semver version
+    pub version: String,
+
+    /// Display name
+    pub name: String,
+
+    /// Description
+    pub description: Option<String>,
+
+    /// Pack-level tags (for marketplace search)
+    #[serde(default)]
+    pub tags: Vec<String>,
+
+    /// Knowledge chunks
+    pub chunks: Vec<KnowledgeChunk>,
 }
 
 impl Default for Persona {
@@ -52,6 +140,7 @@ impl Persona {
                  You communicate in a warm, approachable manner while providing accurate technical guidance."
                     .to_string(),
             ),
+            knowledge: KnowledgeConfig::default(),
         }
     }
 
@@ -193,6 +282,7 @@ mod tests {
             personality: Some("Helpful".to_string()),
             expertise: vec!["Rust".to_string(), "Python".to_string()],
             system_prompt: Some("You are a test assistant.".to_string()),
+            knowledge: KnowledgeConfig::default(),
         };
 
         let prompt = persona.build_system_prompt();

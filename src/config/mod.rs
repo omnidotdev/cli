@@ -7,13 +7,16 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use agent_core::registry::{self, ProviderRegistry, resolve_api_key};
 use crate::core::agent::{AgentMode, LlmProvider};
+use agent_core::registry::{self, ProviderRegistry, resolve_api_key};
 use synapse_client::SynapseClient;
 
 pub use agent_core::permission::{AgentPermissions, PermissionPreset};
 pub use agent_core::registry::{ModelInfo, ProviderApiType, ProviderConfig};
-pub use persona::{Persona, list_personas, load_persona, personas_dir};
+pub use persona::{
+    KnowledgeChunk, KnowledgeConfig, KnowledgePack, KnowledgePackRef, KnowledgePriority, Persona,
+    list_personas, load_persona, personas_dir,
+};
 
 /// Individual agent definition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -474,9 +477,7 @@ impl AgentConfig {
         let synapse_reachable = self.discover_synapse_models().await;
 
         if self.provider == "synapse" && !synapse_reachable {
-            tracing::warn!(
-                "synapse is unreachable, falling back to anthropic"
-            );
+            tracing::warn!("synapse is unreachable, falling back to anthropic");
             self.provider = "anthropic".to_string();
         }
 
@@ -535,10 +536,7 @@ mod tests {
             api_key_env: None,
             api_key: Some("sk-direct".to_string()),
         };
-        assert_eq!(
-            resolve_api_key(&config),
-            Some("sk-direct".to_string())
-        );
+        assert_eq!(resolve_api_key(&config), Some("sk-direct".to_string()));
     }
 
     #[test]

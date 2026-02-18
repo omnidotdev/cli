@@ -2897,21 +2897,22 @@ impl ToolRegistry {
 
         match action {
             "navigate" => {
-                let url = input["url"]
-                    .as_str()
-                    .ok_or_else(|| AgentError::ToolExecution("navigate requires url".to_string()))?;
+                let url = input["url"].as_str().ok_or_else(|| {
+                    AgentError::ToolExecution("navigate requires url".to_string())
+                })?;
 
                 let resp = client
                     .post(format!("{browser_url}/navigate"))
                     .json(&serde_json::json!({ "url": url }))
                     .send()
                     .await
-                    .map_err(|e| AgentError::ToolExecution(format!("beacon request failed: {e}")))?;
+                    .map_err(|e| {
+                        AgentError::ToolExecution(format!("beacon request failed: {e}"))
+                    })?;
 
-                let body = resp
-                    .text()
-                    .await
-                    .map_err(|e| AgentError::ToolExecution(format!("failed to read response: {e}")))?;
+                let body = resp.text().await.map_err(|e| {
+                    AgentError::ToolExecution(format!("failed to read response: {e}"))
+                })?;
 
                 Ok(body)
             }
@@ -2923,26 +2924,29 @@ impl ToolRegistry {
                     .json(&serde_json::json!({ "url": url }))
                     .send()
                     .await
-                    .map_err(|e| AgentError::ToolExecution(format!("beacon request failed: {e}")))?;
+                    .map_err(|e| {
+                        AgentError::ToolExecution(format!("beacon request failed: {e}"))
+                    })?;
 
-                let body = resp
-                    .text()
-                    .await
-                    .map_err(|e| AgentError::ToolExecution(format!("failed to read response: {e}")))?;
+                let body = resp.text().await.map_err(|e| {
+                    AgentError::ToolExecution(format!("failed to read response: {e}"))
+                })?;
 
                 Ok(body)
             }
             "click" => {
-                let selector = input["selector"]
-                    .as_str()
-                    .ok_or_else(|| AgentError::ToolExecution("click requires selector".to_string()))?;
+                let selector = input["selector"].as_str().ok_or_else(|| {
+                    AgentError::ToolExecution("click requires selector".to_string())
+                })?;
 
                 let resp = client
                     .post(format!("{browser_url}/click"))
                     .json(&serde_json::json!({ "selector": selector }))
                     .send()
                     .await
-                    .map_err(|e| AgentError::ToolExecution(format!("beacon request failed: {e}")))?;
+                    .map_err(|e| {
+                        AgentError::ToolExecution(format!("beacon request failed: {e}"))
+                    })?;
 
                 if resp.status().is_success() {
                     Ok("clicked".to_string())
@@ -2952,9 +2956,9 @@ impl ToolRegistry {
                 }
             }
             "type" => {
-                let selector = input["selector"]
-                    .as_str()
-                    .ok_or_else(|| AgentError::ToolExecution("type requires selector".to_string()))?;
+                let selector = input["selector"].as_str().ok_or_else(|| {
+                    AgentError::ToolExecution("type requires selector".to_string())
+                })?;
                 let text = input["text"]
                     .as_str()
                     .ok_or_else(|| AgentError::ToolExecution("type requires text".to_string()))?;
@@ -2964,7 +2968,9 @@ impl ToolRegistry {
                     .json(&serde_json::json!({ "selector": selector, "text": text }))
                     .send()
                     .await
-                    .map_err(|e| AgentError::ToolExecution(format!("beacon request failed: {e}")))?;
+                    .map_err(|e| {
+                        AgentError::ToolExecution(format!("beacon request failed: {e}"))
+                    })?;
 
                 if resp.status().is_success() {
                     Ok("typed".to_string())
@@ -2974,21 +2980,22 @@ impl ToolRegistry {
                 }
             }
             "execute" => {
-                let script = input["script"]
-                    .as_str()
-                    .ok_or_else(|| AgentError::ToolExecution("execute requires script".to_string()))?;
+                let script = input["script"].as_str().ok_or_else(|| {
+                    AgentError::ToolExecution("execute requires script".to_string())
+                })?;
 
                 let resp = client
                     .post(format!("{browser_url}/execute"))
                     .json(&serde_json::json!({ "script": script }))
                     .send()
                     .await
-                    .map_err(|e| AgentError::ToolExecution(format!("beacon request failed: {e}")))?;
+                    .map_err(|e| {
+                        AgentError::ToolExecution(format!("beacon request failed: {e}"))
+                    })?;
 
-                let body = resp
-                    .text()
-                    .await
-                    .map_err(|e| AgentError::ToolExecution(format!("failed to read response: {e}")))?;
+                let body = resp.text().await.map_err(|e| {
+                    AgentError::ToolExecution(format!("failed to read response: {e}"))
+                })?;
 
                 Ok(body)
             }
@@ -2997,12 +3004,13 @@ impl ToolRegistry {
                     .get(format!("{browser_url}/status"))
                     .send()
                     .await
-                    .map_err(|e| AgentError::ToolExecution(format!("beacon request failed: {e}")))?;
+                    .map_err(|e| {
+                        AgentError::ToolExecution(format!("beacon request failed: {e}"))
+                    })?;
 
-                let body = resp
-                    .text()
-                    .await
-                    .map_err(|e| AgentError::ToolExecution(format!("failed to read response: {e}")))?;
+                let body = resp.text().await.map_err(|e| {
+                    AgentError::ToolExecution(format!("failed to read response: {e}"))
+                })?;
 
                 Ok(body)
             }

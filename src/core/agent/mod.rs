@@ -129,13 +129,29 @@ impl Agent {
     /// - Project type detection (Rust, Node, Python, Go)
     /// - Instruction files (CLAUDE.md from project and ~/.claude/)
     /// - Current model name
+    /// - Knowledge context from persona knowledge chunks (if any)
     pub fn with_context(
         provider: Box<dyn LlmProvider>,
         model: impl Into<String>,
         max_tokens: u32,
         persona_prompt: Option<&str>,
     ) -> Self {
+        Self::with_context_and_knowledge(provider, model, max_tokens, persona_prompt, &[])
+    }
+
+    /// Create an agent with project context and knowledge chunks
+    ///
+    /// Like `with_context` but also injects relevant knowledge chunks
+    /// into the system prompt as a `<knowledge>` block
+    pub fn with_context_and_knowledge(
+        provider: Box<dyn LlmProvider>,
+        model: impl Into<String>,
+        max_tokens: u32,
+        persona_prompt: Option<&str>,
+        knowledge_chunks: &[crate::config::KnowledgeChunk],
+    ) -> Self {
         use crate::core::context::ProjectContext;
+        use crate::core::knowledge::build_knowledge_context;
 
         let model_str: String = model.into();
         let context = ProjectContext::gather();
@@ -144,10 +160,25 @@ impl Agent {
         // Build system prompt with model identity at the very start
         let model_identity = format!("You are {model_str}, accessed through the Omni CLI.");
 
-        let system_prompt = match persona_prompt {
-            Some(persona) => format!("{model_identity}\n\n{persona}\n\n{context_str}"),
-            None => format!("{model_identity}\n\n{context_str}"),
-        };
+        let mut parts = vec![model_identity];
+
+        if let Some(persona) = persona_prompt {
+            parts.push(persona.to_string());
+        }
+
+        // Inject knowledge context (always-priority chunks are included
+        // regardless of message; we use an empty message at init time so
+        // only "always" chunks appear in the base prompt)
+        if !knowledge_chunks.is_empty() {
+            let knowledge_ctx = build_knowledge_context(knowledge_chunks, "");
+            if !knowledge_ctx.is_empty() {
+                parts.push(knowledge_ctx);
+            }
+        }
+
+        parts.push(context_str);
+
+        let system_prompt = parts.join("\n\n");
 
         Self::with_system(provider, model_str, max_tokens, system_prompt)
     }
