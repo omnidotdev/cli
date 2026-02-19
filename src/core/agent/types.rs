@@ -11,7 +11,7 @@ pub use agent_core::types::{
 pub enum ChatEvent {
     /// Text chunk from the assistant
     Text(String),
-    /// Tool invocation starting — tool_id links start to result for parallel display
+    /// Tool invocation starting — `tool_id` links start to result for parallel display
     ToolStart {
         tool_id: String,
         name: String,

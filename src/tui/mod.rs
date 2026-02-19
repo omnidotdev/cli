@@ -313,8 +313,6 @@ async fn run_app(
                         // Accumulate streaming text
                         app.streaming_text.push_str(&text);
                         app.output.push_str(&text);
-                        // Clear running tools when receiving text
-                        app.running_tools.clear();
                     }
                     Some(ChatMessage::ToolStart { tool_id, name }) => {
                         // Track tool as running for parallel spinner display
