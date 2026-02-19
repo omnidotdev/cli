@@ -2031,6 +2031,7 @@ dependencies = [
  "futures",
  "hex",
  "ignore",
+ "indexmap",
  "llm",
  "notify",
  "parking_lot",

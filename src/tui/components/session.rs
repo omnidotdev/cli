@@ -14,6 +14,7 @@ use super::prompt::{PromptMode, render_prompt};
 use crate::core::agent::AgentMode;
 use crate::tui::app::Selection;
 use crate::tui::message::DisplayMessage;
+use indexmap::IndexMap;
 
 /// Horizontal padding for message area.
 pub const MESSAGE_PADDING_X: u16 = 2;
@@ -33,7 +34,7 @@ pub fn render_session(
     input: &str,
     cursor: usize,
     scroll_offset: u16,
-    activity_status: Option<&str>,
+    running_tools: &IndexMap<String, String>,
     model: &str,
     agent_mode: AgentMode,
     selection: Option<&Selection>,
@@ -79,8 +80,14 @@ pub fn render_session(
         chunks[1].height,
     );
 
-    // Render prompt with status
-    let status_left = activity_status;
+    // Render prompt with status — build status string from running tools
+    let status_text = if running_tools.is_empty() {
+        None
+    } else {
+        let names: Vec<&str> = running_tools.values().map(String::as_str).collect();
+        Some(format!("Using {}...", names.join(", ")))
+    };
+    let status_left = status_text.as_deref();
     // Show mode, model, cost, and build version in status
     let version = crate::build_info::short_version();
     let cost_str = if session_cost > 0.0 {

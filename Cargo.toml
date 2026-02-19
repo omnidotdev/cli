@@ -102,6 +102,7 @@ hex = "0.4"
 chrono = { version = "0.4.43", features = ["serde"] }
 parking_lot = "0.12.5"
 ulid = "1"
+indexmap = "2"
 
 # LSP integration
 which = "7"

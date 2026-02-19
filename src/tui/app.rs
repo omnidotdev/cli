@@ -72,10 +72,11 @@ impl Selection {
 pub enum ChatMessage {
     /// Text chunk to append
     Text(String),
-    /// Tool starting (for activity status)
-    ToolStart { name: String },
+    /// Tool starting — `tool_id` links start to result for parallel display
+    ToolStart { tool_id: String, name: String },
     /// Tool invocation with name, args, output, and error status
     Tool {
+        tool_id: String,
         name: String,
         invocation: String,
         output: String,
@@ -238,8 +239,8 @@ pub struct App {
     /// Agent configuration for permission presets.
     pub agent_config: AgentConfig,
 
-    /// Current activity status (e.g., "Using Bash..." or "Thinking...")
-    pub activity_status: Option<String>,
+    /// Tools currently executing (`tool_id` → display name), ordered by start time.
+    pub running_tools: indexmap::IndexMap<String, String>,
 }
 
 impl Default for App {
@@ -368,7 +369,7 @@ impl App {
             show_command_dropdown: false,
             command_selection: 0,
             agent_config: config.agent,
-            activity_status: None,
+            running_tools: indexmap::IndexMap::new(),
         }
     }
 
@@ -891,5 +892,19 @@ impl App {
         }
 
         Ok(display_messages)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn running_tools_tracks_parallel() {
+        let mut running: indexmap::IndexMap<String, String> = indexmap::IndexMap::new();
+        running.insert("id-1".to_string(), "Bash".to_string());
+        running.insert("id-2".to_string(), "Read".to_string());
+        assert_eq!(running.len(), 2);
+        running.remove("id-1");
+        assert_eq!(running.len(), 1);
+        assert!(running.contains_key("id-2"));
     }
 }

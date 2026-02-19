@@ -212,12 +212,6 @@ async fn run_app(
                 }
                 ViewState::Session => {
                     // Session view with messages and bottom prompt
-                    // Show activity status, or "Thinking..." if loading with no specific status
-                    let status = if app.loading {
-                        Some(app.activity_status.as_deref().unwrap_or("Thinking..."))
-                    } else {
-                        None
-                    };
                     render_session(
                         f,
                         area,
@@ -226,7 +220,7 @@ async fn run_app(
                         &app.input,
                         app.cursor,
                         app.message_scroll,
-                        status,
+                        &app.running_tools,
                         &app.model,
                         app.agent_mode,
                         app.selection.as_ref(),
@@ -319,18 +313,18 @@ async fn run_app(
                         // Accumulate streaming text
                         app.streaming_text.push_str(&text);
                         app.output.push_str(&text);
-                        // Clear activity status when receiving text
-                        app.activity_status = None;
+                        // Clear running tools when receiving text
+                        app.running_tools.clear();
                     }
-                    Some(ChatMessage::ToolStart { name }) => {
-                        // Update activity status to show current tool
-                        app.activity_status = Some(format!("Using {name}..."));
+                    Some(ChatMessage::ToolStart { tool_id, name }) => {
+                        // Track tool as running for parallel spinner display
+                        app.running_tools.insert(tool_id, name);
                     }
-                    Some(ChatMessage::Tool { name, invocation, output, is_error }) => {
+                    Some(ChatMessage::Tool { tool_id, name, invocation, output, is_error }) => {
                         // Finalize any pending streaming text before tool message
                         app.finalize_streaming();
-                        // Clear activity status
-                        app.activity_status = None;
+                        // Remove completed tool from running set
+                        app.running_tools.shift_remove(&tool_id);
                         // Add tool message
                         app.messages.push(DisplayMessage::tool(&name, &invocation, &output, is_error));
                     }
@@ -350,7 +344,7 @@ async fn run_app(
                         }
                         app.agent = Some(agent);
                         app.loading = false;
-                        app.activity_status = None;
+                        app.running_tools.clear();
                         app.chat_rx = None;
                     }
                     Some(ChatMessage::Error(e, agent)) => {
@@ -363,13 +357,13 @@ async fn run_app(
                         app.agent = Some(agent);
                         let _ = write!(app.output, "\nError: {e}");
                         app.loading = false;
-                        app.activity_status = None;
+                        app.running_tools.clear();
                         app.chat_rx = None;
                     }
                     None => {
                         app.finalize_streaming();
                         app.loading = false;
-                        app.activity_status = None;
+                        app.running_tools.clear();
                         app.chat_rx = None;
                     }
                 }
@@ -1395,10 +1389,11 @@ fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMess
                     ChatEvent::Text(text) => {
                         let _ = tx_clone.send(ChatMessage::Text(text));
                     }
-                    ChatEvent::ToolStart { name, .. } => {
-                        let _ = tx_clone.send(ChatMessage::ToolStart { name });
+                    ChatEvent::ToolStart { tool_id, name, .. } => {
+                        let _ = tx_clone.send(ChatMessage::ToolStart { tool_id, name });
                     }
                     ChatEvent::ToolCall {
+                        tool_id,
                         name,
                         invocation,
                         output,
@@ -1406,6 +1401,7 @@ fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMess
                         ..
                     } => {
                         let _ = tx_clone.send(ChatMessage::Tool {
+                            tool_id,
                             name,
                             invocation,
                             output,
