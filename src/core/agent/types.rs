@@ -11,10 +11,14 @@ pub use agent_core::types::{
 pub enum ChatEvent {
     /// Text chunk from the assistant
     Text(String),
-    /// Tool invocation starting (for activity status)
-    ToolStart { name: String },
-    /// Tool invocation with result
+    /// Tool invocation starting — tool_id links start to result for parallel display
+    ToolStart {
+        tool_id: String,
+        name: String,
+    },
+    /// Tool invocation finished
     ToolCall {
+        tool_id: String,
         name: String,
         invocation: String,
         output: String,
@@ -26,4 +30,22 @@ pub enum ChatEvent {
         output_tokens: u32,
         cost_usd: f64,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_start_has_id() {
+        let evt = ChatEvent::ToolStart {
+            tool_id: "abc-123".to_string(),
+            name: "Bash".to_string(),
+        };
+        if let ChatEvent::ToolStart { tool_id, .. } = evt {
+            assert_eq!(tool_id, "abc-123");
+        } else {
+            panic!("wrong variant");
+        }
+    }
 }

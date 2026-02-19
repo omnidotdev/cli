@@ -981,7 +981,7 @@ impl Agent {
                 let invocation = format_tool_invocation(name, input);
 
                 // Emit tool start event for activity status
-                on_event(ChatEvent::ToolStart { name: name.clone() });
+                on_event(ChatEvent::ToolStart { tool_id: id.clone(), name: name.clone() });
 
                 let result = self
                     .tools
@@ -1011,6 +1011,7 @@ impl Agent {
 
                 // Emit tool event
                 on_event(ChatEvent::ToolCall {
+                    tool_id: id.clone(),
                     name: name.clone(),
                     invocation,
                     output: content.clone(),

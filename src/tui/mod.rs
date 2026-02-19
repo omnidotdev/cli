@@ -1395,7 +1395,7 @@ fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMess
                     ChatEvent::Text(text) => {
                         let _ = tx_clone.send(ChatMessage::Text(text));
                     }
-                    ChatEvent::ToolStart { name } => {
+                    ChatEvent::ToolStart { name, .. } => {
                         let _ = tx_clone.send(ChatMessage::ToolStart { name });
                     }
                     ChatEvent::ToolCall {
@@ -1403,6 +1403,7 @@ fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMess
                         invocation,
                         output,
                         is_error,
+                        ..
                     } => {
                         let _ = tx_clone.send(ChatMessage::Tool {
                             name,
