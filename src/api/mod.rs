@@ -125,6 +125,17 @@ async fn auth_middleware(
 pub async fn serve(host: &str, port: u16) -> anyhow::Result<()> {
     let state: SharedState = Arc::new(RwLock::new(AppState::new()));
 
+    // Load Synapse MCP tools
+    {
+        let config = Config::load().unwrap_or_default();
+        if let Some(synapse) = config.agent.create_synapse_client() {
+            let mut lock = state.write().await;
+            if let Some(ref mut agent) = lock.agent {
+                agent.load_synapse_tools(synapse).await;
+            }
+        }
+    }
+
     // Check if auth is enabled
     let auth_enabled = state.read().await.token.is_some();
 

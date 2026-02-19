@@ -196,6 +196,12 @@ impl Agent {
         self.tool_filter = allowed.map(|v| v.into_iter().collect());
     }
 
+    /// Load MCP tools from Synapse and make them available to the agent
+    pub async fn load_synapse_tools(&mut self, client: std::sync::Arc<synapse_client::SynapseClient>) {
+        self.tools.set_synapse_client(client);
+        self.tools.load_synapse_tools().await;
+    }
+
     /// Get filtered tool definitions based on current filter.
     fn filtered_tools(&self) -> Vec<types::Tool> {
         let all_tools = self.tools.definitions(self.mode);

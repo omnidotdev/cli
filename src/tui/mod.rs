@@ -129,6 +129,13 @@ pub async fn run_with_target(target: SessionTarget) -> anyhow::Result<()> {
     app.permission_response_tx = Some(perm_response_tx);
     app.ask_user_response_tx = Some(ask_response_tx);
 
+    // Load Synapse MCP tools
+    if let Some(ref mut agent) = app.agent {
+        if let Some(synapse) = app.agent_config.create_synapse_client() {
+            agent.load_synapse_tools(synapse).await;
+        }
+    }
+
     // Set up permission client for agent with current permission presets
     let presets = app.current_permissions();
     if let Some(ref mut agent) = app.agent {

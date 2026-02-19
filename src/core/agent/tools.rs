@@ -100,6 +100,10 @@ pub struct ToolRegistry {
     mcp_client: std::sync::Arc<parking_lot::RwLock<McpClient>>,
     /// Plugin registry for loaded plugins
     plugin_registry: std::sync::Arc<parking_lot::RwLock<PluginRegistry>>,
+    /// Synapse client for remote MCP tools
+    synapse_client: Option<std::sync::Arc<synapse_client::SynapseClient>>,
+    /// Cached Synapse MCP tools
+    synapse_tools: std::sync::Arc<parking_lot::RwLock<Vec<synapse_client::McpTool>>>,
 }
 
 impl Default for ToolRegistry {
@@ -129,6 +133,8 @@ impl Default for ToolRegistry {
             skill_registry,
             mcp_client: std::sync::Arc::new(parking_lot::RwLock::new(McpClient::new())),
             plugin_registry: std::sync::Arc::new(parking_lot::RwLock::new(plugin_registry)),
+            synapse_client: None,
+            synapse_tools: std::sync::Arc::new(parking_lot::RwLock::new(Vec::new())),
         }
     }
 }
@@ -158,6 +164,8 @@ impl ToolRegistry {
             skill_registry,
             mcp_client: std::sync::Arc::new(parking_lot::RwLock::new(McpClient::new())),
             plugin_registry: std::sync::Arc::new(parking_lot::RwLock::new(PluginRegistry::new())),
+            synapse_client: None,
+            synapse_tools: std::sync::Arc::new(parking_lot::RwLock::new(Vec::new())),
         }
     }
 
@@ -190,6 +198,44 @@ impl ToolRegistry {
         let mut client = self.mcp_client.write();
         *client = McpClient::from_config(config);
         client.connect_all();
+    }
+
+    /// Set the Synapse client for remote MCP tools
+    pub fn set_synapse_client(&mut self, client: std::sync::Arc<synapse_client::SynapseClient>) {
+        self.synapse_client = Some(client);
+    }
+
+    /// Load MCP tools from Synapse and cache them
+    pub async fn load_synapse_tools(&self) -> bool {
+        let Some(ref client) = self.synapse_client else {
+            return false;
+        };
+
+        match client.list_tools(None).await {
+            Ok(tools) => {
+                let count = tools.len();
+                *self.synapse_tools.write() = tools;
+                tracing::info!(count, "loaded Synapse MCP tools");
+                true
+            }
+            Err(e) => {
+                tracing::warn!("failed to load Synapse MCP tools: {e}");
+                false
+            }
+        }
+    }
+
+    /// Get Synapse MCP tools as agent tool definitions
+    fn synapse_mcp_tool_definitions(&self) -> Vec<Tool> {
+        self.synapse_tools
+            .read()
+            .iter()
+            .map(|t| Tool {
+                name: format!("mcp_{}", t.name),
+                description: t.description.clone(),
+                input_schema: t.input_schema.clone(),
+            })
+            .collect()
     }
 
     /// Get MCP tools as agent tool definitions
@@ -825,7 +871,10 @@ impl ToolRegistry {
             }
         }
 
-        // Add MCP tools from connected servers
+        // Add Synapse MCP tools (remote, via Synapse gateway)
+        tools.extend(self.synapse_mcp_tool_definitions());
+
+        // Add local MCP tools from connected servers
         tools.extend(self.mcp_tool_definitions());
 
         // Add plugin tools from registered plugins
@@ -900,19 +949,37 @@ impl ToolRegistry {
             "skill" => self.execute_skill(input),
             "lsp" => self.execute_lsp(input).await,
             "browser" => self.execute_browser(input).await,
-            _ if name.starts_with("mcp_") => self.execute_mcp_tool(name, input),
+            _ if name.starts_with("mcp_") => self.execute_mcp_tool(name, input).await,
             _ if name.starts_with("plugin_") => self.execute_plugin_tool(name, input).await,
             _ => Err(AgentError::ToolExecution(format!("unknown tool: {name}"))),
         }
     }
 
-    /// Execute an MCP tool
-    fn execute_mcp_tool(&self, name: &str, input: serde_json::Value) -> Result<String> {
+    /// Execute an MCP tool, routing through Synapse when available
+    async fn execute_mcp_tool(&self, name: &str, input: serde_json::Value) -> Result<String> {
         // Strip the "mcp_" prefix to get the qualified name
         let qualified_name = name
             .strip_prefix("mcp_")
             .ok_or_else(|| AgentError::ToolExecution("invalid MCP tool name".to_string()))?;
 
+        // Check if this tool exists in the Synapse cache
+        let is_synapse_tool = self
+            .synapse_tools
+            .read()
+            .iter()
+            .any(|t| t.name == qualified_name);
+
+        if is_synapse_tool {
+            if let Some(ref client) = self.synapse_client {
+                let result = client
+                    .call_tool(qualified_name, input)
+                    .await
+                    .map_err(|e| AgentError::ToolExecution(format!("Synapse MCP error: {e}")))?;
+                return Ok(result.text());
+            }
+        }
+
+        // Fall back to local MCP client
         let mut client = self.mcp_client.write();
         client
             .call_tool(qualified_name, input)

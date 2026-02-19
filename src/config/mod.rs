@@ -420,6 +420,26 @@ impl AgentConfig {
         }
     }
 
+    /// Create a Synapse client if the provider is configured
+    ///
+    /// Returns `None` if synapse is not in the providers table or the client
+    /// cannot be constructed.
+    #[must_use]
+    pub fn create_synapse_client(&self) -> Option<std::sync::Arc<SynapseClient>> {
+        let config = self.providers.get("synapse")?;
+        let base_url = config
+            .base_url
+            .as_deref()
+            .unwrap_or("http://localhost:6000");
+        let client = SynapseClient::new(base_url).ok()?;
+        let client = if let Some(key) = resolve_api_key(config) {
+            client.with_api_key(key)
+        } else {
+            client
+        };
+        Some(std::sync::Arc::new(client))
+    }
+
     /// Build a provider registry with the synapse factory registered
     fn build_registry() -> ProviderRegistry {
         let mut registry = ProviderRegistry::new();

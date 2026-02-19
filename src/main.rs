@@ -83,6 +83,11 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                 None,
             );
 
+            // Load Synapse MCP tools
+            if let Some(synapse) = config.agent.create_synapse_client() {
+                agent.load_synapse_tools(synapse).await;
+            }
+
             // Enable sessions with target
             if let Err(e) = agent.enable_sessions_with_target(target) {
                 tracing::warn!("failed to enable sessions: {e}");
