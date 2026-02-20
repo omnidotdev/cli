@@ -73,6 +73,10 @@ pub struct Agent {
     max_iterations: u32,
     /// Recent tool calls for loop detection (`tool_name`, `input_hash`)
     recent_tool_calls: Vec<(String, u64)>,
+    /// Usage recorder for Aether billing (optional)
+    usage_recorder: Option<synapse_billing::UsageRecorder>,
+    /// Entity ID for usage recording (e.g. machine hostname)
+    usage_entity_id: String,
 }
 
 impl Agent {
@@ -93,6 +97,8 @@ impl Agent {
             tool_filter: None,
             max_iterations: DEFAULT_MAX_ITERATIONS,
             recent_tool_calls: Vec::new(),
+            usage_recorder: None,
+            usage_entity_id: default_entity_id(),
         }
     }
 
@@ -118,6 +124,8 @@ impl Agent {
             tool_filter: None,
             max_iterations: DEFAULT_MAX_ITERATIONS,
             recent_tool_calls: Vec::new(),
+            usage_recorder: None,
+            usage_entity_id: default_entity_id(),
         }
     }
 
@@ -1066,6 +1074,18 @@ impl Agent {
                             output_tokens: u.output_tokens,
                             cost_usd: cost,
                         });
+                        if let Some(ref recorder) = self.usage_recorder {
+                            recorder.record(synapse_billing::UsageEvent {
+                                entity_type: "user".to_string(),
+                                entity_id: self.usage_entity_id.clone(),
+                                model: self.model.clone(),
+                                provider: self.provider.name().to_string(),
+                                input_tokens: u.input_tokens,
+                                output_tokens: u.output_tokens,
+                                estimated_cost_usd: cost,
+                                idempotency_key: ulid::Ulid::new().to_string(),
+                            });
+                        }
                     }
                 }
                 CompletionEvent::Error(msg) => {
@@ -1254,6 +1274,11 @@ impl Agent {
         self.provider = provider;
     }
 
+    /// Set the usage recorder for Aether billing.
+    pub fn set_usage_recorder(&mut self, recorder: synapse_billing::UsageRecorder) {
+        self.usage_recorder = Some(recorder);
+    }
+
     /// Get the current provider name.
     #[must_use]
     pub fn provider_name(&self) -> &'static str {
@@ -1355,6 +1380,15 @@ Follow this plan. Refer back to it as you work.
     pub const fn plan_manager(&self) -> &PlanManager {
         &self.plan_manager
     }
+}
+
+/// Return a stable entity ID for usage recording.
+///
+/// Prefers `OMNI_USER_ID`, then `HOSTNAME`, then falls back to `"cli"`.
+fn default_entity_id() -> String {
+    std::env::var("OMNI_USER_ID")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "cli".to_string())
 }
 
 /// Format tool input for display in the UI

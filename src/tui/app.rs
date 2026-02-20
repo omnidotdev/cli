@@ -277,8 +277,14 @@ impl App {
         let config = Config::load().unwrap_or_default();
         let model = config.agent.model.clone();
 
+        let usage_recorder = config.agent.create_usage_recorder();
         let mut agent = config.agent.create_provider().ok().map(|provider| {
-            Agent::with_context(provider, &config.agent.model, config.agent.max_tokens, None)
+            let mut a =
+                Agent::with_context(provider, &config.agent.model, config.agent.max_tokens, None);
+            if let Some(recorder) = usage_recorder {
+                a.set_usage_recorder(recorder);
+            }
+            a
         });
 
         // Track if we're resuming a session

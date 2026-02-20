@@ -74,6 +74,11 @@ agent-core = { git = "https://github.com/omnidotdev/agent-core.git" }
 # Synapse client
 synapse-client = { git = "https://github.com/omnidotdev/synapse-gateway.git", features = ["agent-core"] }
 
+# Synapse billing (Aether usage recording)
+synapse-billing = { git = "https://github.com/omnidotdev/synapse-gateway.git" }
+secrecy = "0.10"
+url = "2"
+
 # HTTP client
 reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls"] }
 

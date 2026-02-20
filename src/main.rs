@@ -88,6 +88,11 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                 agent.load_synapse_tools(synapse).await;
             }
 
+            // Wire up Aether usage recording if configured
+            if let Some(recorder) = config.agent.create_usage_recorder() {
+                agent.set_usage_recorder(recorder);
+            }
+
             // Enable sessions with target
             if let Err(e) = agent.enable_sessions_with_target(target) {
                 tracing::warn!("failed to enable sessions: {e}");

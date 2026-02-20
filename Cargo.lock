@@ -2042,10 +2042,12 @@ dependencies = [
  "regex",
  "reqwest 0.13.2",
  "rpassword",
+ "secrecy",
  "serde",
  "serde_json",
  "serde_yaml",
  "similar",
+ "synapse-billing",
  "synapse-client",
  "tempfile",
  "thiserror 2.0.18",
@@ -2058,6 +2060,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ulid",
+ "url",
  "utoipa",
  "utoipa-swagger-ui",
  "uuid",
@@ -2888,6 +2891,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
+name = "secrecy"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e891af845473308773346dc847b2c23ee78fe442e0472ac50e22a18a93d3ae5a"
+dependencies = [
+ "serde",
+ "zeroize",
+]
+
+[[package]]
 name = "security-framework"
 version = "3.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3188,9 +3201,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "synapse-billing"
+version = "0.1.0"
+source = "git+https://github.com/omnidotdev/synapse-gateway.git#5816691b84cd8493fd73a67e042130983062d10e"
+dependencies = [
+ "reqwest 0.12.28",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "synapse-client"
 version = "0.1.0"
-source = "git+https://github.com/omnidotdev/synapse-gateway.git#ef578ba61b1538cfc17159d6a36a612cb54aa50d"
+source = "git+https://github.com/omnidotdev/synapse-gateway.git#5816691b84cd8493fd73a67e042130983062d10e"
 dependencies = [
  "agent-core",
  "anyhow",

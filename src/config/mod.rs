@@ -459,6 +459,29 @@ impl AgentConfig {
         }
     }
 
+    /// Create an Aether usage recorder if `AETHER_URL` is set.
+    ///
+    /// Returns `None` if `AETHER_URL` is not set (billing disabled).
+    #[must_use]
+    pub fn create_usage_recorder(&self) -> Option<synapse_billing::UsageRecorder> {
+        let aether_url = std::env::var("AETHER_URL").ok()?;
+        let aether_url: url::Url = aether_url.parse().ok()?;
+
+        let app_id = std::env::var("AETHER_APP_ID").unwrap_or_else(|_| "cli".to_string());
+
+        let api_key_str = std::env::var("AETHER_SERVICE_API_KEY").ok()?;
+        let service_api_key = secrecy::SecretString::new(api_key_str.into());
+
+        let client = synapse_billing::AetherClient::new(aether_url, app_id, service_api_key).ok()?;
+
+        tracing::info!("Aether usage recording enabled");
+
+        Some(synapse_billing::UsageRecorder::new(
+            client,
+            synapse_billing::MeterKeys::default(),
+        ))
+    }
+
     /// Create a Synapse client if the provider is configured
     ///
     /// Returns `None` if synapse is not in the providers table or the client
