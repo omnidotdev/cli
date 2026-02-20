@@ -2,6 +2,8 @@
 
 use clap::{Parser, Subcommand};
 
+pub mod auth;
+
 /// Omni CLI - Agentic CLI for the Omni ecosystem.
 #[derive(Parser)]
 #[command(name = "omni")]
@@ -87,6 +89,12 @@ pub enum Commands {
         #[command(subcommand)]
         command: SynapseCommands,
     },
+
+    /// Authenticate with cloud Synapse (Omni Credits).
+    Auth {
+        #[command(subcommand)]
+        command: AuthCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -153,6 +161,14 @@ pub enum SessionCommands {
 pub enum SynapseCommands {
     /// Check if Synapse is reachable and list available models.
     Status,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AuthCommands {
+    /// Log in with your Omni account to use Omni Credits.
+    Login,
+    /// Log out and clear the stored access token.
+    Logout,
 }
 
 #[cfg(test)]

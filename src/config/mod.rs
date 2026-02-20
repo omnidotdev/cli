@@ -46,6 +46,18 @@ pub struct Config {
 
     /// Agent configuration.
     pub agent: AgentConfig,
+
+    /// Authentication configuration.
+    pub auth: AuthConfig,
+}
+
+/// Authentication state (cloud Synapse login).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AuthConfig {
+    /// JWT access token from Gatekeeper. Used as Bearer token for cloud Synapse.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_token: Option<String>,
 }
 
 impl Config {
@@ -194,6 +206,33 @@ impl Config {
             Some("plan") => AgentMode::Plan,
             _ => AgentMode::Build,
         }
+    }
+
+    /// Persist configuration to the global config file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization or file writing fails.
+    pub fn save(&self) -> anyhow::Result<()> {
+        let path = Self::config_path()?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&path, toml::to_string_pretty(self)?)?;
+        Ok(())
+    }
+
+    /// Resolve the Bearer token to use for Synapse requests.
+    ///
+    /// Prefers the cloud auth token (from `omni auth login`), falls back to
+    /// the provider-specific API key configured under `[agent.providers.synapse]`.
+    #[must_use]
+    pub fn synapse_bearer_token(&self) -> Option<String> {
+        self.auth
+            .access_token
+            .clone()
+            .or_else(|| resolve_api_key(self.agent.providers.get("synapse")?)
+)
     }
 }
 

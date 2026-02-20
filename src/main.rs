@@ -6,7 +6,7 @@ use tracing_subscriber::EnvFilter;
 
 use omni_cli::{
     Config,
-    cli::{Cli, Commands, ConfigCommands, SessionCommands, SynapseCommands},
+    cli::{AuthCommands, Cli, Commands, ConfigCommands, SessionCommands, SynapseCommands},
     core::session::SessionTarget,
 };
 
@@ -152,6 +152,11 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         Commands::Synapse { command } => {
             handle_synapse_command(command).await?;
         }
+
+        Commands::Auth { command } => match command {
+            AuthCommands::Login => omni_cli::cli::auth::login().await?,
+            AuthCommands::Logout => omni_cli::cli::auth::logout().await?,
+        },
     }
 
     Ok(())
