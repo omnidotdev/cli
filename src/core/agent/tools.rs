@@ -352,6 +352,29 @@ impl ToolRegistry {
                 }),
             },
             Tool {
+                name: "multi_search".to_string(),
+                description:
+                    "Search the web using multiple queries in parallel and merge results. Use when a question benefits from cross-referencing multiple angles (e.g. price + project info + community sentiment). Returns deduplicated results from all queries combined."
+                        .to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "queries": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "2-4 search queries to run in parallel",
+                            "minItems": 2,
+                            "maxItems": 4
+                        },
+                        "num_results_per_query": {
+                            "type": "integer",
+                            "description": "Results per query (default: 5)"
+                        }
+                    },
+                    "required": ["queries"]
+                }),
+            },
+            Tool {
                 name: "code_search".to_string(),
                 description:
                     "Search for code examples, API documentation, and library usage. Use for finding how to use specific APIs, libraries, or SDKs."
