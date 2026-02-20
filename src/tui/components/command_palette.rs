@@ -1,5 +1,7 @@
 //! Command palette dropdown for slash commands.
 
+use std::path::PathBuf;
+
 use ratatui::{
     Frame,
     layout::Rect,
@@ -36,6 +38,18 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "/clear",
         description: "Clear conversation history",
+    },
+    Command {
+        name: "/compact",
+        description: "Summarize old messages to free context window space",
+    },
+    Command {
+        name: "/cost",
+        description: "Show token usage and estimated cost for this session",
+    },
+    Command {
+        name: "/undo",
+        description: "Revert last file changes made by the agent",
     },
     Command {
         name: "/sessions",
@@ -76,6 +90,8 @@ pub enum DropdownMode {
     Commands,
     /// Show model suggestions (e.g., "/model gpt" -> gpt-4o)
     Models,
+    /// Show file suggestions (e.g., "@src/lib" -> src/lib.rs)
+    Files,
     /// No dropdown
     None,
 }
@@ -87,8 +103,38 @@ pub fn dropdown_mode(input: &str) -> DropdownMode {
         DropdownMode::Models
     } else if input.starts_with('/') && !input.contains(' ') {
         DropdownMode::Commands
+    } else if input.split_whitespace().last().is_some_and(|w| w.starts_with('@')) {
+        DropdownMode::Files
     } else {
         DropdownMode::None
+    }
+}
+
+/// Get the `@`-prefix query from the last word in input.
+#[must_use]
+pub fn at_query(input: &str) -> &str {
+    input
+        .split_whitespace()
+        .last()
+        .and_then(|w| w.strip_prefix('@'))
+        .unwrap_or("")
+}
+
+/// Filter files by query (case-insensitive substring match on path).
+///
+/// Returns up to 8 matches.
+#[must_use]
+pub fn filter_files<'a>(input: &str, files: &'a [PathBuf]) -> Vec<&'a PathBuf> {
+    let query = at_query(input).to_lowercase();
+
+    if query.is_empty() {
+        files.iter().take(8).collect()
+    } else {
+        files
+            .iter()
+            .filter(|f| f.to_string_lossy().to_lowercase().contains(&query))
+            .take(8)
+            .collect()
     }
 }
 
@@ -176,6 +222,70 @@ pub fn render_command_dropdown(
     let dropdown_area = Rect::new(dropdown_x, dropdown_y, dropdown_width, dropdown_height);
 
     // Clear area behind dropdown
+    frame.render_widget(Clear, dropdown_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(DIMMED))
+        .style(Style::default().bg(DROPDOWN_BG));
+
+    let para = Paragraph::new(lines).block(block);
+    frame.render_widget(para, dropdown_area);
+
+    dropdown_height
+}
+
+/// Render the file dropdown above the prompt.
+///
+/// Returns the height used by the dropdown.
+#[allow(clippy::cast_possible_truncation)]
+pub fn render_file_dropdown(
+    frame: &mut Frame,
+    prompt_area: Rect,
+    input: &str,
+    selected: usize,
+    files: &[PathBuf],
+) -> u16 {
+    let filtered = filter_files(input, files);
+
+    let lines: Vec<Line> = if filtered.is_empty() {
+        let query = at_query(input);
+        vec![Line::from(Span::styled(
+            format!("  No files matching '{query}'"),
+            Style::default().fg(DIMMED),
+        ))]
+    } else {
+        filtered
+            .iter()
+            .enumerate()
+            .map(|(i, path)| {
+                let is_selected = i == selected;
+                let prefix = if is_selected { "▸ " } else { "  " };
+                let display = path.to_string_lossy();
+
+                let name_style = if is_selected {
+                    Style::default().fg(BRAND_TEAL).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(BRAND_TEAL)
+                };
+
+                Line::from(vec![
+                    Span::styled(prefix, name_style),
+                    Span::styled(display.into_owned(), name_style),
+                ])
+            })
+            .collect()
+    };
+
+    let content_lines = lines.len().max(1);
+    let dropdown_height = (content_lines + 2) as u16;
+    let dropdown_width = prompt_area.width;
+
+    let dropdown_y = prompt_area.y.saturating_sub(dropdown_height);
+    let dropdown_x = prompt_area.x;
+
+    let dropdown_area = Rect::new(dropdown_x, dropdown_y, dropdown_width, dropdown_height);
+
     frame.render_widget(Clear, dropdown_area);
 
     let block = Block::default()

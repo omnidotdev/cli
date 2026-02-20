@@ -43,6 +43,8 @@ pub const ECOSYSTEM_TIPS: &[&str] = &[
     "Friendly reminder: commit early, commit often, blame later",
 ];
 
+use std::path::PathBuf;
+
 use crate::config::{AgentConfig, AgentPermissions, Config};
 use crate::core::Agent;
 use crate::core::agent::{
@@ -50,6 +52,7 @@ use crate::core::agent::{
     PermissionResponse,
 };
 use crate::core::session::{SessionManager, SessionTarget};
+use crate::core::snapshot::SnapshotManager;
 
 /// Active text selection state.
 #[derive(Debug, Clone)]
@@ -241,6 +244,15 @@ pub struct App {
 
     /// Tools currently executing (`tool_id` → display name), ordered by start time.
     pub running_tools: indexmap::IndexMap<String, String>,
+
+    /// Shadow-git snapshot manager for undo support (None if not in a git project).
+    pub snapshot_manager: Option<SnapshotManager>,
+
+    /// Stack of snapshot tree hashes for undo (pushed before each agent turn).
+    pub undo_stack: Vec<String>,
+
+    /// File list for `@file` mention expansion (relative paths, gitignore-aware).
+    pub file_list: Vec<PathBuf>,
 }
 
 impl Default for App {
@@ -298,6 +310,20 @@ impl App {
                 a.switch_mode(persisted_mode, None);
             }
         }
+
+        // Initialize snapshot manager for undo support
+        let snapshot_manager = std::env::current_dir()
+            .ok()
+            .and_then(|cwd| crate::core::project::Project::detect(&cwd).ok())
+            .and_then(|proj| SnapshotManager::for_project(&proj).ok());
+
+        // Enumerate project files for @mention expansion (gitignore-aware, capped at 5000)
+        let file_list: Vec<PathBuf> = ignore::Walk::new(".")
+            .filter_map(std::result::Result::ok)
+            .filter(|e| e.file_type().is_some_and(|ft| ft.is_file()))
+            .map(ignore::DirEntry::into_path)
+            .take(5000)
+            .collect();
 
         // Pick a random tagline, tip, and placeholder
         let tagline = TAGLINES
@@ -370,6 +396,9 @@ impl App {
             command_selection: 0,
             agent_config: config.agent,
             running_tools: indexmap::IndexMap::new(),
+            snapshot_manager,
+            undo_stack: Vec::new(),
+            file_list,
         }
     }
 

@@ -36,9 +36,9 @@ use crate::core::session::SessionTarget;
 pub use app::App;
 use app::{ActiveAskUserDialog, ActiveDialog, ActivePermissionDialog, ChatMessage};
 use components::{
-    DropdownMode, MESSAGE_PADDING_X, calculate_content_height, dropdown_mode, filter_commands,
-    filter_models, render_command_dropdown, render_model_dropdown, render_session,
-    render_session_list, render_welcome, should_show_dropdown,
+    DropdownMode, MESSAGE_PADDING_X, at_query, calculate_content_height, dropdown_mode,
+    filter_commands, filter_files, filter_models, render_command_dropdown, render_file_dropdown,
+    render_model_dropdown, render_session, render_session_list, render_welcome, should_show_dropdown,
 };
 use message::DisplayMessage;
 use state::ViewState;
@@ -246,6 +246,15 @@ async fn run_app(
                             &app.input,
                             app.command_selection,
                             &app.agent_config.models,
+                        );
+                    }
+                    DropdownMode::Files => {
+                        render_file_dropdown(
+                            f,
+                            prompt_area,
+                            &app.input,
+                            app.command_selection,
+                            &app.file_list,
                         );
                     }
                     DropdownMode::None => {}
@@ -493,6 +502,31 @@ fn handle_key(
                                 app.show_command_dropdown = false;
                             }
                         }
+                        DropdownMode::Files => {
+                            // Expand @mention to fenced file contents
+                            let file_list_clone = app.file_list.clone();
+                            let filtered = filter_files(&app.input, &file_list_clone);
+                            if let Some(path) = filtered.get(app.command_selection) {
+                                let query =
+                                    at_query(&app.input).to_string();
+                                let at_token = format!("@{query}");
+                                let display = path.to_string_lossy();
+                                let contents = std::fs::read_to_string(path)
+                                    .unwrap_or_else(|_| "<unreadable>".to_string());
+                                let ext = path
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .unwrap_or("");
+                                let replacement = format!(
+                                    "`{display}`\n```{ext}\n{contents}\n```"
+                                );
+                                // Replace the @token in input with the expanded block
+                                app.input = app.input.replacen(&at_token, &replacement, 1);
+                                app.cursor = app.input.len();
+                                app.show_command_dropdown = false;
+                                return false;
+                            }
+                        }
                         DropdownMode::None => {}
                     }
                 }
@@ -613,6 +647,98 @@ fn handle_key(
                     return false;
                 }
 
+                // Handle compact command
+                if trimmed == "/compact" {
+                    app.clear_input();
+                    let Some(mut agent) = app.agent.take() else {
+                        app.messages.push(DisplayMessage::tool_error(
+                            "compact",
+                            "No active agent",
+                        ));
+                        return false;
+                    };
+                    app.loading = true;
+                    let (tx, rx) = mpsc::unbounded_channel();
+                    app.chat_rx = Some(rx);
+                    tokio::spawn(async move {
+                        match agent.compact_session().await {
+                            Ok(result) if result.messages_compacted == 0 => {
+                                let _ = tx.send(ChatMessage::Done(agent));
+                            }
+                            Ok(result) => {
+                                let msg = format!(
+                                    "Compacted {} messages (~{} tokens freed)",
+                                    result.messages_compacted, result.tokens_freed
+                                );
+                                let _ = tx.send(ChatMessage::Text(msg));
+                                let _ = tx.send(ChatMessage::Done(agent));
+                            }
+                            Err(e) => {
+                                let _ = tx.send(ChatMessage::Error(e.to_string(), agent));
+                            }
+                        }
+                    });
+                    return false;
+                }
+
+                // Handle cost command
+                if trimmed == "/cost" {
+                    app.clear_input();
+                    app.enter_session();
+                    let (input_k, output_k) = app.session_tokens;
+                    let cost = app.session_cost;
+                    let report = format!(
+                        "Session cost\n\
+                         Input   {input_k:>10} tokens\n\
+                         Output  {output_k:>10} tokens\n\
+                         ─────────────────────\n\
+                         Total            ${cost:.4}"
+                    );
+                    app.messages.push(DisplayMessage::tool("cost", "", report, false));
+                    return false;
+                }
+
+                // Handle undo command
+                if trimmed == "/undo" {
+                    app.clear_input();
+                    app.enter_session();
+                    if let Some(ref sm) = app.snapshot_manager {
+                        if let Some(hash) = app.undo_stack.pop() {
+                            match sm.restore(&hash) {
+                                Ok(()) => {
+                                    app.messages.push(DisplayMessage::tool(
+                                        "undo",
+                                        "",
+                                        format!("Reverted to snapshot {}", &hash[..8]),
+                                        false,
+                                    ));
+                                }
+                                Err(e) => {
+                                    app.messages.push(DisplayMessage::tool_error(
+                                        "undo",
+                                        format!("Restore failed: {e}"),
+                                    ));
+                                }
+                            }
+                        } else {
+                            app.messages.push(DisplayMessage::tool(
+                                "undo",
+                                "",
+                                "No changes to undo",
+                                false,
+                            ));
+                        }
+                    } else {
+                        app.messages.push(DisplayMessage::tool(
+                            "undo",
+                            "",
+                            "Undo not available (not in a git project)",
+                            false,
+                        ));
+                    }
+                    return false;
+                }
+
                 start_chat(app, permission_tx.clone());
             }
         }
@@ -632,6 +758,16 @@ fn handle_key(
                             let filtered = filter_models(&app.input, &app.agent_config.models);
                             if let Some(model) = filtered.get(app.command_selection) {
                                 app.input = format!("/model {}", model.id);
+                                app.cursor = app.input.len();
+                            }
+                        }
+                        DropdownMode::Files => {
+                            let file_list_clone = app.file_list.clone();
+                            let filtered = filter_files(&app.input, &file_list_clone);
+                            if let Some(path) = filtered.get(app.command_selection) {
+                                let display = path.to_string_lossy().into_owned();
+                                let query = at_query(&app.input).to_string();
+                                app.input = app.input.replacen(&format!("@{query}"), &format!("@{display}"), 1);
                                 app.cursor = app.input.len();
                             }
                         }
@@ -702,6 +838,9 @@ fn handle_key(
                     DropdownMode::Models => filter_models(&app.input, &app.agent_config.models)
                         .len()
                         .saturating_sub(1),
+                    DropdownMode::Files => {
+                        filter_files(&app.input, &app.file_list).len().saturating_sub(1)
+                    }
                     DropdownMode::None => 0,
                 };
                 app.command_selection = if app.command_selection == 0 {
@@ -725,6 +864,9 @@ fn handle_key(
                     DropdownMode::Models => filter_models(&app.input, &app.agent_config.models)
                         .len()
                         .saturating_sub(1),
+                    DropdownMode::Files => {
+                        filter_files(&app.input, &app.file_list).len().saturating_sub(1)
+                    }
                     DropdownMode::None => 0,
                 };
                 app.command_selection = if app.command_selection >= max_idx {
@@ -1361,6 +1503,14 @@ fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMess
 
     let prompt = std::mem::take(&mut app.input);
     app.cursor = 0;
+
+    // Take a pre-turn snapshot for undo support
+    if let Some(ref sm) = app.snapshot_manager {
+        match sm.track() {
+            Ok(snap) => app.undo_stack.push(snap.hash),
+            Err(e) => tracing::debug!("snapshot failed (undo unavailable this turn): {e}"),
+        }
+    }
 
     // Transition to session view on first message
     app.enter_session();

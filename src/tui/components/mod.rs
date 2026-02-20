@@ -9,8 +9,8 @@ mod session_list;
 mod welcome;
 
 pub use command_palette::{
-    DropdownMode, dropdown_mode, filter_commands, filter_models, render_command_dropdown,
-    render_model_dropdown, should_show_dropdown,
+    DropdownMode, at_query, dropdown_mode, filter_commands, filter_files, filter_models,
+    render_command_dropdown, render_file_dropdown, render_model_dropdown, should_show_dropdown,
 };
 pub use prompt::PLACEHOLDERS;
 pub use session::{MESSAGE_PADDING_X, calculate_content_height, render_session};

@@ -594,6 +594,119 @@ impl Agent {
         }
     }
 
+    /// Compact the current session by summarizing old messages.
+    ///
+    /// Calls the LLM to summarize older messages, deletes them from storage,
+    /// and rebuilds the in-memory conversation from the remaining messages.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there is no active session, if storage operations
+    /// fail, or if the LLM call fails.
+    pub async fn compact_session(
+        &mut self,
+    ) -> Result<super::session::CompactionResult> {
+        use super::session::{CompactionResult, compaction_prompt};
+
+        let session_id = self
+            .current_session_id
+            .as_ref()
+            .ok_or_else(|| AgentError::Config("no active session".to_string()))?
+            .clone();
+
+        // Collect compactable messages and build context before any mutable borrow
+        let (compactable, context, tokens_freed) = {
+            let manager = self
+                .session_manager
+                .as_ref()
+                .ok_or_else(|| AgentError::Config("no session manager".to_string()))?;
+
+            let compactable = manager
+                .get_compactable_messages(&session_id, 4)
+                .map_err(|e| AgentError::Config(e.to_string()))?;
+
+            if compactable.is_empty() {
+                return Ok(CompactionResult {
+                    messages_compacted: 0,
+                    tokens_freed: 0,
+                    summary: String::new(),
+                });
+            }
+
+            let context = manager
+                .build_compaction_context(&compactable)
+                .map_err(|e| AgentError::Config(e.to_string()))?;
+
+            let tokens_freed: u32 = compactable
+                .iter()
+                .filter_map(|m| m.usage())
+                .map(crate::core::session::TokenUsage::total)
+                .sum();
+
+            (compactable, context, tokens_freed)
+        };
+
+        let messages_compacted = compactable.len();
+        let prompt = compaction_prompt(&context);
+
+        // Call LLM to summarize (no tools, no session tracking)
+        let request = CompletionRequest {
+            model: self.model.clone(),
+            max_tokens: 2048,
+            messages: vec![Message {
+                role: Role::User,
+                content: Content::Text(prompt),
+            }],
+            system: Some(
+                "You are a concise technical summarizer. Summarize accurately and briefly."
+                    .to_string(),
+            ),
+            tools: None,
+        };
+
+        let stream = self.provider.stream(request).await?;
+        futures::pin_mut!(stream);
+
+        let mut summary = String::new();
+        while let Some(event) = stream.next().await {
+            if let Ok(CompletionEvent::TextDelta(text)) = event {
+                summary.push_str(&text);
+            }
+        }
+
+        // Delete compacted messages and mark session
+        {
+            let manager = self
+                .session_manager
+                .as_ref()
+                .ok_or_else(|| AgentError::Config("no session manager".to_string()))?;
+
+            manager
+                .delete_compacted_messages(&session_id, &compactable)
+                .map_err(|e| AgentError::Config(e.to_string()))?;
+
+            manager
+                .mark_session_compacted(&session_id)
+                .map_err(|e| AgentError::Config(e.to_string()))?;
+        }
+
+        // Rebuild in-memory conversation from remaining session messages
+        let current_system = self.conversation.system().map(String::from);
+        self.conversation = if let Some(sys) = current_system {
+            Conversation::with_system(sys)
+        } else {
+            Conversation::new()
+        };
+        self.load_session_into_conversation(&session_id)
+            .map_err(|e| AgentError::Config(e.to_string()))?;
+
+        Ok(CompactionResult {
+            messages_compacted,
+            tokens_freed,
+            summary,
+        })
+    }
+
     /// Send a message and get a streaming response.
     ///
     /// This handles the full agent loop including tool execution.
