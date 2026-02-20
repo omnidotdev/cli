@@ -3320,12 +3320,14 @@ fn html_to_text(html: &str) -> String {
 
 /// Merge multiple search result strings, deduplicating by URL
 pub(crate) fn merge_search_results(outputs: Vec<String>) -> String {
+    static URL_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let url_re = URL_RE.get_or_init(|| {
+        regex::Regex::new(r"\(?(https?://[^\s)\]]+)\)?").unwrap()
+    });
+
     let mut seen_urls = std::collections::HashSet::new();
     let mut merged_lines: Vec<String> = Vec::new();
     let mut result_num = 1usize;
-
-    // Match markdown links (https://...) or bare URLs
-    let url_re = regex::Regex::new(r"\(?(https?://[^\s)\]]+)\)?").unwrap();
 
     for output in outputs {
         for line in output.lines() {
