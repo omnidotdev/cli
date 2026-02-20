@@ -950,6 +950,7 @@ impl ToolRegistry {
             "plan_enter" => self.execute_plan_enter(input, permissions, mode).await,
             "plan_exit" => self.execute_plan_exit(permissions, mode).await,
             "web_search" => self.execute_web_search(input, permissions).await,
+            "multi_search" => self.execute_multi_search(input, permissions).await,
             "code_search" => self.execute_code_search(input, permissions).await,
             "glob" => self.execute_glob(input).await,
             "grep" => self.execute_grep(input).await,
@@ -1357,6 +1358,70 @@ impl ToolRegistry {
             Ok(result) => Ok(result.output),
             Err(e) => Err(AgentError::ToolExecution(e.to_string())),
         }
+    }
+
+    async fn execute_multi_search(
+        &self,
+        input: serde_json::Value,
+        permissions: Option<&PermissionClient>,
+    ) -> Result<String> {
+        let queries: Vec<String> = input["queries"]
+            .as_array()
+            .ok_or_else(|| AgentError::ToolExecution("missing queries array".to_string()))?
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
+
+        if queries.is_empty() {
+            return Err(AgentError::ToolExecution(
+                "queries array is empty".to_string(),
+            ));
+        }
+
+        let num_results = input["num_results_per_query"]
+            .as_u64()
+            .map(|n| n as u32)
+            .unwrap_or(5);
+
+        // Permission check using first query as representative
+        if let Some(perms) = permissions {
+            let approved = perms
+                .request(
+                    "multi_search",
+                    PermissionAction::WebSearch,
+                    PermissionContext::WebSearch {
+                        query: queries[0].clone(),
+                    },
+                )
+                .await
+                .map_err(|e| AgentError::ToolExecution(e.to_string()))?;
+
+            if !approved {
+                return Err(AgentError::ToolExecution(
+                    "Permission denied by user. Do not retry this action.".to_string(),
+                ));
+            }
+        }
+
+        tracing::info!(count = queries.len(), "executing multi_search in parallel");
+
+        let search_futs = queries.into_iter().map(|q| {
+            let mut params = crate::core::search::WebSearchParams::new(q);
+            params.num_results = Some(num_results);
+            async move { crate::core::search::web_search(params).await.map(|r| r.output) }
+        });
+
+        let results = futures::future::join_all(search_futs).await;
+
+        let outputs: Vec<String> = results.into_iter().filter_map(|r| r.ok()).collect();
+
+        if outputs.is_empty() {
+            return Err(AgentError::ToolExecution(
+                "all queries failed".to_string(),
+            ));
+        }
+
+        Ok(merge_search_results(outputs))
     }
 
     async fn execute_code_search(
@@ -3253,9 +3318,56 @@ fn html_to_text(html: &str) -> String {
     text.trim().to_string()
 }
 
+/// Merge multiple search result strings, deduplicating by URL
+pub(crate) fn merge_search_results(outputs: Vec<String>) -> String {
+    let mut seen_urls = std::collections::HashSet::new();
+    let mut merged_lines: Vec<String> = Vec::new();
+    let mut result_num = 1usize;
+
+    // Match markdown links (https://...) or bare URLs
+    let url_re = regex::Regex::new(r"\(?(https?://[^\s)\]]+)\)?").unwrap();
+
+    for output in outputs {
+        for line in output.lines() {
+            if let Some(cap) = url_re.captures(line) {
+                let url = cap[1].trim_end_matches(')').to_string();
+                if seen_urls.contains(&url) {
+                    continue;
+                }
+                seen_urls.insert(url);
+            }
+            let processed =
+                if line.starts_with(|c: char| c.is_ascii_digit()) && line.contains('.') {
+                    let after_num = line.splitn(2, '.').nth(1).unwrap_or(line);
+                    format!("{result_num}.{after_num}")
+                } else {
+                    line.to_string()
+                };
+            merged_lines.push(processed);
+            if line.starts_with(|c: char| c.is_ascii_digit()) {
+                result_num += 1;
+            }
+        }
+    }
+
+    merged_lines.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn multi_search_merge_deduplicates_by_url() {
+        let outputs = vec![
+            "1. [Page A](https://example.com/a)\nSome content about A".to_string(),
+            "1. [Page A](https://example.com/a)\nDuplicate\n2. [Page B](https://example.com/b)\nContent B".to_string(),
+        ];
+        let merged = merge_search_results(outputs);
+        let count_a = merged.matches("example.com/a").count();
+        assert_eq!(count_a, 1, "duplicate URL should appear only once");
+        assert!(merged.contains("example.com/b"));
+    }
 
     #[tokio::test]
     async fn shell_tool_executes_command() {
