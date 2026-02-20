@@ -23,7 +23,7 @@ pub fn tool_icon(name: &str) -> &'static str {
         "read_file" | "Read" => icons::READ,
         "write_file" | "Write" => icons::WRITE,
         "edit_file" | "Edit" => icons::EDIT,
-        "Glob" | "Grep" | "grep" | "find" => icons::SEARCH,
+        "web_search" | "multi_search" | "Glob" | "Grep" | "grep" | "find" => icons::SEARCH,
         _ => icons::DEFAULT,
     }
 }
@@ -134,6 +134,17 @@ pub fn format_tool_invocation(name: &str, input: &serde_json::Value) -> String {
             .and_then(|v| v.as_str())
             .map(truncate_line)
             .unwrap_or_default(),
+        "web_search" => input
+            .get("query")
+            .and_then(|v| v.as_str())
+            .map(truncate_line)
+            .unwrap_or_default(),
+        "multi_search" => {
+            if let Some(arr) = input.get("queries").and_then(|v| v.as_array()) {
+                return format!("{} queries in parallel", arr.len());
+            }
+            "parallel search".to_string()
+        }
         _ => {
             // Generic: show first string field or empty
             input
@@ -196,4 +207,16 @@ fn shorten_path(path: &str) -> String {
         }
     }
     path.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_multi_search_invocation_shows_count() {
+        let input = serde_json::json!({ "queries": ["a", "b", "c"] });
+        let result = format_tool_invocation("multi_search", &input);
+        assert_eq!(result, "3 queries in parallel");
+    }
 }
