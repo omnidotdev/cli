@@ -29,6 +29,9 @@ const DIFF_HUNK: Color = Color::Rgb(80, 140, 180);
 /// Continuation character for tool output
 const CONT_CHAR: &str = "⎿";
 
+/// Braille spinner frames for animated tool indicators
+pub const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
 /// Get the appropriate color for a line, applying diff colors if it looks like a diff
 fn line_color(line: &str) -> Color {
     // Check for diff patterns - apply to any output that looks like a diff

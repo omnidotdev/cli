@@ -20,6 +20,7 @@ use indexmap::IndexMap;
 pub const MESSAGE_PADDING_X: u16 = 2;
 
 /// Brand colors.
+const BRAND_TEAL: Color = Color::Rgb(77, 201, 176);
 const DIMMED: Color = Color::Rgb(100, 100, 110);
 
 /// Render the session screen with message list and prompt.
@@ -40,6 +41,7 @@ pub fn render_session(
     selection: Option<&Selection>,
     selected_text: &mut String,
     session_cost: f64,
+    spinner_tick: u64,
 ) -> ((u16, u16), Rect) {
     // Calculate dynamic prompt height based on input lines
     // Height = top padding (1) + input lines + bottom padding (1) + status bar (1)
@@ -61,6 +63,9 @@ pub fn render_session(
         ])
         .split(area);
 
+    let spinner_frame = super::messages::SPINNER_FRAMES
+        [spinner_tick as usize % super::messages::SPINNER_FRAMES.len()];
+
     // Render messages
     render_message_list(
         frame,
@@ -68,6 +73,8 @@ pub fn render_session(
         messages,
         streaming_text,
         scroll_offset,
+        running_tools,
+        spinner_frame,
         selection,
         selected_text,
     );
@@ -85,7 +92,7 @@ pub fn render_session(
         None
     } else {
         let names: Vec<&str> = running_tools.values().map(String::as_str).collect();
-        Some(format!("Using {}...", names.join(", ")))
+        Some(format!("{spinner_frame} Using {}...", names.join(", ")))
     };
     let status_left = status_text.as_deref();
     // Show mode, model, cost, and build version in status
@@ -121,6 +128,8 @@ fn render_message_list(
     messages: &[DisplayMessage],
     streaming_text: &str,
     scroll_offset: u16,
+    running_tools: &IndexMap<String, String>,
+    spinner_frame: &str,
     selection: Option<&Selection>,
     selected_text: &mut String,
 ) {
@@ -252,6 +261,34 @@ fn render_message_list(
             let para = Paragraph::new(visible_lines).wrap(Wrap { trim: false });
             frame.render_widget(para, streaming_area);
         }
+
+        // Advance content_y past streaming text for tool block placement
+        #[allow(clippy::cast_possible_truncation)]
+        let streaming_height: u16 = streaming_text
+            .lines()
+            .map(|line| wrapped_line_height(line.chars().count(), padded_area.width.max(1) as usize))
+            .sum::<u16>()
+            .max(1);
+        content_y = content_y.saturating_add(streaming_height).saturating_add(1);
+    }
+
+    // Render running tool blocks inline with spinner
+    for tool_name in running_tools.values() {
+        if content_y >= scroll_offset {
+            let screen_y = padded_area.y + (content_y - scroll_offset);
+            if screen_y < padded_area.y + padded_area.height {
+                let block_area = Rect::new(padded_area.x, screen_y, padded_area.width, 1);
+                let line = Line::from(vec![
+                    Span::styled(
+                        format!("{spinner_frame} "),
+                        Style::default().fg(BRAND_TEAL),
+                    ),
+                    Span::styled(tool_name.as_str(), Style::default().fg(Color::White)),
+                ]);
+                frame.render_widget(Paragraph::new(line), block_area);
+            }
+        }
+        content_y = content_y.saturating_add(2); // 1 line + 1 spacing
     }
 }
 

@@ -200,13 +200,31 @@ impl McpServer {
             anyhow::bail!("Server not connected");
         }
 
+        // First attempt — clone args so we retain them for the retry
+        let first_result = self.try_call_tool(name, arguments.clone());
+
+        if let Ok(output) = first_result {
+            return Ok(output);
+        }
+
+        // Transport failure — reconnect and retry once
+        tracing::warn!(server = %self.name, "MCP transport failure, reconnecting");
+        self.disconnect();
+        self.connect()?;
+        if !self.is_connected() {
+            anyhow::bail!("reconnect failed: server did not come back up");
+        }
+
+        self.try_call_tool(name, arguments)
+            .map_err(|e| anyhow::anyhow!("tool '{}' failed on {} after reconnect: {e}", name, self.name))
+    }
+
+    fn try_call_tool(&mut self, name: &str, arguments: serde_json::Value) -> anyhow::Result<String> {
         let id = self.next_id();
         let request = McpRequest::call_tool(id, name, arguments);
-
         let response = self.send_request(&request)?;
         let result: McpToolResult = serde_json::from_value(response)?;
 
-        // Convert content to string
         let output = result
             .content
             .iter()
@@ -217,7 +235,6 @@ impl McpServer {
         if result.is_error {
             anyhow::bail!("Tool error: {output}");
         }
-
         Ok(output)
     }
 

@@ -171,6 +171,8 @@ async fn run_app(
     app: &mut App,
     permission_tx: mpsc::UnboundedSender<PermissionMessage>,
 ) -> anyhow::Result<()> {
+    let mut tick = tokio::time::interval(Duration::from_millis(120));
+
     loop {
         // Clear selected text before render (will be populated if selection is active)
         app.selected_text.clear();
@@ -226,6 +228,7 @@ async fn run_app(
                         app.selection.as_ref(),
                         &mut app.selected_text,
                         app.session_cost,
+                        app.spinner_tick,
                     )
                 }
             };
@@ -273,6 +276,13 @@ async fn run_app(
 
         // Poll for events and messages concurrently
         tokio::select! {
+            // Advance spinner frame while loading
+            _ = tick.tick() => {
+                if app.loading {
+                    app.spinner_tick = app.spinner_tick.wrapping_add(1);
+                }
+            }
+
             // Check for input events
             () = tokio::time::sleep(Duration::from_millis(10)) => {
                 while event::poll(Duration::from_millis(0))? {

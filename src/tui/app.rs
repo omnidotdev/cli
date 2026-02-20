@@ -245,6 +245,9 @@ pub struct App {
     /// Tools currently executing (`tool_id` → display name), ordered by start time.
     pub running_tools: indexmap::IndexMap<String, String>,
 
+    /// Spinner frame counter, incremented by the tick interval.
+    pub spinner_tick: u64,
+
     /// Shadow-git snapshot manager for undo support (None if not in a git project).
     pub snapshot_manager: Option<SnapshotManager>,
 
@@ -396,6 +399,7 @@ impl App {
             command_selection: 0,
             agent_config: config.agent,
             running_tools: indexmap::IndexMap::new(),
+            spinner_tick: 0,
             snapshot_manager,
             undo_stack: Vec::new(),
             file_list,
