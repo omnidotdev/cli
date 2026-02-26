@@ -18,8 +18,11 @@ jobs:
     timeout-minutes: 15
     outputs:
       published: ${{ steps.changesets.outputs.published }}
+      version_commit: ${{ steps.detect_version_commit.outputs.version_commit }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         run: bun i
@@ -34,11 +37,23 @@ jobs:
           commit: "chore(release): version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Detect version commit
+        id: detect_version_commit
+        run: |
+          # Detect the merged "version packages" commit even when changesets/action sets published=false.
+          FILES=$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA")
+          if echo "$FILES" | grep -q '^CHANGELOG.md$' \
+            && echo "$FILES" | grep -q '^Cargo.toml$' \
+            && echo "$FILES" | grep -q '^package.json$'; then
+            echo "version_commit=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "version_commit=false" >> "$GITHUB_OUTPUT"
+          fi
 
   build:
     name: Build ${{ matrix.target }}
     needs: release
-    if: needs.release.outputs.published == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.release.outputs.published == 'true' || needs.release.outputs.version_commit == 'true' || github.event_name == 'workflow_dispatch'
     timeout-minutes: 30
     strategy:
       matrix:
@@ -85,7 +100,7 @@ jobs:
   publish:
     name: Create GitHub Release
     needs: [release, build]
-    if: needs.release.outputs.published == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.release.outputs.published == 'true' || needs.release.outputs.version_commit == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
