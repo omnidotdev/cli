@@ -942,7 +942,7 @@ mod tests {
         running.insert("id-1".to_string(), "Bash".to_string());
         running.insert("id-2".to_string(), "Read".to_string());
         assert_eq!(running.len(), 2);
-        running.remove("id-1");
+        running.shift_remove("id-1");
         assert_eq!(running.len(), 1);
         assert!(running.contains_key("id-2"));
     }
