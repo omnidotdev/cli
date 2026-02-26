@@ -143,6 +143,11 @@ Two GitHub workflows handle versioning:
    - `aarch64-apple-darwin`
 5. **Manually** publish to crates.io: `cargo publish`
 
+## Ecosystem
+
+- **[Omni Terminal](https://github.com/omnidotdev/terminal)**: GPU-accelerated terminal emulator built to run everywhere
+- **[Beacon](https://github.com/omnidotdev/beacon-gateway)**: Voice and messaging gateway powered by Omni CLI
+
 ## License
 
 The code in this repository is licensed under MIT, &copy; [Omni LLC](https://omni.dev). See [LICENSE.md](LICENSE.md) for more information.
