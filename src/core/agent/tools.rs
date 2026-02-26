@@ -1380,8 +1380,7 @@ impl ToolRegistry {
 
         let num_results = input["num_results_per_query"]
             .as_u64()
-            .map(|n| n as u32)
-            .unwrap_or(5);
+            .map_or(5, |n| u32::try_from(n).unwrap_or(5));
 
         // Permission check using first query as representative
         if let Some(perms) = permissions {
@@ -1408,17 +1407,20 @@ impl ToolRegistry {
         let search_futs = queries.into_iter().map(|q| {
             let mut params = crate::core::search::WebSearchParams::new(q);
             params.num_results = Some(num_results);
-            async move { crate::core::search::web_search(params).await.map(|r| r.output) }
+            async move {
+                crate::core::search::web_search(params)
+                    .await
+                    .map(|r| r.output)
+            }
         });
 
         let results = futures::future::join_all(search_futs).await;
 
+        #[allow(clippy::redundant_closure_for_method_calls)]
         let outputs: Vec<String> = results.into_iter().filter_map(|r| r.ok()).collect();
 
         if outputs.is_empty() {
-            return Err(AgentError::ToolExecution(
-                "all queries failed".to_string(),
-            ));
+            return Err(AgentError::ToolExecution("all queries failed".to_string()));
         }
 
         Ok(merge_search_results(outputs))
@@ -3321,9 +3323,7 @@ fn html_to_text(html: &str) -> String {
 /// Merge multiple search result strings, deduplicating by URL
 pub(crate) fn merge_search_results(outputs: Vec<String>) -> String {
     static URL_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let url_re = URL_RE.get_or_init(|| {
-        regex::Regex::new(r"\(?(https?://[^\s)\]]+)\)?").unwrap()
-    });
+    let url_re = URL_RE.get_or_init(|| regex::Regex::new(r"\(?(https?://[^\s)\]]+)\)?").unwrap());
 
     let mut seen_urls = std::collections::HashSet::new();
     let mut merged_lines: Vec<String> = Vec::new();
@@ -3338,13 +3338,13 @@ pub(crate) fn merge_search_results(outputs: Vec<String>) -> String {
                 }
                 seen_urls.insert(url);
             }
-            let processed =
-                if line.starts_with(|c: char| c.is_ascii_digit()) && line.contains('.') {
-                    let after_num = line.splitn(2, '.').nth(1).unwrap_or(line);
-                    format!("{result_num}.{after_num}")
-                } else {
-                    line.to_string()
-                };
+            let processed = if line.starts_with(|c: char| c.is_ascii_digit()) && line.contains('.')
+            {
+                let after_num = line.split_once('.').map_or(line, |x| x.1);
+                format!("{result_num}.{after_num}")
+            } else {
+                line.to_string()
+            };
             merged_lines.push(processed);
             if line.starts_with(|c: char| c.is_ascii_digit()) {
                 result_num += 1;

@@ -160,7 +160,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
 
         Commands::Auth { command } => match command {
             AuthCommands::Login => omni_cli::cli::auth::login().await?,
-            AuthCommands::Logout => omni_cli::cli::auth::logout().await?,
+            AuthCommands::Logout => omni_cli::cli::auth::logout()?,
         },
     }
 

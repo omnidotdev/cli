@@ -231,8 +231,7 @@ impl Config {
         self.auth
             .access_token
             .clone()
-            .or_else(|| resolve_api_key(self.agent.providers.get("synapse")?)
-)
+            .or_else(|| resolve_api_key(self.agent.providers.get("synapse")?))
     }
 }
 
@@ -472,7 +471,8 @@ impl AgentConfig {
         let api_key_str = std::env::var("AETHER_SERVICE_API_KEY").ok()?;
         let service_api_key = secrecy::SecretString::new(api_key_str.into());
 
-        let client = synapse_billing::AetherClient::new(aether_url, app_id, service_api_key).ok()?;
+        let client =
+            synapse_billing::AetherClient::new(aether_url, app_id, service_api_key).ok()?;
 
         tracing::info!("Aether usage recording enabled");
 

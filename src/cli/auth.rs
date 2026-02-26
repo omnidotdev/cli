@@ -13,8 +13,7 @@ const DEFAULT_AUTH_URL: &str = "https://auth.omni.dev";
 ///
 /// Returns an error if the login request fails or the response cannot be parsed.
 pub async fn login() -> Result<()> {
-    let auth_url = std::env::var("OMNI_AUTH_URL")
-        .unwrap_or_else(|_| DEFAULT_AUTH_URL.to_string());
+    let auth_url = std::env::var("OMNI_AUTH_URL").unwrap_or_else(|_| DEFAULT_AUTH_URL.to_string());
 
     let email = {
         print!("Email: ");
@@ -24,8 +23,7 @@ pub async fn login() -> Result<()> {
         input.trim().to_string()
     };
 
-    let password = rpassword::prompt_password("Password: ")
-        .context("failed to read password")?;
+    let password = rpassword::prompt_password("Password: ").context("failed to read password")?;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -60,7 +58,7 @@ pub async fn login() -> Result<()> {
 /// # Errors
 ///
 /// Returns an error if the config cannot be read or written.
-pub async fn logout() -> Result<()> {
+pub fn logout() -> Result<()> {
     let mut config = crate::config::Config::load()?;
     config.auth.access_token = None;
     config.save().context("failed to save config")?;

@@ -38,7 +38,8 @@ use app::{ActiveAskUserDialog, ActiveDialog, ActivePermissionDialog, ChatMessage
 use components::{
     DropdownMode, MESSAGE_PADDING_X, at_query, calculate_content_height, dropdown_mode,
     filter_commands, filter_files, filter_models, render_command_dropdown, render_file_dropdown,
-    render_model_dropdown, render_session, render_session_list, render_welcome, should_show_dropdown,
+    render_model_dropdown, render_session, render_session_list, render_welcome,
+    should_show_dropdown,
 };
 use message::DisplayMessage;
 use state::ViewState;
@@ -517,19 +518,13 @@ fn handle_key(
                             let file_list_clone = app.file_list.clone();
                             let filtered = filter_files(&app.input, &file_list_clone);
                             if let Some(path) = filtered.get(app.command_selection) {
-                                let query =
-                                    at_query(&app.input).to_string();
+                                let query = at_query(&app.input).to_string();
                                 let at_token = format!("@{query}");
                                 let display = path.to_string_lossy();
                                 let contents = std::fs::read_to_string(path)
                                     .unwrap_or_else(|_| "<unreadable>".to_string());
-                                let ext = path
-                                    .extension()
-                                    .and_then(|e| e.to_str())
-                                    .unwrap_or("");
-                                let replacement = format!(
-                                    "`{display}`\n```{ext}\n{contents}\n```"
-                                );
+                                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                                let replacement = format!("`{display}`\n```{ext}\n{contents}\n```");
                                 // Replace the @token in input with the expanded block
                                 app.input = app.input.replacen(&at_token, &replacement, 1);
                                 app.cursor = app.input.len();
@@ -661,10 +656,8 @@ fn handle_key(
                 if trimmed == "/compact" {
                     app.clear_input();
                     let Some(mut agent) = app.agent.take() else {
-                        app.messages.push(DisplayMessage::tool_error(
-                            "compact",
-                            "No active agent",
-                        ));
+                        app.messages
+                            .push(DisplayMessage::tool_error("compact", "No active agent"));
                         return false;
                     };
                     app.loading = true;
@@ -704,7 +697,8 @@ fn handle_key(
                          ─────────────────────\n\
                          Total            ${cost:.4}"
                     );
-                    app.messages.push(DisplayMessage::tool("cost", "", report, false));
+                    app.messages
+                        .push(DisplayMessage::tool("cost", "", report, false));
                     return false;
                 }
 
@@ -777,7 +771,11 @@ fn handle_key(
                             if let Some(path) = filtered.get(app.command_selection) {
                                 let display = path.to_string_lossy().into_owned();
                                 let query = at_query(&app.input).to_string();
-                                app.input = app.input.replacen(&format!("@{query}"), &format!("@{display}"), 1);
+                                app.input = app.input.replacen(
+                                    &format!("@{query}"),
+                                    &format!("@{display}"),
+                                    1,
+                                );
                                 app.cursor = app.input.len();
                             }
                         }
@@ -848,9 +846,9 @@ fn handle_key(
                     DropdownMode::Models => filter_models(&app.input, &app.agent_config.models)
                         .len()
                         .saturating_sub(1),
-                    DropdownMode::Files => {
-                        filter_files(&app.input, &app.file_list).len().saturating_sub(1)
-                    }
+                    DropdownMode::Files => filter_files(&app.input, &app.file_list)
+                        .len()
+                        .saturating_sub(1),
                     DropdownMode::None => 0,
                 };
                 app.command_selection = if app.command_selection == 0 {
@@ -874,9 +872,9 @@ fn handle_key(
                     DropdownMode::Models => filter_models(&app.input, &app.agent_config.models)
                         .len()
                         .saturating_sub(1),
-                    DropdownMode::Files => {
-                        filter_files(&app.input, &app.file_list).len().saturating_sub(1)
-                    }
+                    DropdownMode::Files => filter_files(&app.input, &app.file_list)
+                        .len()
+                        .saturating_sub(1),
                     DropdownMode::None => 0,
                 };
                 app.command_selection = if app.command_selection >= max_idx {

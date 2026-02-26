@@ -215,11 +215,20 @@ impl McpServer {
             anyhow::bail!("reconnect failed: server did not come back up");
         }
 
-        self.try_call_tool(name, arguments)
-            .map_err(|e| anyhow::anyhow!("tool '{}' failed on {} after reconnect: {e}", name, self.name))
+        self.try_call_tool(name, arguments).map_err(|e| {
+            anyhow::anyhow!(
+                "tool '{}' failed on {} after reconnect: {e}",
+                name,
+                self.name
+            )
+        })
     }
 
-    fn try_call_tool(&mut self, name: &str, arguments: serde_json::Value) -> anyhow::Result<String> {
+    fn try_call_tool(
+        &self,
+        name: &str,
+        arguments: serde_json::Value,
+    ) -> anyhow::Result<String> {
         let id = self.next_id();
         let request = McpRequest::call_tool(id, name, arguments);
         let response = self.send_request(&request)?;

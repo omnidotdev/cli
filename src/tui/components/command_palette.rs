@@ -103,7 +103,11 @@ pub fn dropdown_mode(input: &str) -> DropdownMode {
         DropdownMode::Models
     } else if input.starts_with('/') && !input.contains(' ') {
         DropdownMode::Commands
-    } else if input.split_whitespace().last().is_some_and(|w| w.starts_with('@')) {
+    } else if input
+        .split_whitespace()
+        .last()
+        .is_some_and(|w| w.starts_with('@'))
+    {
         DropdownMode::Files
     } else {
         DropdownMode::None

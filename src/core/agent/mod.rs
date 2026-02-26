@@ -205,7 +205,10 @@ impl Agent {
     }
 
     /// Load MCP tools from Synapse and make them available to the agent
-    pub async fn load_synapse_tools(&mut self, client: std::sync::Arc<synapse_client::SynapseClient>) {
+    pub async fn load_synapse_tools(
+        &mut self,
+        client: std::sync::Arc<synapse_client::SynapseClient>,
+    ) {
         self.tools.set_synapse_client(client);
         self.tools.load_synapse_tools().await;
     }
@@ -611,9 +614,7 @@ impl Agent {
     ///
     /// Returns an error if there is no active session, if storage operations
     /// fail, or if the LLM call fails.
-    pub async fn compact_session(
-        &mut self,
-    ) -> Result<super::session::CompactionResult> {
+    pub async fn compact_session(&mut self) -> Result<super::session::CompactionResult> {
         use super::session::{CompactionResult, compaction_prompt};
 
         let session_id = self
@@ -1114,7 +1115,10 @@ impl Agent {
                 let invocation = format_tool_invocation(name, input);
 
                 // Emit tool start event for activity status
-                on_event(ChatEvent::ToolStart { tool_id: id.clone(), name: name.clone() });
+                on_event(ChatEvent::ToolStart {
+                    tool_id: id.clone(),
+                    name: name.clone(),
+                });
 
                 let result = self
                     .tools

@@ -12,10 +12,7 @@ pub enum ChatEvent {
     /// Text chunk from the assistant
     Text(String),
     /// Tool invocation starting — `tool_id` links start to result for parallel display
-    ToolStart {
-        tool_id: String,
-        name: String,
-    },
+    ToolStart { tool_id: String, name: String },
     /// Tool invocation finished
     ToolCall {
         tool_id: String,

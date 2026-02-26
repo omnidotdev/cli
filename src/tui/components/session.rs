@@ -266,7 +266,9 @@ fn render_message_list(
         #[allow(clippy::cast_possible_truncation)]
         let streaming_height: u16 = streaming_text
             .lines()
-            .map(|line| wrapped_line_height(line.chars().count(), padded_area.width.max(1) as usize))
+            .map(|line| {
+                wrapped_line_height(line.chars().count(), padded_area.width.max(1) as usize)
+            })
             .sum::<u16>()
             .max(1);
         content_y = content_y.saturating_add(streaming_height).saturating_add(1);
@@ -279,10 +281,7 @@ fn render_message_list(
             if screen_y < padded_area.y + padded_area.height {
                 let block_area = Rect::new(padded_area.x, screen_y, padded_area.width, 1);
                 let line = Line::from(vec![
-                    Span::styled(
-                        format!("{spinner_frame} "),
-                        Style::default().fg(BRAND_TEAL),
-                    ),
+                    Span::styled(format!("{spinner_frame} "), Style::default().fg(BRAND_TEAL)),
                     Span::styled(tool_name.as_str(), Style::default().fg(Color::White)),
                 ]);
                 frame.render_widget(Paragraph::new(line), block_area);
