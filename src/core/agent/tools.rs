@@ -3321,7 +3321,7 @@ fn html_to_text(html: &str) -> String {
 }
 
 /// Merge multiple search result strings, deduplicating by URL
-pub(crate) fn merge_search_results(outputs: Vec<String>) -> String {
+pub fn merge_search_results(outputs: Vec<String>) -> String {
     static URL_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let url_re = URL_RE.get_or_init(|| regex::Regex::new(r"\(?(https?://[^\s)\]]+)\)?").unwrap());
 
