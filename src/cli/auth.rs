@@ -9,6 +9,9 @@ const DEFAULT_AUTH_URL: &str = "https://auth.omni.dev";
 ///
 /// Stores the resulting access token in `~/.config/omni/cli/config.toml`.
 ///
+/// The token is extracted from the first matching path in the JSON response:
+/// `token` -> `session.token` -> `accessToken` -> `session.accessToken`.
+///
 /// # Errors
 ///
 /// Returns an error if the login request fails or the response cannot be parsed.
@@ -43,7 +46,20 @@ pub async fn login() -> Result<()> {
 
     let token = data["token"]
         .as_str()
-        .context("no token in response — check OMNI_AUTH_URL")?;
+        .or_else(|| data["session"]["token"].as_str())
+        .or_else(|| data["accessToken"].as_str())
+        .or_else(|| data["session"]["accessToken"].as_str())
+        .ok_or_else(|| {
+            let keys: Vec<&str> = data
+                .as_object()
+                .map(|o| o.keys().map(String::as_str).collect())
+                .unwrap_or_default();
+            anyhow::anyhow!(
+                "no token in response (tried token, session.token, accessToken, \
+                 session.accessToken) — response keys: [{}]",
+                keys.join(", ")
+            )
+        })?;
 
     let mut config = crate::config::Config::load()?;
     config.auth.access_token = Some(token.to_string());

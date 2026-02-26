@@ -698,6 +698,52 @@ mod tests {
     }
 
     #[test]
+    fn synapse_bearer_token_prefers_auth_token() {
+        let mut config = Config::default();
+        config.auth.access_token = Some("auth-jwt-123".to_string());
+        config.agent.providers.insert(
+            "synapse".to_string(),
+            ProviderConfig {
+                api_type: ProviderApiType::Synapse,
+                base_url: None,
+                api_key_env: None,
+                api_key: Some("sk-synapse".to_string()),
+            },
+        );
+        assert_eq!(
+            config.synapse_bearer_token(),
+            Some("auth-jwt-123".to_string())
+        );
+    }
+
+    #[test]
+    fn synapse_bearer_token_falls_back_to_provider_key() {
+        let mut config = Config::default();
+        config.auth.access_token = None;
+        config.agent.providers.insert(
+            "synapse".to_string(),
+            ProviderConfig {
+                api_type: ProviderApiType::Synapse,
+                base_url: None,
+                api_key_env: None,
+                api_key: Some("sk-synapse".to_string()),
+            },
+        );
+        assert_eq!(
+            config.synapse_bearer_token(),
+            Some("sk-synapse".to_string())
+        );
+    }
+
+    #[test]
+    fn synapse_bearer_token_returns_none() {
+        let mut config = Config::default();
+        config.auth.access_token = None;
+        config.agent.providers.clear();
+        assert_eq!(config.synapse_bearer_token(), None);
+    }
+
+    #[test]
     fn synapse_provider_uses_named_type() {
         let config = AgentConfig::default();
         let synapse = config.providers.get("synapse").unwrap();

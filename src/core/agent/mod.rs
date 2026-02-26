@@ -4,6 +4,7 @@ mod conversation;
 mod error;
 pub mod permission;
 mod plan;
+mod pricing;
 mod provider;
 pub mod providers;
 mod tools;
@@ -1065,11 +1066,8 @@ impl Agent {
                     stop_reason = sr;
                     // Emit usage event if we have usage data
                     if let Some(u) = usage {
-                        // Cost calculation (Anthropic Claude Sonnet pricing per million tokens)
-                        // Input: $3/M, Output: $15/M (approximate)
-                        let cost = f64::from(u.input_tokens)
-                            .mul_add(3.0, f64::from(u.output_tokens) * 15.0)
-                            / 1_000_000.0;
+                        let cost = pricing::lookup_pricing(&self.model, self.provider.name())
+                            .cost(u.input_tokens, u.output_tokens);
                         on_event(ChatEvent::Usage {
                             input_tokens: u.input_tokens,
                             output_tokens: u.output_tokens,

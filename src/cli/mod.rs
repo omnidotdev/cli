@@ -356,6 +356,28 @@ mod tests {
     }
 
     #[test]
+    fn cli_parses_auth_login() {
+        let cli = Cli::parse_from(["omni", "auth", "login"]);
+        match cli.command {
+            Some(Commands::Auth { command }) => {
+                assert!(matches!(command, AuthCommands::Login));
+            }
+            _ => panic!("expected Auth command"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_auth_logout() {
+        let cli = Cli::parse_from(["omni", "auth", "logout"]);
+        match cli.command {
+            Some(Commands::Auth { command }) => {
+                assert!(matches!(command, AuthCommands::Logout));
+            }
+            _ => panic!("expected Auth command"),
+        }
+    }
+
+    #[test]
     fn cli_parses_session_export() {
         let cli = Cli::parse_from(["omni", "session", "export", "abc123", "-f", "markdown"]);
         match cli.command {

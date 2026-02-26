@@ -224,11 +224,7 @@ impl McpServer {
         })
     }
 
-    fn try_call_tool(
-        &self,
-        name: &str,
-        arguments: serde_json::Value,
-    ) -> anyhow::Result<String> {
+    fn try_call_tool(&self, name: &str, arguments: serde_json::Value) -> anyhow::Result<String> {
         let id = self.next_id();
         let request = McpRequest::call_tool(id, name, arguments);
         let response = self.send_request(&request)?;
