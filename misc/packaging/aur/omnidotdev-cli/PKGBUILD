@@ -9,7 +9,7 @@ license=('MIT')
 depends=()
 makedepends=('cargo')
 source=("https://github.com/omnidotdev/cli/archive/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('713b3802d69312f3658f3fe648eec343225304482782ee1ba77c7739b8b747f2')
 
 build() {
   cd "cli-$pkgver"
