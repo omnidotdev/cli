@@ -15,11 +15,14 @@
 
 ## Installation
 
-```bash
-cargo install omnidotdev-cli
-```
+| Platform | Channel | Command / Link |
+| --- | --- | --- |
+| All | [GitHub Releases](https://github.com/omnidotdev/cli/releases) | Download from releases page |
+| All | [crates.io](https://crates.io/crates/omnidotdev-cli) | `cargo install omnidotdev-cli` |
+| macOS / Linux | [Homebrew](https://github.com/omnidotdev/homebrew-tap) | `brew install omnidotdev/tap/omni-cli` |
+| Arch Linux | [AUR](https://aur.archlinux.org/packages/omnidotdev-cli) / [AUR (bin)](https://aur.archlinux.org/packages/omnidotdev-cli-bin) | `yay -S omnidotdev-cli` or `yay -S omnidotdev-cli-bin` |
 
-Or build from source:
+### Build from source
 
 ```bash
 git clone https://github.com/omnidotdev/cli
@@ -27,8 +30,6 @@ cd cli
 cargo build --release
 # Binary will be at target/release/omni
 ```
-
-More distribution platforms (AUR, brew, ...) are coming soon. Let us know if you are looking for a specific one in meantime.
 
 ## Quick Start
 

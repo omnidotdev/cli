@@ -102,7 +102,7 @@ jobs:
     needs: [release, build]
     if: needs.release.outputs.published == 'true' || needs.release.outputs.version_commit == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -125,3 +125,107 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Update Homebrew tap
+        env:
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          MACOS_X86_SHA256=$(shasum -a 256 artifacts/omni-x86_64-apple-darwin/omni-x86_64-apple-darwin.tar.gz | awk '{print $1}')
+          MACOS_ARM_SHA256=$(shasum -a 256 artifacts/omni-aarch64-apple-darwin/omni-aarch64-apple-darwin.tar.gz | awk '{print $1}')
+          LINUX_X86_SHA256=$(shasum -a 256 artifacts/omni-x86_64-unknown-linux-gnu/omni-x86_64-unknown-linux-gnu.tar.gz | awk '{print $1}')
+          LINUX_ARM_SHA256=$(shasum -a 256 artifacts/omni-aarch64-unknown-linux-gnu/omni-aarch64-unknown-linux-gnu.tar.gz | awk '{print $1}')
+
+          git clone https://x-access-token:${TAP_GITHUB_TOKEN}@github.com/omnidotdev/homebrew-tap.git tap
+          cd tap
+
+          mkdir -p Formula
+          cat > Formula/omni-cli.rb <<'FORMULAEOF'
+          class OmniCli < Formula
+            desc "Agentic CLI for the Omni ecosystem"
+            homepage "https://cli.omni.dev"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/omnidotdev/cli/releases/download/v${VERSION}/omni-aarch64-apple-darwin.tar.gz"
+                sha256 "${MACOS_ARM_SHA256}"
+              end
+              on_intel do
+                url "https://github.com/omnidotdev/cli/releases/download/v${VERSION}/omni-x86_64-apple-darwin.tar.gz"
+                sha256 "${MACOS_X86_SHA256}"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/omnidotdev/cli/releases/download/v${VERSION}/omni-aarch64-unknown-linux-gnu.tar.gz"
+                sha256 "${LINUX_ARM_SHA256}"
+              end
+              on_intel do
+                url "https://github.com/omnidotdev/cli/releases/download/v${VERSION}/omni-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "${LINUX_X86_SHA256}"
+              end
+            end
+
+            def install
+              bin.install "omni"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/omni --version")
+            end
+          end
+          FORMULAEOF
+          sed -i "s/\${VERSION}/${VERSION}/g; s/\${MACOS_ARM_SHA256}/${MACOS_ARM_SHA256}/g; s/\${MACOS_X86_SHA256}/${MACOS_X86_SHA256}/g; s/\${LINUX_X86_SHA256}/${LINUX_X86_SHA256}/g; s/\${LINUX_ARM_SHA256}/${LINUX_ARM_SHA256}/g" Formula/omni-cli.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/omni-cli.rb
+          git commit -m "chore: update omni-cli to v${VERSION}"
+          git push
+      - name: Publish to AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        if: env.AUR_SSH_PRIVATE_KEY != ''
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          mkdir -p ~/.ssh
+          echo "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          cat >> ~/.ssh/config <<SSH
+          Host aur.archlinux.org
+            IdentityFile ~/.ssh/aur
+            User aur
+          SSH
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+
+          SOURCE_SHA256=$(curl -sL "https://github.com/omnidotdev/cli/archive/v${VERSION}.tar.gz" | shasum -a 256 | awk '{print $1}')
+
+          publish_aur() {
+            local pkg="$1" sha="$2"
+            git clone "ssh://aur@aur.archlinux.org/${pkg}.git" "${pkg}" 2>/dev/null || {
+              mkdir "${pkg}" && cd "${pkg}" && git init && git remote add origin "ssh://aur@aur.archlinux.org/${pkg}.git" && cd ..
+            }
+            cd "${pkg}"
+            cp "../misc/packaging/aur/${pkg}/PKGBUILD" .
+            sed -i "s/^pkgver=.*/pkgver=${VERSION}/" PKGBUILD
+            if [ -n "$sha" ]; then
+              sed -i "s/^sha256sums=.*/sha256sums=('${sha}')/" PKGBUILD
+            fi
+            # Generate .SRCINFO from PKGBUILD
+            docker run --rm -v "$PWD:/pkg" -w /pkg archlinux:base bash -c \
+              "pacman -Sy --noconfirm base-devel >/dev/null 2>&1 && su -s /bin/bash nobody -c 'makepkg --printsrcinfo'" > .SRCINFO
+            git config user.name "Omni LLC"
+            git config user.email "team@omni.dev"
+            git add PKGBUILD .SRCINFO
+            git diff --cached --quiet || git commit -m "Update to v${VERSION}"
+            git push origin master
+            cd ..
+          }
+
+          publish_aur "omnidotdev-cli" "$SOURCE_SHA256"
+          publish_aur "omnidotdev-cli-bin" ""
+
+          rm -f ~/.ssh/aur
