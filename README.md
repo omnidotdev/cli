@@ -20,7 +20,7 @@
 | All | [GitHub Releases](https://github.com/omnidotdev/cli/releases) | Download from releases page |
 | All | [crates.io](https://crates.io/crates/omnidotdev-cli) | `cargo install omnidotdev-cli` |
 | macOS / Linux | [Homebrew](https://github.com/omnidotdev/homebrew-tap) | `brew install omnidotdev/tap/omni-cli` |
-| Arch Linux | [AUR](https://aur.archlinux.org/packages/omnidotdev-cli) / [AUR (bin)](https://aur.archlinux.org/packages/omnidotdev-cli-bin) | `yay -S omnidotdev-cli` or `yay -S omnidotdev-cli-bin` |
+| Arch Linux | [AUR](https://aur.archlinux.org/packages/omnidotdev-cli) / [AUR (bin)](https://aur.archlinux.org/packages/omnidotdev-cli-bin) | `paru -S omnidotdev-cli` or `paru -S omnidotdev-cli-bin` |
 
 ### Build from source
 
