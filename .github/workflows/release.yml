@@ -201,22 +201,17 @@ jobs:
           SSH
           ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
 
-          SOURCE_SHA256=$(curl -sL "https://github.com/omnidotdev/cli/archive/v${VERSION}.tar.gz" | shasum -a 256 | awk '{print $1}')
-
           publish_aur() {
-            local pkg="$1" sha="$2"
+            local pkg="$1"
             git clone "ssh://aur@aur.archlinux.org/${pkg}.git" "${pkg}" 2>/dev/null || {
               mkdir "${pkg}" && cd "${pkg}" && git init && git remote add origin "ssh://aur@aur.archlinux.org/${pkg}.git" && cd ..
             }
             cd "${pkg}"
             cp "../misc/packaging/aur/${pkg}/PKGBUILD" .
             sed -i "s/^pkgver=.*/pkgver=${VERSION}/" PKGBUILD
-            if [ -n "$sha" ]; then
-              sed -i "s/^sha256sums=.*/sha256sums=('${sha}')/" PKGBUILD
-            fi
-            # Generate .SRCINFO from PKGBUILD
+            # Update checksums and generate .SRCINFO from PKGBUILD
             docker run --rm -v "$PWD:/pkg" -w /pkg archlinux:base bash -c \
-              "pacman -Sy --noconfirm base-devel >/dev/null 2>&1 && useradd -m builder && chown builder /pkg && su -s /bin/bash builder -c 'makepkg --printsrcinfo'" > .SRCINFO
+              "pacman -Sy --noconfirm base-devel pacman-contrib >/dev/null 2>&1 && useradd -m builder && chown builder /pkg && su -s /bin/bash builder -c 'updpkgsums >/dev/null 2>&1 && makepkg --printsrcinfo'" > .SRCINFO
             git config user.name "Omni LLC"
             git config user.email "team@omni.dev"
             git add PKGBUILD .SRCINFO
@@ -225,7 +220,7 @@ jobs:
             cd ..
           }
 
-          publish_aur "omnidotdev-cli" "$SOURCE_SHA256"
-          publish_aur "omnidotdev-cli-bin" ""
+          publish_aur "omnidotdev-cli"
+          publish_aur "omnidotdev-cli-bin"
 
           rm -f ~/.ssh/aur
