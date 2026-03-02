@@ -6,7 +6,7 @@
 
 - [`7cf01b9`](https://github.com/omnidotdev/cli/commit/7cf01b9848be160c23d86f9b82d160c3d022c68d) Thanks [@coopbri](https://github.com/coopbri)! - Record AI token usage to Aether for billing after each LLM completion
 
-- [`a94576a`](https://github.com/omnidotdev/cli/commit/a94576a72e195c80f6c5b23d174099fcd405a751) Thanks [@coopbri](https://github.com/coopbri)! - Add @file mention expansion to inline file contents as a fenced code block in the prompt
+- [`a94576a`](https://github.com/omnidotdev/cli/commit/a94576a72e195c80f6c5b23d174099fcd405a751) Thanks [@coopbri](https://github.com/coopbri)! - Add `@file` mention expansion to inline file contents as a fenced code block in the prompt
 
 - [`7cf01b9`](https://github.com/omnidotdev/cli/commit/7cf01b9848be160c23d86f9b82d160c3d022c68d) Thanks [@coopbri](https://github.com/coopbri)! - Add `omni auth login` and `omni auth logout` commands for cloud Synapse authentication
 
