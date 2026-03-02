@@ -209,9 +209,43 @@ jobs:
             cd "${pkg}"
             cp "../misc/packaging/aur/${pkg}/PKGBUILD" .
             sed -i "s/^pkgver=.*/pkgver=${VERSION}/" PKGBUILD
-            # Update checksums and generate .SRCINFO from PKGBUILD
-            docker run --rm -v "$PWD:/pkg" -w /pkg archlinux:base bash -c \
-              "pacman -Sy --noconfirm base-devel pacman-contrib >/dev/null 2>&1 && useradd -m builder && chown builder /pkg && su -s /bin/bash builder -c 'updpkgsums >/dev/null 2>&1 && makepkg --printsrcinfo'" > .SRCINFO
+            # Compute checksums for source URLs (replaces updpkgsums)
+            local -a checksums=()
+            while IFS= read -r src; do
+              local url="${src#*::}"
+              checksums+=("$(curl -fsSL "$url" | sha256sum | awk '{print $1}')")
+            done < <(bash -c "source PKGBUILD 2>/dev/null; printf '%s\n' \"\${source[@]}\"")
+
+            # Update sha256sums in PKGBUILD
+            perl -i -0777 -pe 's/^sha256sums=\(.*?\)\n//ms' PKGBUILD
+            {
+              printf "sha256sums=("
+              for i in "${!checksums[@]}"; do
+                [[ $i -gt 0 ]] && printf "\n            "
+                printf "'%s'" "${checksums[$i]}"
+              done
+              printf ")\n"
+            } >> PKGBUILD
+
+            # Generate .SRCINFO (replaces makepkg --printsrcinfo)
+            (
+              source PKGBUILD 2>/dev/null
+              printf "pkgbase = %s\n" "$pkgname"
+              printf "\tpkgdesc = %s\n" "$pkgdesc"
+              printf "\tpkgver = %s\n" "$pkgver"
+              printf "\tpkgrel = %s\n" "$pkgrel"
+              printf "\turl = %s\n" "$url"
+              for v in "${arch[@]}"; do printf "\tarch = %s\n" "$v"; done
+              for v in "${license[@]}"; do printf "\tlicense = %s\n" "$v"; done
+              for v in "${makedepends[@]}"; do printf "\tmakedepends = %s\n" "$v"; done
+              for v in "${depends[@]}"; do printf "\tdepends = %s\n" "$v"; done
+              [[ -v provides ]] && for v in "${provides[@]}"; do printf "\tprovides = %s\n" "$v"; done
+              [[ -v conflicts ]] && for v in "${conflicts[@]}"; do printf "\tconflicts = %s\n" "$v"; done
+              for v in "${source[@]}"; do printf "\tsource = %s\n" "$v"; done
+              for v in "${sha256sums[@]}"; do printf "\tsha256sums = %s\n" "$v"; done
+              printf "\n"
+              printf "pkgname = %s\n" "$pkgname"
+            ) > .SRCINFO
             git config user.name "Omni LLC"
             git config user.email "team@omni.dev"
             git add PKGBUILD .SRCINFO
