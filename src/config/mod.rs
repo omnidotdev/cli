@@ -583,13 +583,63 @@ impl AgentConfig {
     /// (e.g. CLI uses fallback logic, TUI/API use best-effort).
     pub async fn create_agent(&self, provider: Box<dyn LlmProvider>) -> crate::core::Agent {
         let (persona_prompt, knowledge_chunks) = self.load_persona_knowledge().await;
-        crate::core::Agent::with_context(
+        let mut agent = crate::core::Agent::with_context(
             provider,
             &self.model,
             self.max_tokens,
             Some(&persona_prompt),
             &knowledge_chunks,
-        )
+        );
+
+        if let Some(embedder) = self.try_create_embedder() {
+            tracing::debug!("embedder enabled for semantic knowledge retrieval");
+            agent.set_embedder(embedder);
+        }
+
+        if let Some(condenser) = self.try_create_condenser() {
+            tracing::debug!("query condenser enabled for retrieval query rewriting");
+            agent.set_condenser(condenser);
+        }
+
+        agent
+    }
+
+    /// Try to create an embedder from configured providers
+    ///
+    /// Checks the openai provider first, then synapse, for an API key
+    /// that can be used with the `OpenAI` embeddings endpoint
+    fn try_create_embedder(&self) -> Option<agent_core::knowledge::Embedder> {
+        let key = resolve_api_key(self.providers.get("openai")?)
+            .or_else(|| resolve_api_key(self.providers.get("synapse")?))?;
+        agent_core::knowledge::Embedder::new(key).ok()
+    }
+
+    /// Try to create a query condenser from configured providers
+    ///
+    /// Uses the same API key resolution as the embedder (OpenAI-compatible)
+    fn try_create_condenser(&self) -> Option<Box<dyn agent_core::knowledge::QueryCondenser>> {
+        let key = resolve_api_key(self.providers.get("openai")?)
+            .or_else(|| resolve_api_key(self.providers.get("synapse")?))?;
+
+        // Use the synapse base URL if available, otherwise default OpenAI
+        let condenser = if let Some(synapse_config) = self.providers.get("synapse") {
+            let base_url = synapse_config
+                .base_url
+                .as_deref()
+                .map_or("https://api.openai.com/v1".to_string(), |u| {
+                    format!("{u}/v1")
+                });
+            agent_core::knowledge::LlmCondenser::with_config(
+                key,
+                "gpt-4o-mini".to_string(),
+                base_url,
+            )
+            .ok()?
+        } else {
+            agent_core::knowledge::LlmCondenser::new(key).ok()?
+        };
+
+        Some(Box::new(condenser))
     }
 
     /// Load the configured persona and resolve its knowledge packs

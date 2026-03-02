@@ -5,8 +5,8 @@
 
 // Re-export everything consumers need
 pub use agent_core::knowledge::{
-    KnowledgePackResolver, ResolverError, build_knowledge_context, format_knowledge,
-    resolve_and_merge, select_knowledge, select_knowledge_with_embeddings,
+    Embedder, KnowledgePackResolver, ResolverError, build_knowledge_context, build_retrieval_query,
+    format_knowledge, resolve_and_merge, select_knowledge, select_knowledge_with_embeddings,
 };
 
 #[cfg(test)]
@@ -39,14 +39,28 @@ mod tests {
     }
 
     #[test]
-    fn tag_matching_selects_relevant() {
+    fn bm25_selects_relevant() {
         let chunks = vec![
-            make_chunk("Token Info", &["token", "mcg"], KnowledgePriority::Relevant),
-            make_chunk("Platform", &["platform"], KnowledgePriority::Relevant),
+            KnowledgeChunk {
+                topic: Some("Token Info".to_string()),
+                tags: vec!["token".to_string(), "mcg".to_string()],
+                content: "MCG is a Solana token".to_string(),
+                rules: vec![],
+                priority: KnowledgePriority::Relevant,
+                embedding: None,
+            },
+            KnowledgeChunk {
+                topic: Some("Platform".to_string()),
+                tags: vec!["platform".to_string()],
+                content: "Omni is a developer platform".to_string(),
+                rules: vec![],
+                priority: KnowledgePriority::Relevant,
+                embedding: None,
+            },
         ];
 
-        let selected = select_knowledge(&chunks, "tell me about the token", 10000);
-        assert_eq!(selected.len(), 1);
+        let selected = select_knowledge(&chunks, "tell me about the MCG token", 10000);
+        assert!(!selected.is_empty());
         assert_eq!(selected[0].topic.as_deref(), Some("Token Info"));
     }
 

@@ -80,6 +80,12 @@ pub struct Agent {
     usage_entity_id: String,
     /// All knowledge chunks for per-turn selection
     knowledge_chunks: Vec<crate::config::KnowledgeChunk>,
+    /// Optional embedder for semantic knowledge retrieval
+    embedder: Option<agent_core::knowledge::Embedder>,
+    /// Optional query condenser for LLM-based retrieval query rewriting
+    condenser: Option<Box<dyn agent_core::knowledge::QueryCondenser>>,
+    /// Optional reranker for cross-encoder reranking
+    reranker: Option<Box<dyn agent_core::knowledge::Reranker>>,
 }
 
 impl Agent {
@@ -103,6 +109,9 @@ impl Agent {
             usage_recorder: None,
             usage_entity_id: default_entity_id(),
             knowledge_chunks: Vec::new(),
+            embedder: None,
+            condenser: None,
+            reranker: None,
         }
     }
 
@@ -131,6 +140,9 @@ impl Agent {
             usage_recorder: None,
             usage_entity_id: default_entity_id(),
             knowledge_chunks: Vec::new(),
+            embedder: None,
+            condenser: None,
+            reranker: None,
         }
     }
 
@@ -183,6 +195,21 @@ impl Agent {
         // Store all chunks for per-turn relevant knowledge selection
         agent.knowledge_chunks = knowledge_chunks.to_vec();
         agent
+    }
+
+    /// Set the embedder for semantic knowledge retrieval
+    pub fn set_embedder(&mut self, embedder: agent_core::knowledge::Embedder) {
+        self.embedder = Some(embedder);
+    }
+
+    /// Set the query condenser for LLM-based retrieval query rewriting
+    pub fn set_condenser(&mut self, condenser: Box<dyn agent_core::knowledge::QueryCondenser>) {
+        self.condenser = Some(condenser);
+    }
+
+    /// Set the reranker for cross-encoder reranking
+    pub fn set_reranker(&mut self, reranker: Box<dyn agent_core::knowledge::Reranker>) {
+        self.reranker = Some(reranker);
     }
 
     /// Set the permission client for tool execution.
@@ -260,14 +287,15 @@ impl Agent {
         self.recent_tool_calls.clear();
     }
 
-    /// Extract text from the most recent user message
-    fn last_user_text(&self) -> Option<String> {
+    /// Extract text from the last `n` user messages (newest first)
+    fn recent_user_texts(&self, n: usize) -> Vec<String> {
         self.conversation
             .messages()
             .iter()
             .rev()
-            .find(|m| m.role == Role::User)
-            .and_then(|m| match &m.content {
+            .filter(|m| m.role == Role::User)
+            .take(n)
+            .filter_map(|m| match &m.content {
                 Content::Text(t) => Some(t.clone()),
                 Content::Blocks(blocks) => {
                     let texts: Vec<&str> = blocks
@@ -284,6 +312,7 @@ impl Agent {
                     }
                 }
             })
+            .collect()
     }
 
     /// Enable session persistence for this agent
@@ -1010,16 +1039,50 @@ impl Agent {
     {
         let mut messages = self.conversation.messages().to_vec();
 
-        // Per-turn knowledge injection: select relevant chunks based
-        // on the latest user message and prepend to the message list
+        // Per-turn knowledge injection: build a multi-turn retrieval query
+        // (optionally condensed by an LLM) and embed it for semantic ranking
         if !self.knowledge_chunks.is_empty() {
-            if let Some(user_text) = self.last_user_text() {
+            let user_texts = self.recent_user_texts(4);
+            if let Some(current) = user_texts.first() {
+                let prior: Vec<&str> = user_texts[1..].iter().map(String::as_str).collect();
+                let query = agent_core::knowledge::build_retrieval_query_condensed(
+                    current,
+                    &prior,
+                    3,
+                    self.condenser.as_deref(),
+                )
+                .await;
+
+                let query_embedding = if let Some(ref embedder) = self.embedder {
+                    match embedder.embed(&query).await {
+                        Ok(emb) => Some(emb),
+                        Err(e) => {
+                            tracing::warn!(error = %e, "failed to embed retrieval query");
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+
                 let max_knowledge_tokens = (self.max_tokens / 4) as usize;
-                let selected = agent_core::knowledge::select_knowledge(
-                    &self.knowledge_chunks,
-                    &user_text,
-                    max_knowledge_tokens,
-                );
+                let selected = if let Some(ref reranker) = self.reranker {
+                    agent_core::knowledge::select_knowledge_reranked(
+                        &self.knowledge_chunks,
+                        &query,
+                        query_embedding.as_deref(),
+                        reranker.as_ref(),
+                        max_knowledge_tokens,
+                    )
+                    .await
+                } else {
+                    agent_core::knowledge::select_knowledge_with_embeddings(
+                        &self.knowledge_chunks,
+                        &query,
+                        query_embedding.as_deref(),
+                        max_knowledge_tokens,
+                    )
+                };
 
                 // Only inject if we found relevant (non-always) chunks;
                 // always-priority chunks are already in the system prompt
