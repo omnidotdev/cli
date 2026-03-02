@@ -1,4 +1,4 @@
-# Maintainer: Omni LLC <team@omni.dev>
+# Maintainer: Omni <team@omni.dev>
 pkgname=omnidotdev-cli
 pkgver=0.5.0
 pkgrel=1

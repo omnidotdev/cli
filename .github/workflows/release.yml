@@ -246,7 +246,7 @@ jobs:
               printf "\n"
               printf "pkgname = %s\n" "$pkgname"
             ) > .SRCINFO
-            git config user.name "Omni LLC"
+            git config user.name "Omni"
             git config user.email "team@omni.dev"
             git add PKGBUILD .SRCINFO
             git diff --cached --quiet || git commit -m "Update to v${VERSION}"
