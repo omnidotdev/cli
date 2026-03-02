@@ -258,34 +258,27 @@ pub struct App {
     pub file_list: Vec<PathBuf>,
 }
 
-impl Default for App {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl App {
     /// Create a new application state.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::with_session_target(SessionTarget::default())
+    pub async fn new() -> Self {
+        Self::with_session_target(SessionTarget::default()).await
     }
 
     /// Create a new application state with a specific session target.
-    #[must_use]
-    pub fn with_session_target(target: SessionTarget) -> Self {
+    pub async fn with_session_target(target: SessionTarget) -> Self {
         let config = Config::load().unwrap_or_default();
         let model = config.agent.model.clone();
 
-        let usage_recorder = config.agent.create_usage_recorder();
-        let mut agent = config.agent.create_provider().ok().map(|provider| {
-            let mut a =
-                Agent::with_context(provider, &config.agent.model, config.agent.max_tokens, None);
-            if let Some(recorder) = usage_recorder {
-                a.set_usage_recorder(recorder);
+        let mut agent = match config.agent.create_provider() {
+            Ok(provider) => {
+                let mut a = config.agent.create_agent(provider).await;
+                if let Some(recorder) = config.agent.create_usage_recorder() {
+                    a.set_usage_recorder(recorder);
+                }
+                Some(a)
             }
-            a
-        });
+            Err(_) => None,
+        };
 
         // Track if we're resuming a session
         let mut session_resumed = false;

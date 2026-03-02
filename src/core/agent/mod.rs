@@ -78,6 +78,8 @@ pub struct Agent {
     usage_recorder: Option<synapse_billing::UsageRecorder>,
     /// Entity ID for usage recording (e.g. machine hostname)
     usage_entity_id: String,
+    /// All knowledge chunks for per-turn selection
+    knowledge_chunks: Vec<crate::config::KnowledgeChunk>,
 }
 
 impl Agent {
@@ -100,6 +102,7 @@ impl Agent {
             recent_tool_calls: Vec::new(),
             usage_recorder: None,
             usage_entity_id: default_entity_id(),
+            knowledge_chunks: Vec::new(),
         }
     }
 
@@ -127,10 +130,11 @@ impl Agent {
             recent_tool_calls: Vec::new(),
             usage_recorder: None,
             usage_entity_id: default_entity_id(),
+            knowledge_chunks: Vec::new(),
         }
     }
 
-    /// Create an agent with automatic project context gathering.
+    /// Create an agent with project context and optional knowledge chunks
     ///
     /// Gathers context from the current directory including:
     /// - Working directory and platform info
@@ -140,19 +144,6 @@ impl Agent {
     /// - Current model name
     /// - Knowledge context from persona knowledge chunks (if any)
     pub fn with_context(
-        provider: Box<dyn LlmProvider>,
-        model: impl Into<String>,
-        max_tokens: u32,
-        persona_prompt: Option<&str>,
-    ) -> Self {
-        Self::with_context_and_knowledge(provider, model, max_tokens, persona_prompt, &[])
-    }
-
-    /// Create an agent with project context and knowledge chunks
-    ///
-    /// Like `with_context` but also injects relevant knowledge chunks
-    /// into the system prompt as a `<knowledge>` block
-    pub fn with_context_and_knowledge(
         provider: Box<dyn LlmProvider>,
         model: impl Into<String>,
         max_tokens: u32,
@@ -175,9 +166,8 @@ impl Agent {
             parts.push(persona.to_string());
         }
 
-        // Inject knowledge context (always-priority chunks are included
-        // regardless of message; we use an empty message at init time so
-        // only "always" chunks appear in the base prompt)
+        // Inject "always" knowledge into the base system prompt (empty
+        // message selects only always-priority chunks)
         if !knowledge_chunks.is_empty() {
             let knowledge_ctx = build_knowledge_context(knowledge_chunks, "");
             if !knowledge_ctx.is_empty() {
@@ -189,7 +179,10 @@ impl Agent {
 
         let system_prompt = parts.join("\n\n");
 
-        Self::with_system(provider, model_str, max_tokens, system_prompt)
+        let mut agent = Self::with_system(provider, model_str, max_tokens, system_prompt);
+        // Store all chunks for per-turn relevant knowledge selection
+        agent.knowledge_chunks = knowledge_chunks.to_vec();
+        agent
     }
 
     /// Set the permission client for tool execution.
@@ -265,6 +258,32 @@ impl Agent {
     /// Clear tool call history (call at start of new chat)
     fn clear_tool_history(&mut self) {
         self.recent_tool_calls.clear();
+    }
+
+    /// Extract text from the most recent user message
+    fn last_user_text(&self) -> Option<String> {
+        self.conversation
+            .messages()
+            .iter()
+            .rev()
+            .find(|m| m.role == Role::User)
+            .and_then(|m| match &m.content {
+                Content::Text(t) => Some(t.clone()),
+                Content::Blocks(blocks) => {
+                    let texts: Vec<&str> = blocks
+                        .iter()
+                        .filter_map(|b| match b {
+                            ContentBlock::Text { text } => Some(text.as_str()),
+                            _ => None,
+                        })
+                        .collect();
+                    if texts.is_empty() {
+                        None
+                    } else {
+                        Some(texts.join(" "))
+                    }
+                }
+            })
     }
 
     /// Enable session persistence for this agent
@@ -989,10 +1008,62 @@ impl Agent {
     where
         F: FnMut(ChatEvent),
     {
+        let mut messages = self.conversation.messages().to_vec();
+
+        // Per-turn knowledge injection: select relevant chunks based
+        // on the latest user message and prepend to the message list
+        if !self.knowledge_chunks.is_empty() {
+            if let Some(user_text) = self.last_user_text() {
+                let max_knowledge_tokens = (self.max_tokens / 4) as usize;
+                let selected = agent_core::knowledge::select_knowledge(
+                    &self.knowledge_chunks,
+                    &user_text,
+                    max_knowledge_tokens,
+                );
+
+                // Only inject if we found relevant (non-always) chunks;
+                // always-priority chunks are already in the system prompt
+                let has_relevant = selected
+                    .iter()
+                    .any(|c| c.priority == crate::config::KnowledgePriority::Relevant);
+
+                if has_relevant {
+                    let formatted = agent_core::knowledge::format_knowledge(&selected);
+                    if !formatted.is_empty() {
+                        let knowledge_block = format!("<knowledge>\n{formatted}\n</knowledge>");
+                        tracing::debug!(
+                            chunks = selected.len(),
+                            "injecting per-turn knowledge context"
+                        );
+                        // Prepend as a system-like user message so the
+                        // model sees it before the actual conversation
+                        messages.insert(
+                            0,
+                            Message {
+                                role: Role::User,
+                                content: Content::Text(knowledge_block),
+                            },
+                        );
+                        // Keep turn alternation valid: insert a brief
+                        // assistant acknowledgement after the knowledge
+                        messages.insert(
+                            1,
+                            Message {
+                                role: Role::Assistant,
+                                content: Content::Text(
+                                    "Understood, I'll use this knowledge context.".to_string(),
+                                ),
+                            },
+                        );
+                    }
+                }
+            }
+        }
+
         let request = CompletionRequest {
             model: self.model.clone(),
             max_tokens: self.max_tokens,
-            messages: self.conversation.messages().to_vec(),
+            messages,
             system: self.conversation.system().map(String::from),
             tools: Some(self.filtered_tools()),
         };

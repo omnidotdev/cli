@@ -14,8 +14,8 @@ use synapse_client::SynapseClient;
 pub use agent_core::permission::{AgentPermissions, PermissionPreset};
 pub use agent_core::registry::{ModelInfo, ProviderApiType, ProviderConfig};
 pub use persona::{
-    KnowledgeChunk, KnowledgeConfig, KnowledgePack, KnowledgePackRef, KnowledgePriority, Persona,
-    list_personas, load_persona, personas_dir,
+    KnowledgeChunk, KnowledgeConfig, KnowledgePack, KnowledgePackRef, KnowledgePriority,
+    PackEmbeddings, Persona, list_personas, load_persona, personas_dir,
 };
 
 /// Individual agent definition.
@@ -319,6 +319,10 @@ pub struct AgentConfig {
     /// Default agent to use on startup.
     pub default_agent: String,
 
+    /// Manifold registry URL for knowledge pack resolution.
+    #[serde(default = "AgentConfig::default_manifold_url")]
+    pub manifold_url: String,
+
     /// Provider definitions.
     #[serde(default = "AgentConfig::default_providers")]
     pub providers: HashMap<String, ProviderConfig>,
@@ -333,6 +337,11 @@ pub struct AgentConfig {
 }
 
 impl AgentConfig {
+    /// Default Manifold registry URL.
+    fn default_manifold_url() -> String {
+        "https://manifold.omni.dev".to_string()
+    }
+
     /// Get the default model definitions.
     fn default_models() -> Vec<ModelInfo> {
         registry::default_models()
@@ -565,6 +574,47 @@ impl AgentConfig {
 
         self.create_provider()
     }
+
+    /// Create an agent from this config with persona and knowledge
+    ///
+    /// Loads the configured persona, resolves knowledge packs, and
+    /// constructs an agent with full project context. Provider creation
+    /// is handled by the caller since the strategy varies by interface
+    /// (e.g. CLI uses fallback logic, TUI/API use best-effort).
+    pub async fn create_agent(&self, provider: Box<dyn LlmProvider>) -> crate::core::Agent {
+        let (persona_prompt, knowledge_chunks) = self.load_persona_knowledge().await;
+        crate::core::Agent::with_context(
+            provider,
+            &self.model,
+            self.max_tokens,
+            Some(&persona_prompt),
+            &knowledge_chunks,
+        )
+    }
+
+    /// Load the configured persona and resolve its knowledge packs
+    ///
+    /// Returns the persona system prompt and merged knowledge chunks.
+    /// Knowledge pack resolution is best-effort: failures are logged
+    /// but do not prevent the agent from starting.
+    async fn load_persona_knowledge(&self) -> (String, Vec<crate::config::KnowledgeChunk>) {
+        let persona = crate::config::persona::load_persona(&self.persona).unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "failed to load persona, using default");
+            crate::config::persona::Persona::default()
+        });
+
+        let prompt = persona.build_system_prompt();
+
+        let chunks =
+            agent_core::knowledge::resolve_and_merge(&persona.knowledge, &self.manifold_url)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "failed to resolve knowledge packs");
+                    persona.knowledge.inline.clone()
+                });
+
+        (prompt, chunks)
+    }
 }
 
 impl Default for AgentConfig {
@@ -575,6 +625,7 @@ impl Default for AgentConfig {
             max_tokens: 8192,
             persona: "orin".to_string(),
             default_agent: "build".to_string(),
+            manifold_url: Self::default_manifold_url(),
             providers: Self::default_providers(),
             agents: Self::default_agents(),
             models: Self::default_models(),

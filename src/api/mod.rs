@@ -48,11 +48,12 @@ pub struct AppState {
 }
 
 impl AppState {
-    fn new() -> Self {
+    async fn new() -> Self {
         let config = Config::load().unwrap_or_default();
-        let agent = config.agent.create_provider().ok().map(|provider| {
-            Agent::with_context(provider, &config.agent.model, config.agent.max_tokens, None)
-        });
+        let agent = match config.agent.create_provider() {
+            Ok(provider) => Some(config.agent.create_agent(provider).await),
+            Err(_) => None,
+        };
 
         Self {
             agent,
@@ -123,7 +124,7 @@ async fn auth_middleware(
 ///
 /// Returns an error if the server fails to bind or start.
 pub async fn serve(host: &str, port: u16) -> anyhow::Result<()> {
-    let state: SharedState = Arc::new(RwLock::new(AppState::new()));
+    let state: SharedState = Arc::new(RwLock::new(AppState::new().await));
 
     // Load Synapse MCP tools
     {

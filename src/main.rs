@@ -76,12 +76,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             let target = SessionTarget::from_flags(r#continue, session);
             let mut config = Config::load()?;
             let provider = config.agent.create_provider_with_fallback().await?;
-            let mut agent = omni_cli::core::Agent::with_context(
-                provider,
-                &config.agent.model,
-                config.agent.max_tokens,
-                None,
-            );
+            let mut agent = config.agent.create_agent(provider).await;
 
             // Load Synapse MCP tools
             if let Some(synapse) = config.agent.create_synapse_client() {

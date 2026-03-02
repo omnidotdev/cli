@@ -125,7 +125,7 @@ pub async fn run_with_target(target: SessionTarget) -> anyhow::Result<()> {
     });
 
     // Create app state with permission channels and session target
-    let mut app = App::with_session_target(target);
+    let mut app = App::with_session_target(target).await;
     app.interface_rx = Some(interface_rx);
     app.permission_response_tx = Some(perm_response_tx);
     app.ask_user_response_tx = Some(ask_response_tx);
