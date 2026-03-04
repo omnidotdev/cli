@@ -601,6 +601,11 @@ impl AgentConfig {
             agent.set_condenser(condenser);
         }
 
+        if let Some(reranker) = self.try_create_reranker() {
+            tracing::debug!("cross-encoder reranker enabled for knowledge retrieval");
+            agent.set_reranker(reranker);
+        }
+
         agent
     }
 
@@ -640,6 +645,36 @@ impl AgentConfig {
         };
 
         Some(Box::new(condenser))
+    }
+
+    /// Try to create a cross-encoder reranker
+    ///
+    /// Checks the cohere provider config first, then falls back to
+    /// `COHERE_API_KEY` env var for zero-config Cohere usage
+    fn try_create_reranker(&self) -> Option<Box<dyn agent_core::knowledge::Reranker>> {
+        if let Some(config) = self.providers.get("cohere") {
+            if let Some(key) = resolve_api_key(config) {
+                let reranker = if let Some(base_url) = &config.base_url {
+                    agent_core::knowledge::ApiReranker::with_config(
+                        key,
+                        "rerank-v3.5".to_string(),
+                        base_url.clone(),
+                    )
+                } else {
+                    agent_core::knowledge::ApiReranker::cohere(key)
+                };
+
+                return reranker
+                    .ok()
+                    .map(|r| Box::new(r) as Box<dyn agent_core::knowledge::Reranker>);
+            }
+        }
+
+        // Fall back to env var
+        let key = std::env::var("COHERE_API_KEY").ok()?;
+        agent_core::knowledge::ApiReranker::cohere(key)
+            .ok()
+            .map(|r| Box::new(r) as Box<dyn agent_core::knowledge::Reranker>)
     }
 
     /// Load the configured persona and resolve its knowledge packs
