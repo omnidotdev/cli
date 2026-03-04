@@ -69,7 +69,7 @@ futures = "0.3"
 async-trait = "0.1"
 
 # Agent core
-agent-core = { path = "../../../agent-core" }
+agent-core = { git = "https://github.com/omnidotdev/agent-core.git" }
 
 # Synapse client
 synapse-client = { git = "https://github.com/omnidotdev/synapse-gateway.git", features = ["agent-core"] }
@@ -116,9 +116,6 @@ which = "7"
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3"
-
-[patch."https://github.com/omnidotdev/agent-core.git"]
-agent-core = { path = "../../../agent-core" }
 
 [profile.release]
 lto = "thin"
