@@ -11,6 +11,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 [[package]]
 name = "agent-core"
 version = "0.1.0"
+source = "git+https://github.com/omnidotdev/agent-core.git#6cd0ba8b0c29d3cb9ca6d8e79bdf33311a0c9bc5"
 dependencies = [
  "anyhow",
  "async-stream",
