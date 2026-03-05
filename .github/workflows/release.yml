@@ -199,8 +199,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/omni-cli.rb
-          git commit -m "chore: update omni-cli to v${VERSION}"
-          git push
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update omni-cli to v${VERSION}"
+            git push
+          fi
       - name: Publish to AUR
         env:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
