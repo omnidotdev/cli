@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0
+
+### Minor Changes
+
+- [`95fdd7b`](https://github.com/omnidotdev/cli/commit/95fdd7bb404fe65a5578093666a771e7d5569d76) Thanks [@coopbri](https://github.com/coopbri)! - Wire advanced RAG pipeline from agent-core: LLM query condensing, BM25+embedding hybrid search with reciprocal rank fusion, and optional cross-encoder reranking for knowledge retrieval
+
+- [`00c6830`](https://github.com/omnidotdev/cli/commit/00c6830e93a6b6e2128978c06f4e9a3117941636) Thanks [@coopbri](https://github.com/coopbri)! - Add per-turn knowledge selection so relevant knowledge chunks are injected based on each user message instead of only at init, and migrate shared knowledge types to agent-core
+
 ## 0.5.0
 
 ### Minor Changes

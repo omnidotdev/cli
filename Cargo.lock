@@ -2111,7 +2111,7 @@ dependencies = [
 
 [[package]]
 name = "omnidotdev-cli"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "agent-core",
  "anyhow",
