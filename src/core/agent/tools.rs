@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 use std::process::Stdio;
 
+use agent_core::tools::shell::ShellTool;
 use similar::{ChangeTag, TextDiff};
 use tokio::process::Command;
 
@@ -104,6 +105,8 @@ pub struct ToolRegistry {
     synapse_client: Option<std::sync::Arc<synapse_client::SynapseClient>>,
     /// Cached Synapse MCP tools
     synapse_tools: std::sync::Arc<parking_lot::RwLock<Vec<synapse_client::McpTool>>>,
+    /// Shell execution tool from agent-core
+    shell_tool: ShellTool,
 }
 
 impl Default for ToolRegistry {
@@ -135,6 +138,7 @@ impl Default for ToolRegistry {
             plugin_registry: std::sync::Arc::new(parking_lot::RwLock::new(plugin_registry)),
             synapse_client: None,
             synapse_tools: std::sync::Arc::new(parking_lot::RwLock::new(Vec::new())),
+            shell_tool: ShellTool::default(),
         }
     }
 }
@@ -166,6 +170,7 @@ impl ToolRegistry {
             plugin_registry: std::sync::Arc::new(parking_lot::RwLock::new(PluginRegistry::new())),
             synapse_client: None,
             synapse_tools: std::sync::Arc::new(parking_lot::RwLock::new(Vec::new())),
+            shell_tool: ShellTool::default(),
         }
     }
 
@@ -1098,23 +1103,18 @@ impl ToolRegistry {
             }
         }
 
-        let output = Command::new("sh")
-            .arg("-c")
-            .arg(command)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
+        let output = self
+            .shell_tool
+            .execute(command, None)
             .await
             .map_err(|e| AgentError::ToolExecution(e.to_string()))?;
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-
-        if output.status.success() {
-            Ok(stdout.to_string())
+        if output.exit_code == 0 {
+            Ok(output.stdout)
         } else {
             Ok(format!(
-                "Command failed:\nstdout: {stdout}\nstderr: {stderr}"
+                "Command failed:\nstdout: {}\nstderr: {}",
+                output.stdout, output.stderr
             ))
         }
     }
