@@ -174,7 +174,7 @@ impl McpClient {
                     .map(|tool| {
                         // Convert from agent-core's scoped format to CLI's `server::tool` format
                         let qualified_name =
-                            format!("{}::{}", tool.server_name, tool.name.split('/').last().unwrap_or(&tool.name));
+                            format!("{}::{}", tool.server_name, tool.name.rsplit('/').next().unwrap_or(&tool.name));
                         (qualified_name, tool)
                     })
                     .collect()
