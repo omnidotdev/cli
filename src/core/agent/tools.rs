@@ -1003,11 +1003,26 @@ impl ToolRegistry {
             }
         }
 
-        // Fall back to local MCP client
-        let mut client = self.mcp_client.write();
-        client
-            .call_tool(qualified_name, input)
-            .map_err(|e| AgentError::ToolExecution(format!("MCP tool error: {e}")))
+        // Fall back to local MCP client — clone the Arc<McpServerManager>
+        // so we don't hold the parking_lot guard across an await point
+        let manager = self.mcp_client.read().manager();
+
+        // Parse `server::toolname` and route via the manager's scoped format
+        let (server_name, tool_name) = qualified_name
+            .split_once("::")
+            .ok_or_else(|| AgentError::ToolExecution(format!("invalid MCP tool name format: {qualified_name}")))?;
+
+        let scoped = format!("mcp_{server_name}/{tool_name}");
+        let result = manager
+            .call_tool(&scoped, input)
+            .await
+            .map_err(|e| AgentError::ToolExecution(format!("MCP tool error: {e}")))?;
+
+        if result.is_error {
+            return Err(AgentError::ToolExecution(format!("Tool error: {}", result.text)));
+        }
+
+        Ok(result.text)
     }
 
     /// Execute a plugin tool
@@ -3464,7 +3479,7 @@ mod tests {
         assert!(!is_read_only("cargo test --all"));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn definitions_callable_from_async_context() {
         // This test verifies that calling definitions() from within an async
         // runtime doesn't panic. Previously used tokio::sync::RwLock with

@@ -69,7 +69,7 @@ futures = "0.3"
 async-trait = "0.1"
 
 # Agent core
-agent-core = { git = "https://github.com/omnidotdev/agent-core.git" }
+agent-core = { path = "../../../agent-core", features = ["mcp"] }
 
 # Synapse client
 synapse-client = { git = "https://github.com/omnidotdev/synapse-gateway.git", features = ["agent-core"] }
