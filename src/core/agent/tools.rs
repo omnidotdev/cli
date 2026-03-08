@@ -18,7 +18,7 @@ use crate::core::memory::{MemoryCategory, MemoryItem, MemoryManager};
 use crate::core::plugin::{PluginLoader, PluginRegistry};
 use crate::core::search::{self, CodeSearchParams, WebSearchParams};
 use crate::core::secret::mask_secrets;
-use crate::core::skill::SkillRegistry;
+use crate::core::skill::{SkillLookup, SkillRegistry};
 
 /// Check if a shell command is read-only (safe to execute without permission).
 #[must_use]
@@ -2831,7 +2831,7 @@ impl ToolRegistry {
 
         let category = match input["category"].as_str() {
             Some("preference") => MemoryCategory::Preference,
-            Some("project_fact") => MemoryCategory::ProjectFact,
+            Some("fact" | "project_fact") => MemoryCategory::Fact,
             Some("correction") => MemoryCategory::Correction,
             _ => MemoryCategory::General,
         };
@@ -2874,7 +2874,7 @@ impl ToolRegistry {
         } else {
             let category = match input["category"].as_str() {
                 Some("preference") => Some(MemoryCategory::Preference),
-                Some("project_fact") => Some(MemoryCategory::ProjectFact),
+                Some("fact" | "project_fact") => Some(MemoryCategory::Fact),
                 Some("correction") => Some(MemoryCategory::Correction),
                 Some("general") => Some(MemoryCategory::General),
                 _ => None,
@@ -2933,7 +2933,10 @@ impl ToolRegistry {
         } else {
             let list: Vec<String> = skills
                 .iter()
-                .map(|s| format!("  - {}: {}", s.name, s.description))
+                .map(|s| {
+                    let desc = s.metadata.description.as_deref().unwrap_or("No description");
+                    format!("  - {}: {desc}", s.id)
+                })
                 .collect();
             format!("Available skills:\n{}", list.join("\n"))
         };
@@ -2974,9 +2977,14 @@ impl ToolRegistry {
             .map_err(|e| AgentError::ToolExecution(format!("failed to load skill: {e}")))?;
 
         // Return formatted skill content
+        let description = skill
+            .metadata
+            .description
+            .as_deref()
+            .unwrap_or("No description");
         Ok(format!(
             "# Skill: {}\n\n{}\n\n---\n\n{}",
-            skill.name, skill.description, content
+            skill.id, description, content
         ))
     }
 

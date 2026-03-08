@@ -5,95 +5,15 @@
 //! - Project facts (architecture decisions, patterns used)
 //! - Learned corrections (things the agent got wrong and was corrected on)
 
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use ulid::Ulid;
+pub use agent_core::memory::{MemoryCategory, MemoryItem};
+use agent_core::memory;
+use chrono::Utc;
 
 use super::project::Project;
 use super::storage::Storage;
 
-/// Memory item categories
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum MemoryCategory {
-    /// User preferences and coding style
-    Preference,
-    /// Project-specific facts and decisions
-    ProjectFact,
-    /// Corrections from user feedback
-    Correction,
-    /// General learned information
-    General,
-}
-
-impl std::fmt::Display for MemoryCategory {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Preference => write!(f, "preference"),
-            Self::ProjectFact => write!(f, "project_fact"),
-            Self::Correction => write!(f, "correction"),
-            Self::General => write!(f, "general"),
-        }
-    }
-}
-
-/// A single memory item
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemoryItem {
-    /// Unique identifier
-    pub id: String,
-    /// The memory content
-    pub content: String,
-    /// Category of memory
-    pub category: MemoryCategory,
-    /// When this was created
-    pub created_at: DateTime<Utc>,
-    /// When this was last accessed
-    pub accessed_at: DateTime<Utc>,
-    /// Number of times this memory was retrieved
-    pub access_count: u32,
-    /// Optional tags for filtering
-    #[serde(default)]
-    pub tags: Vec<String>,
-    /// Whether this memory is pinned (always included)
-    #[serde(default)]
-    pub pinned: bool,
-}
-
-impl MemoryItem {
-    /// Create a new memory item
-    #[must_use]
-    pub fn new(content: String, category: MemoryCategory) -> Self {
-        let now = Utc::now();
-        Self {
-            id: format!("mem_{}", Ulid::new()),
-            content,
-            category,
-            created_at: now,
-            accessed_at: now,
-            access_count: 0,
-            tags: Vec::new(),
-            pinned: false,
-        }
-    }
-
-    /// Add a tag to this memory
-    #[must_use]
-    pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
-        self.tags.push(tag.into());
-        self
-    }
-
-    /// Mark this memory as pinned
-    #[must_use]
-    pub const fn pinned(mut self) -> Self {
-        self.pinned = true;
-        self
-    }
-}
-
 /// Memory store for a project
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct MemoryStore {
     /// All memory items
     pub items: Vec<MemoryItem>,
@@ -286,20 +206,7 @@ impl MemoryManager {
     /// Format memories for system prompt injection
     #[must_use]
     pub fn format_for_prompt(items: &[MemoryItem]) -> String {
-        if items.is_empty() {
-            return String::new();
-        }
-
-        use std::fmt::Write;
-        let mut output = String::from("<memory>\n");
-        output.push_str("The following are facts I've learned about this project and user:\n\n");
-
-        for item in items {
-            let _ = writeln!(output, "- [{}] {}", item.category, item.content);
-        }
-
-        output.push_str("</memory>\n");
-        output
+        memory::format_for_prompt(items)
     }
 }
 
@@ -321,7 +228,7 @@ mod tests {
 
     #[test]
     fn memory_item_with_tags() {
-        let item = MemoryItem::new("Use axum for HTTP".to_string(), MemoryCategory::ProjectFact)
+        let item = MemoryItem::new("Use axum for HTTP".to_string(), MemoryCategory::Fact)
             .with_tag("rust")
             .with_tag("http")
             .pinned();
@@ -342,13 +249,13 @@ mod tests {
             MemoryItem::new("User prefers vim".to_string(), MemoryCategory::Preference),
             MemoryItem::new(
                 "Uses tokio runtime".to_string(),
-                MemoryCategory::ProjectFact,
+                MemoryCategory::Fact,
             ),
         ];
 
         let output = MemoryManager::format_for_prompt(&items);
         assert!(output.contains("<memory>"));
         assert!(output.contains("[preference] User prefers vim"));
-        assert!(output.contains("[project_fact] Uses tokio runtime"));
+        assert!(output.contains("[fact] Uses tokio runtime"));
     }
 }

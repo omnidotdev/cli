@@ -1,11 +1,10 @@
 //! YAML frontmatter parsing for skill files
 
-use std::collections::HashMap;
 use std::path::Path;
 
 use serde::Deserialize;
 
-use super::Skill;
+use super::{Skill, SkillMetadata, SkillSource};
 
 /// Raw frontmatter structure
 #[derive(Debug, Deserialize)]
@@ -13,7 +12,15 @@ struct Frontmatter {
     name: String,
     description: String,
     #[serde(default)]
-    metadata: HashMap<String, String>,
+    version: Option<String>,
+    #[serde(default)]
+    author: Option<String>,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    always: bool,
+    #[serde(default)]
+    user_invocable: bool,
 }
 
 /// Parse a SKILL.md file
@@ -22,15 +29,15 @@ struct Frontmatter {
 ///
 /// Returns error if file can't be read or frontmatter is invalid
 pub fn parse_skill_file(path: &Path) -> anyhow::Result<Skill> {
-    let content = std::fs::read_to_string(path)?;
+    let raw_content = std::fs::read_to_string(path)?;
 
     // Must start with ---
-    if !content.starts_with("---") {
+    if !raw_content.starts_with("---") {
         anyhow::bail!("skill file must start with YAML frontmatter");
     }
 
     // Find end of frontmatter
-    let rest = &content[3..];
+    let rest = &raw_content[3..];
     let end = rest
         .find("---")
         .ok_or_else(|| anyhow::anyhow!("unterminated frontmatter"))?;
@@ -41,11 +48,23 @@ pub fn parse_skill_file(path: &Path) -> anyhow::Result<Skill> {
     // Validate name
     validate_name(&frontmatter.name)?;
 
+    // Extract markdown body after frontmatter
+    let body = rest[end + 3..].trim().to_string();
+
     Ok(Skill {
-        name: frontmatter.name,
-        description: frontmatter.description,
-        location: path.to_path_buf(),
-        metadata: frontmatter.metadata,
+        id: frontmatter.name.clone(),
+        metadata: SkillMetadata {
+            name: Some(frontmatter.name),
+            description: Some(frontmatter.description),
+            version: frontmatter.version,
+            author: frontmatter.author,
+            tags: frontmatter.tags,
+            always: frontmatter.always,
+            user_invocable: frontmatter.user_invocable,
+        },
+        content: body,
+        source: SkillSource::Local,
+        location: Some(path.to_path_buf()),
     })
 }
 
@@ -97,8 +116,8 @@ mod tests {
             r#"---
 name: test-skill
 description: A test skill for testing
-metadata:
-  audience: developers
+tags:
+  - testing
 ---
 
 # Test Skill
@@ -109,12 +128,14 @@ This is the skill content.
         .unwrap();
 
         let skill = parse_skill_file(&skill_file).unwrap();
-        assert_eq!(skill.name, "test-skill");
-        assert_eq!(skill.description, "A test skill for testing");
+        assert_eq!(skill.id, "test-skill");
         assert_eq!(
-            skill.metadata.get("audience"),
-            Some(&"developers".to_string())
+            skill.metadata.description.as_deref(),
+            Some("A test skill for testing")
         );
+        assert_eq!(skill.metadata.tags, vec!["testing"]);
+        assert_eq!(skill.source, SkillSource::Local);
+        assert!(skill.content.contains("# Test Skill"));
     }
 
     #[test]
@@ -133,8 +154,8 @@ Content here.
         .unwrap();
 
         let skill = parse_skill_file(&skill_file).unwrap();
-        assert_eq!(skill.name, "minimal");
-        assert!(skill.metadata.is_empty());
+        assert_eq!(skill.id, "minimal");
+        assert!(skill.metadata.tags.is_empty());
     }
 
     #[test]

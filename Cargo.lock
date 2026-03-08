@@ -25,35 +25,12 @@ dependencies = [
  "reqwest 0.13.2",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
  "tracing",
- "uuid",
-]
-
-[[package]]
-name = "agent-core"
-version = "0.1.0"
-source = "git+https://github.com/omnidotdev/agent-core.git#6cd0ba8b0c29d3cb9ca6d8e79bdf33311a0c9bc5"
-dependencies = [
- "anyhow",
- "async-stream",
- "async-trait",
- "chrono",
- "directories",
- "futures",
- "llm",
- "mini-moka",
- "parking_lot",
- "pin-project-lite",
- "reqwest 0.13.2",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-stream",
- "tracing",
+ "ulid",
  "uuid",
 ]
 
@@ -2137,7 +2114,7 @@ dependencies = [
 name = "omnidotdev-cli"
 version = "0.6.0"
 dependencies = [
- "agent-core 0.1.0",
+ "agent-core",
  "anyhow",
  "arboard",
  "async-stream",
@@ -2798,6 +2775,7 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
@@ -3371,7 +3349,7 @@ name = "synapse-client"
 version = "0.1.0"
 source = "git+https://github.com/omnidotdev/synapse-gateway.git#5816691b84cd8493fd73a67e042130983062d10e"
 dependencies = [
- "agent-core 0.1.0 (git+https://github.com/omnidotdev/agent-core.git)",
+ "agent-core",
  "anyhow",
  "async-trait",
  "bytes",

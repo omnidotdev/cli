@@ -6,25 +6,10 @@
 mod parse;
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use serde::{Deserialize, Serialize};
-
+pub use agent_core::skills::{Skill, SkillLookup, SkillMetadata, SkillSource};
 pub use parse::parse_skill_file;
-
-/// Skill information
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Skill {
-    /// Skill identifier (matches directory name)
-    pub name: String,
-    /// Brief description of when to use this skill
-    pub description: String,
-    /// Full path to SKILL.md file
-    pub location: PathBuf,
-    /// Optional metadata
-    #[serde(default)]
-    pub metadata: HashMap<String, String>,
-}
 
 /// Skill discovery and management
 #[derive(Debug, Default)]
@@ -104,24 +89,24 @@ impl SkillRegistry {
                     // Validate name matches directory
                     let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
-                    if skill.name != dir_name {
+                    if skill.id != dir_name {
                         tracing::warn!(
-                            skill = %skill.name,
+                            skill = %skill.id,
                             dir = %dir_name,
                             "skill name doesn't match directory name"
                         );
                     }
 
                     // Check for duplicates
-                    if skills.contains_key(&skill.name) {
+                    if skills.contains_key(&skill.id) {
                         tracing::warn!(
-                            skill = %skill.name,
+                            skill = %skill.id,
                             path = %skill_file.display(),
                             "duplicate skill, using latest"
                         );
                     }
 
-                    skills.insert(skill.name.clone(), skill);
+                    skills.insert(skill.id.clone(), skill);
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -132,12 +117,6 @@ impl SkillRegistry {
                 }
             }
         }
-    }
-
-    /// Get a skill by name
-    #[must_use]
-    pub fn get(&self, name: &str) -> Option<&Skill> {
-        self.skills.get(name)
     }
 
     /// Get all available skills
@@ -152,12 +131,6 @@ impl SkillRegistry {
         self.skills.keys().map(String::as_str).collect()
     }
 
-    /// Check if a skill exists
-    #[must_use]
-    pub fn contains(&self, name: &str) -> bool {
-        self.skills.contains_key(name)
-    }
-
     /// Load skill content (the markdown body)
     ///
     /// # Errors
@@ -168,7 +141,12 @@ impl SkillRegistry {
             .get(name)
             .ok_or_else(|| anyhow::anyhow!("skill not found: {name}"))?;
 
-        let content = std::fs::read_to_string(&skill.location)?;
+        let location = skill
+            .location
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("skill has no file location: {name}"))?;
+
+        let content = std::fs::read_to_string(location)?;
 
         // Extract content after frontmatter
         let content = if let Some(rest) = content.strip_prefix("---") {
@@ -183,6 +161,20 @@ impl SkillRegistry {
         };
 
         Ok(content)
+    }
+}
+
+impl SkillLookup for SkillRegistry {
+    fn get(&self, id: &str) -> Option<&Skill> {
+        self.skills.get(id)
+    }
+
+    fn list(&self) -> Vec<&Skill> {
+        self.skills.values().collect()
+    }
+
+    fn contains(&self, id: &str) -> bool {
+        self.skills.contains_key(id)
     }
 }
 
@@ -230,8 +222,11 @@ mod tests {
         let registry = SkillRegistry::discover(dir.path());
         let skill = registry.get("my-skill").unwrap();
 
-        assert_eq!(skill.name, "my-skill");
-        assert_eq!(skill.description, "My skill description");
+        assert_eq!(skill.id, "my-skill");
+        assert_eq!(
+            skill.metadata.description.as_deref(),
+            Some("My skill description")
+        );
     }
 
     #[test]
