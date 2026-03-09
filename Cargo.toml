@@ -114,8 +114,9 @@ indexmap = "2"
 which = "7"
 
 [dev-dependencies]
-tokio-test = "0.4"
+cargo-husky = { version = "1", default-features = false, features = ["precommit-hook", "run-cargo-fmt", "run-cargo-clippy", "run-cargo-test"] }
 tempfile = "3"
+tokio-test = "0.4"
 
 [patch."https://github.com/omnidotdev/agent-core.git"]
 agent-core = { path = "../../../agent-core" }
