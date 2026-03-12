@@ -9,7 +9,7 @@
     "type": "git",
     "url": "https://github.com/omnidotdev/cli.git"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": "Omni <team@omni.dev>",
   "scripts": {
     "version": "changeset version && bun scripts/syncVersion.ts"
