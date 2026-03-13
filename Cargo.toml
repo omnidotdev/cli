@@ -102,7 +102,7 @@ regex = "1"
 
 # Permission system
 uuid = { version = "1", features = ["v4"] }
-rand = "0.9.2"
+rand = "0.10.0"
 rpassword = "7"
 hex = "0.4"
 chrono = { version = "0.4.43", features = ["serde"] }
