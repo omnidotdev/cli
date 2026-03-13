@@ -111,7 +111,7 @@ ulid = "1"
 indexmap = "2"
 
 # LSP integration
-which = "7"
+which = "8"
 
 [dev-dependencies]
 cargo-husky = { version = "1", default-features = false, features = ["precommit-hook", "run-cargo-fmt", "run-cargo-clippy", "run-cargo-test"] }
