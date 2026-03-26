@@ -128,9 +128,7 @@ impl McpClient {
                 let running = client.manager.server_names().await;
                 for (name, entry) in &config.servers {
                     if !entry.enabled {
-                        client
-                            .statuses
-                            .insert(name.clone(), ServerStatus::Disabled);
+                        client.statuses.insert(name.clone(), ServerStatus::Disabled);
                     } else if running.contains(name) {
                         client
                             .statuses
@@ -149,7 +147,7 @@ impl McpClient {
     }
 
     /// Connect all enabled servers from config (sync bridge)
-    pub fn connect_all(&mut self) {
+    pub const fn connect_all(&mut self) {
         // Servers are already started in `from_config`; this is a no-op
         // for compatibility with the old API
     }
@@ -173,8 +171,11 @@ impl McpClient {
                     .into_iter()
                     .map(|tool| {
                         // Convert from agent-core's scoped format to CLI's `server::tool` format
-                        let qualified_name =
-                            format!("{}::{}", tool.server_name, tool.name.rsplit('/').next().unwrap_or(&tool.name));
+                        let qualified_name = format!(
+                            "{}::{}",
+                            tool.server_name,
+                            tool.name.rsplit('/').next().unwrap_or(&tool.name)
+                        );
                         (qualified_name, tool)
                     })
                     .collect()
