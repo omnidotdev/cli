@@ -36,24 +36,6 @@ async fn main() -> ExitCode {
 }
 
 async fn run(cli: Cli) -> anyhow::Result<()> {
-    // Bare prompt = shell mode
-    if let Some(prompt) = cli.prompt {
-        if cli.command.is_some() {
-            anyhow::bail!("Cannot use both a prompt and a subcommand");
-        }
-        let mut config = Config::load()?;
-        let provider = config.agent.create_provider_with_fallback().await?;
-        return omni_cli::core::shell::run(
-            provider,
-            &config.agent.model,
-            &prompt,
-            cli.yes,
-            cli.dry_run,
-        )
-        .await
-        .map_err(|e| anyhow::anyhow!("{e}"));
-    }
-
     // No subcommand = launch TUI
     let Some(command) = cli.command else {
         return omni_cli::tui::run().await;
@@ -102,6 +84,18 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
 
             println!();
+        }
+
+        Commands::Shell {
+            prompt,
+            yes,
+            dry_run,
+        } => {
+            let mut config = Config::load()?;
+            let provider = config.agent.create_provider_with_fallback().await?;
+            omni_cli::core::shell::run(provider, &config.agent.model, &prompt, yes, dry_run)
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
         }
 
         Commands::Tui {
