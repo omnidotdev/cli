@@ -24,6 +24,7 @@ pub mod build_info;
 pub mod cli;
 pub mod config;
 pub mod core;
+pub mod plugin;
 pub mod tui;
 
 pub use config::Config;

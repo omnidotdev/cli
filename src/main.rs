@@ -8,6 +8,7 @@ use omni_cli::{
     Config,
     cli::{AuthCommands, Cli, Commands, ConfigCommands, SessionCommands, SynapseCommands},
     core::session::SessionTarget,
+    plugin::{PluginDiscovery, PluginType, run_plugin_command},
 };
 
 #[tokio::main]
@@ -139,6 +140,27 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             AuthCommands::Login => omni_cli::cli::auth::login().await?,
             AuthCommands::Logout => omni_cli::cli::auth::logout()?,
         },
+
+        Commands::Plugins => {
+            handle_plugins_command()?;
+        }
+
+        Commands::Install { plugins } => {
+            for name in &plugins {
+                println!("Installing plugin '{name}' is not yet implemented");
+            }
+        }
+
+        Commands::Uninstall { plugin } => {
+            handle_uninstall_command(&plugin)?;
+        }
+
+        Commands::External(args) => {
+            let code = handle_external_command(&args)?;
+            if code != 0 {
+                std::process::exit(code);
+            }
+        }
     }
 
     Ok(())
@@ -305,6 +327,81 @@ async fn handle_synapse_command(command: SynapseCommands) -> anyhow::Result<()> 
     }
 
     Ok(())
+}
+
+fn handle_plugins_command() -> anyhow::Result<()> {
+    let plugins_dir = PluginDiscovery::default_dir()?;
+    let discovery = PluginDiscovery::new(plugins_dir);
+    let plugins = discovery.discover_all()?;
+
+    if plugins.is_empty() {
+        println!("No plugins installed. Use `omni install <name>` to install one.");
+        return Ok(());
+    }
+
+    println!(
+        "{:<16} {:<10} {:<8} {}",
+        "Name", "Version", "Type", "Description"
+    );
+    println!("{}", "-".repeat(60));
+
+    for plugin in &plugins {
+        if let Some(manifest) = &plugin.manifest {
+            let type_str = match manifest.plugin_type {
+                PluginType::Bin => "bin",
+                PluginType::Api => "api",
+                PluginType::Launch => "launch",
+            };
+            println!(
+                "{:<16} {:<10} {:<8} {}",
+                manifest.name, manifest.version, type_str, manifest.description
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_uninstall_command(plugin: &str) -> anyhow::Result<()> {
+    let plugins_dir = PluginDiscovery::default_dir()?;
+    let plugin_dir = plugins_dir.join(plugin);
+
+    if !plugin_dir.exists() {
+        anyhow::bail!("plugin '{plugin}' is not installed");
+    }
+
+    std::fs::remove_dir_all(&plugin_dir)?;
+    println!("Uninstalled plugin '{plugin}'");
+    Ok(())
+}
+
+fn handle_external_command(args: &[String]) -> anyhow::Result<i32> {
+    let name = args
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("no command specified"))?;
+    let remaining: Vec<&str> = args[1..].iter().map(String::as_str).collect();
+
+    let plugins_dir = PluginDiscovery::default_dir()?;
+    let discovery = PluginDiscovery::new(plugins_dir);
+
+    let plugin = discovery.find(name)?.ok_or_else(|| {
+        anyhow::anyhow!("unknown command '{name}'. Run `omni install {name}` to install it")
+    })?;
+
+    match &plugin.manifest {
+        Some(manifest) => run_plugin_command(manifest, &remaining),
+        None => {
+            // PATH-only fallback: run directly
+            let status = std::process::Command::new(name)
+                .args(&remaining)
+                .stdin(std::process::Stdio::inherit())
+                .stdout(std::process::Stdio::inherit())
+                .stderr(std::process::Stdio::inherit())
+                .status()
+                .map_err(|e| anyhow::anyhow!("failed to execute '{name}': {e}"))?;
+            Ok(status.code().unwrap_or(1))
+        }
+    }
 }
 
 /// Parse a duration string (e.g., "1h", "7d") to seconds
