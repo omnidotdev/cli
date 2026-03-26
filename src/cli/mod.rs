@@ -36,21 +36,6 @@ pub enum Commands {
         session: Option<String>,
     },
 
-    /// Run a natural language shell command.
-    #[command(visible_alias = "sh")]
-    Shell {
-        /// Natural language command to convert and execute.
-        prompt: String,
-
-        /// Skip confirmation for all commands.
-        #[arg(short, long)]
-        yes: bool,
-
-        /// Show command only, don't execute.
-        #[arg(short = 'n', long)]
-        dry_run: bool,
-    },
-
     /// Start the TUI interface.
     Tui {
         /// Continue the most recent session.
@@ -395,46 +380,6 @@ mod tests {
                 _ => panic!("expected Export command"),
             },
             _ => panic!("expected Session command"),
-        }
-    }
-
-    #[test]
-    fn cli_parses_shell_command() {
-        let cli = Cli::parse_from(["omni", "shell", "list files in current dir"]);
-        match cli.command {
-            Some(Commands::Shell {
-                prompt,
-                yes,
-                dry_run,
-            }) => {
-                assert_eq!(prompt, "list files in current dir");
-                assert!(!yes);
-                assert!(!dry_run);
-            }
-            _ => panic!("expected Shell command"),
-        }
-    }
-
-    #[test]
-    fn cli_parses_shell_alias() {
-        let cli = Cli::parse_from(["omni", "sh", "list files"]);
-        assert!(matches!(cli.command, Some(Commands::Shell { .. })));
-    }
-
-    #[test]
-    fn cli_parses_shell_flags() {
-        let cli = Cli::parse_from(["omni", "shell", "-y", "-n", "delete temp files"]);
-        match cli.command {
-            Some(Commands::Shell {
-                prompt,
-                yes,
-                dry_run,
-            }) => {
-                assert_eq!(prompt, "delete temp files");
-                assert!(yes);
-                assert!(dry_run);
-            }
-            _ => panic!("expected Shell command"),
         }
     }
 }

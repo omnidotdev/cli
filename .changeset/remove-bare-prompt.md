@@ -2,6 +2,6 @@
 "@omnidotdev/cli": minor
 ---
 
-Move shell mode from bare positional to explicit `omni shell` subcommand (alias: `omni sh`). This frees the positional space for plugin routing via `external_subcommand`, so `omni run up runa` works without quoting.
+Remove the standalone `omni shell` subcommand in favor of a unified agent interface. Natural language shell tasks are now handled by `omni agent`, which routes simple shell commands through its existing tool system. This aligns with industry best practice (single agentic entry point) and reduces user-facing complexity.
 
-Migration: `omni "list files"` becomes `omni shell "list files"` or `omni sh "list files"`
+Breaking change: `omni shell "list files"` is now `omni agent "list files"` (or `omni a "list files"`)

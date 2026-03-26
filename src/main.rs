@@ -86,18 +86,6 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             println!();
         }
 
-        Commands::Shell {
-            prompt,
-            yes,
-            dry_run,
-        } => {
-            let mut config = Config::load()?;
-            let provider = config.agent.create_provider_with_fallback().await?;
-            omni_cli::core::shell::run(provider, &config.agent.model, &prompt, yes, dry_run)
-                .await
-                .map_err(|e| anyhow::anyhow!("{e}"))?;
-        }
-
         Commands::Tui {
             r#continue,
             session,
