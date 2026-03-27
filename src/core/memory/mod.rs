@@ -5,8 +5,8 @@
 //! - Project facts (architecture decisions, patterns used)
 //! - Learned corrections (things the agent got wrong and was corrected on)
 
-pub use agent_core::memory::{MemoryCategory, MemoryItem};
 use agent_core::memory;
+pub use agent_core::memory::{MemoryCategory, MemoryItem};
 use chrono::Utc;
 
 use super::project::Project;
@@ -247,10 +247,7 @@ mod tests {
     fn format_for_prompt_items() {
         let items = vec![
             MemoryItem::new("User prefers vim".to_string(), MemoryCategory::Preference),
-            MemoryItem::new(
-                "Uses tokio runtime".to_string(),
-                MemoryCategory::Fact,
-            ),
+            MemoryItem::new("Uses tokio runtime".to_string(), MemoryCategory::Fact),
         ];
 
         let output = MemoryManager::format_for_prompt(&items);

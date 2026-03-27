@@ -1013,9 +1013,9 @@ impl ToolRegistry {
         let manager = self.mcp_client.read().manager();
 
         // Parse `server::toolname` and route via the manager's scoped format
-        let (server_name, tool_name) = qualified_name
-            .split_once("::")
-            .ok_or_else(|| AgentError::ToolExecution(format!("invalid MCP tool name format: {qualified_name}")))?;
+        let (server_name, tool_name) = qualified_name.split_once("::").ok_or_else(|| {
+            AgentError::ToolExecution(format!("invalid MCP tool name format: {qualified_name}"))
+        })?;
 
         let scoped = format!("mcp_{server_name}/{tool_name}");
         let result = manager
@@ -1024,7 +1024,10 @@ impl ToolRegistry {
             .map_err(|e| AgentError::ToolExecution(format!("MCP tool error: {e}")))?;
 
         if result.is_error {
-            return Err(AgentError::ToolExecution(format!("Tool error: {}", result.text)));
+            return Err(AgentError::ToolExecution(format!(
+                "Tool error: {}",
+                result.text
+            )));
         }
 
         Ok(result.text)
@@ -1893,7 +1896,7 @@ impl ToolRegistry {
                 let status = input["status"].as_str().unwrap_or("pending");
                 let priority = input["priority"].as_str().map(String::from);
 
-                let id = format!("{:04}", rand::random::<u16>());
+                let id = format!("{:04}", rand::RngExt::random::<u16>(&mut rand::rng()));
                 let item = TodoItem {
                     id: id.clone(),
                     content: content.to_string(),
@@ -2934,7 +2937,11 @@ impl ToolRegistry {
             let list: Vec<String> = skills
                 .iter()
                 .map(|s| {
-                    let desc = s.metadata.description.as_deref().unwrap_or("No description");
+                    let desc = s
+                        .metadata
+                        .description
+                        .as_deref()
+                        .unwrap_or("No description");
                     format!("  - {}: {desc}", s.id)
                 })
                 .collect();

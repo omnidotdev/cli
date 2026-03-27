@@ -1,0 +1,35 @@
+name = "beacon"
+version = "0.1.0"
+description = "AI assistant runtime — voice, messaging, and browser automation"
+type = "api"
+endpoint = "${BEACON_GATEWAY_URL}"
+
+[commands.navigate]
+description = "Navigate browser to a URL"
+method = "POST"
+path = "/browser/navigate"
+
+[commands.screenshot]
+description = "Take a browser screenshot"
+method = "POST"
+path = "/browser/screenshot"
+
+[commands.click]
+description = "Click an element"
+method = "POST"
+path = "/browser/click"
+
+[commands.type]
+description = "Type text into an element"
+method = "POST"
+path = "/browser/type"
+
+[commands.execute]
+description = "Execute JavaScript in the browser"
+method = "POST"
+path = "/browser/execute"
+
+[commands.status]
+description = "Get browser session status"
+method = "GET"
+path = "/browser/status"

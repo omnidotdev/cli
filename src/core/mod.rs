@@ -12,7 +12,6 @@ pub mod project;
 pub mod search;
 pub mod secret;
 pub mod session;
-pub mod shell;
 pub mod skill;
 pub mod snapshot;
 pub mod storage;

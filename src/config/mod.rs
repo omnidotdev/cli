@@ -273,7 +273,7 @@ impl ApiConfig {
     /// Generate a new random API token.
     #[must_use]
     pub fn generate_token() -> String {
-        use rand::Rng;
+        use rand::RngExt;
         let mut rng = rand::rng();
         let bytes: [u8; 32] = rng.random();
         format!("omni_{}", hex::encode(bytes))
