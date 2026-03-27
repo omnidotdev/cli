@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use regex::Regex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Plugin type determines how the CLI delegates to the plugin
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PluginType {
     /// Delegates to an external binary
@@ -17,7 +17,7 @@ pub enum PluginType {
 }
 
 /// A command exposed by a plugin
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandDef {
     pub description: String,
     /// HTTP method for API plugins
@@ -27,14 +27,14 @@ pub struct CommandDef {
 }
 
 /// System package manager hints for installation
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageHints {
     pub aur: Option<String>,
     pub homebrew: Option<String>,
 }
 
 /// Plugin manifest parsed from plugin.toml
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginManifest {
     pub name: String,
     pub version: String,

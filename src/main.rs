@@ -147,7 +147,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
 
         Commands::Install { plugins } => {
             for name in &plugins {
-                install_plugin(name)?;
+                install_plugin(name).await?;
             }
         }
 

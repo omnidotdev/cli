@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use crate::plugin::{PluginDiscovery, PluginManifest};
+use crate::plugin::{PluginDiscovery, PluginManifest, registry};
 
-/// Embedded plugin registry (known Omni ecosystem plugins)
+/// Embedded plugin registry (offline fallback)
 const REGISTRY: &[(&str, &str)] = &[(
     "beacon",
     include_str!("../../examples/plugins/beacon/plugin.toml"),
@@ -57,12 +57,43 @@ impl PackageManager {
     }
 }
 
+/// Resolve a plugin manifest by trying the remote registry first, then the
+/// embedded fallback. Returns the manifest and TOML string to write to disk.
+async fn resolve_manifest(name: &str) -> anyhow::Result<(PluginManifest, String)> {
+    let base_url = registry::registry_url();
+
+    match registry::fetch_plugin(&base_url, name).await {
+        Ok(manifest) => {
+            let toml_str = toml::to_string_pretty(&manifest)
+                .map_err(|e| anyhow::anyhow!("failed to serialize manifest: {e}"))?;
+            Ok((manifest, toml_str))
+        }
+        Err(e) => {
+            tracing::debug!("remote registry unavailable, using embedded fallback: {e}");
+
+            let toml_str = REGISTRY
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, toml)| *toml)
+                .ok_or_else(|| anyhow::anyhow!("unknown plugin '{name}'"))?;
+
+            let manifest: PluginManifest = toml::from_str(toml_str)
+                .map_err(|e| anyhow::anyhow!("invalid manifest for '{name}': {e}"))?;
+
+            Ok((manifest, toml_str.to_string()))
+        }
+    }
+}
+
 /// Install a plugin by name
+///
+/// Fetches the manifest from the remote plugin registry, falling back to
+/// the embedded registry if unavailable.
 ///
 /// # Errors
 ///
 /// Returns an error if the plugin is unknown, already installed, or installation fails
-pub fn install_plugin(name: &str) -> anyhow::Result<()> {
+pub async fn install_plugin(name: &str) -> anyhow::Result<()> {
     let plugins_dir = PluginDiscovery::default_dir()?;
     let target = plugins_dir.join(name);
 
@@ -70,16 +101,7 @@ pub fn install_plugin(name: &str) -> anyhow::Result<()> {
         anyhow::bail!("plugin '{name}' is already installed");
     }
 
-    // Look up in embedded registry
-    let manifest_toml = REGISTRY
-        .iter()
-        .find(|(n, _)| *n == name)
-        .map(|(_, toml)| *toml);
-
-    let manifest_toml = manifest_toml.ok_or_else(|| anyhow::anyhow!("unknown plugin '{name}'"))?;
-
-    let manifest: PluginManifest = toml::from_str(manifest_toml)
-        .map_err(|e| anyhow::anyhow!("invalid manifest for '{name}': {e}"))?;
+    let (manifest, toml_str) = resolve_manifest(name).await?;
 
     // Install binary via package manager if applicable
     if manifest.bin.is_some() {
@@ -87,7 +109,7 @@ pub fn install_plugin(name: &str) -> anyhow::Result<()> {
     }
 
     // Write manifest to plugins dir
-    write_manifest(&target, manifest_toml)?;
+    write_manifest(&target, &toml_str)?;
 
     println!("Installed plugin '{name}'");
     Ok(())
@@ -168,8 +190,7 @@ mod tests {
         std::fs::create_dir_all(&target).unwrap();
         std::fs::write(target.join("plugin.toml"), "").unwrap();
 
-        // We can't easily test install_plugin since it uses default_dir(),
-        // but we can verify the manifest writes correctly
+        // Verify the manifest writes correctly
         let result = write_manifest(&dir.path().join("new-plugin"), "name = \"test\"");
         assert!(result.is_ok());
         assert!(dir.path().join("new-plugin/plugin.toml").exists());
@@ -185,5 +206,16 @@ mod tests {
             std::fs::read_to_string(target.join("plugin.toml")).unwrap(),
             "name = \"test\""
         );
+    }
+
+    #[test]
+    fn manifest_round_trips_through_toml() {
+        for (_, toml_str) in REGISTRY {
+            let manifest: PluginManifest = toml::from_str(toml_str).unwrap();
+            let serialized = toml::to_string_pretty(&manifest).unwrap();
+            let reparsed: PluginManifest = toml::from_str(&serialized).unwrap();
+            assert_eq!(manifest.name, reparsed.name);
+            assert_eq!(manifest.plugin_type, reparsed.plugin_type);
+        }
     }
 }
