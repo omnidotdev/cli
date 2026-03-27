@@ -68,12 +68,11 @@ bin = "echo"
 }
 
 #[test]
-fn path_fallback_when_no_manifest() {
+fn path_fallback_requires_omni_prefix() {
     let dir = TempDir::new().unwrap();
     let discovery = PluginDiscovery::new(dir.path().to_path_buf());
 
-    // "echo" should be found on PATH
+    // "echo" exists on PATH but "omni-echo" does not, so no match
     let plugin = discovery.find("echo").unwrap();
-    assert!(plugin.is_some());
-    assert!(plugin.unwrap().manifest.is_none());
+    assert!(plugin.is_none());
 }
