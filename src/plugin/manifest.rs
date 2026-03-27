@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use regex::Regex;
 use serde::Deserialize;
 
 /// Plugin type determines how the CLI delegates to the plugin
@@ -54,14 +55,30 @@ pub struct PluginManifest {
 impl PluginManifest {
     /// Read and parse a plugin manifest from a TOML file
     ///
+    /// Expands `${VAR}` references in the `endpoint` field
+    ///
     /// # Errors
     ///
     /// Returns an error if the file cannot be read or parsed
     pub fn from_file(path: &Path) -> anyhow::Result<Self> {
         let contents = std::fs::read_to_string(path)?;
-        let manifest: Self = toml::from_str(&contents)?;
+        let mut manifest: Self = toml::from_str(&contents)?;
+
+        if let Some(ref ep) = manifest.endpoint {
+            manifest.endpoint = Some(expand_env_vars(ep));
+        }
+
         Ok(manifest)
     }
+}
+
+/// Expand `${VAR}` references using environment variables
+fn expand_env_vars(input: &str) -> String {
+    let re = Regex::new(r"\$\{([^}]+)\}").expect("valid regex");
+    re.replace_all(input, |caps: &regex::Captures| {
+        std::env::var(&caps[1]).unwrap_or_default()
+    })
+    .into_owned()
 }
 
 #[cfg(test)]
@@ -164,6 +181,27 @@ type = "invalid"
 "#;
         let result: Result<PluginManifest, _> = toml::from_str(bad);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn expand_env_vars_substitutes_known_vars() {
+        // HOME is always set in test environments
+        let result = super::expand_env_vars("${HOME}/plugins");
+        assert!(!result.contains("${HOME}"));
+        assert!(result.ends_with("/plugins"));
+        assert!(result.len() > "/plugins".len());
+    }
+
+    #[test]
+    fn expand_env_vars_missing_var_becomes_empty() {
+        let result = super::expand_env_vars("${NONEXISTENT_VAR_12345}/api");
+        assert_eq!(result, "/api");
+    }
+
+    #[test]
+    fn expand_env_vars_no_vars_unchanged() {
+        let result = super::expand_env_vars("https://example.com/api");
+        assert_eq!(result, "https://example.com/api");
     }
 
     #[test]

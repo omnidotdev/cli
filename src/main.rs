@@ -8,7 +8,7 @@ use omni_cli::{
     Config,
     cli::{AuthCommands, Cli, Commands, ConfigCommands, SessionCommands, SynapseCommands},
     core::session::SessionTarget,
-    plugin::{PluginDiscovery, PluginType, run_plugin_command},
+    plugin::{PluginDiscovery, PluginType, install_plugin, run_plugin_command},
 };
 
 #[tokio::main]
@@ -147,7 +147,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
 
         Commands::Install { plugins } => {
             for name in &plugins {
-                println!("Installing plugin '{name}' is not yet implemented");
+                install_plugin(name)?;
             }
         }
 
@@ -388,14 +388,15 @@ fn handle_external_command(args: &[String]) -> anyhow::Result<i32> {
     if let Some(manifest) = &plugin.manifest {
         run_plugin_command(manifest, &remaining)
     } else {
-        // PATH-only fallback: run directly
-        let status = std::process::Command::new(name)
+        // PATH-only fallback: run omni-<name> binary
+        let bin = format!("omni-{name}");
+        let status = std::process::Command::new(&bin)
             .args(&remaining)
             .stdin(std::process::Stdio::inherit())
             .stdout(std::process::Stdio::inherit())
             .stderr(std::process::Stdio::inherit())
             .status()
-            .map_err(|e| anyhow::anyhow!("failed to execute '{name}': {e}"))?;
+            .map_err(|e| anyhow::anyhow!("failed to execute '{bin}': {e}"))?;
         Ok(status.code().unwrap_or(1))
     }
 }

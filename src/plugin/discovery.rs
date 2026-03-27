@@ -60,8 +60,9 @@ impl PluginDiscovery {
             }));
         }
 
-        // Fall back to PATH
-        if which::which(name).is_ok() {
+        // Fall back to PATH with `omni-` prefix convention (like git/cargo)
+        let prefixed = format!("omni-{name}");
+        if which::which(&prefixed).is_ok() {
             return Ok(Some(DiscoveredPlugin {
                 name: name.to_string(),
                 manifest: None,
@@ -169,14 +170,12 @@ endpoint = "https://runa.omni.dev/api"
     }
 
     #[test]
-    fn find_falls_back_to_path() {
+    fn find_does_not_fall_back_to_unprefixed_path() {
         let dir = tempfile::TempDir::new().unwrap();
         let discovery = PluginDiscovery::new(dir.path().to_path_buf());
+        // "ls" exists on PATH but "omni-ls" does not
         let plugin = discovery.find("ls").unwrap();
-        assert!(plugin.is_some());
-        let p = plugin.unwrap();
-        assert_eq!(p.source, PluginSource::Path);
-        assert!(p.manifest.is_none());
+        assert!(plugin.is_none());
     }
 
     #[test]
