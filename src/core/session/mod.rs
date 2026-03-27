@@ -80,12 +80,12 @@ pub fn new_slug() -> String {
     ];
     let nouns = ["fox", "owl", "bear", "wolf", "hawk", "deer", "lynx", "crow"];
 
-    use rand::prelude::IndexedRandom;
+    use rand::prelude::*;
     let mut rng = rand::rng();
 
     let adj = adjectives.choose(&mut rng).unwrap_or(&"quick");
     let noun = nouns.choose(&mut rng).unwrap_or(&"fox");
-    let num: u16 = rand::Rng::random_range(&mut rng, 100..1000);
+    let num: u16 = rng.random_range(100..1000);
 
     format!("{adj}-{noun}-{num}")
 }

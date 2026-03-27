@@ -1896,7 +1896,7 @@ impl ToolRegistry {
                 let status = input["status"].as_str().unwrap_or("pending");
                 let priority = input["priority"].as_str().map(String::from);
 
-                let id = format!("{:04}", rand::random::<u16>());
+                let id = format!("{:04}", rand::RngExt::random::<u16>(&mut rand::rng()));
                 let item = TodoItem {
                     id: id.clone(),
                     content: content.to_string(),

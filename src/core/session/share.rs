@@ -47,7 +47,7 @@ impl ShareToken {
 
 /// Generate a short share token (8 chars, URL-safe)
 fn generate_token() -> String {
-    use rand::Rng;
+    use rand::RngExt;
     const CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
     let mut rng = rand::rng();
     (0..8)

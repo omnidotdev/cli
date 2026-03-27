@@ -339,10 +339,7 @@ fn handle_plugins_command() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    println!(
-        "{:<16} {:<10} {:<8} {}",
-        "Name", "Version", "Type", "Description"
-    );
+    println!("{:<16} {:<10} {:<8} Description", "Name", "Version", "Type",);
     println!("{}", "-".repeat(60));
 
     for plugin in &plugins {
@@ -362,16 +359,16 @@ fn handle_plugins_command() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn handle_uninstall_command(plugin: &str) -> anyhow::Result<()> {
-    let plugins_dir = PluginDiscovery::default_dir()?;
-    let plugin_dir = plugins_dir.join(plugin);
+fn handle_uninstall_command(name: &str) -> anyhow::Result<()> {
+    let base = PluginDiscovery::default_dir()?;
+    let target = base.join(name);
 
-    if !plugin_dir.exists() {
-        anyhow::bail!("plugin '{plugin}' is not installed");
+    if !target.exists() {
+        anyhow::bail!("plugin '{name}' is not installed");
     }
 
-    std::fs::remove_dir_all(&plugin_dir)?;
-    println!("Uninstalled plugin '{plugin}'");
+    std::fs::remove_dir_all(&target)?;
+    println!("Uninstalled plugin '{name}'");
     Ok(())
 }
 
@@ -388,19 +385,18 @@ fn handle_external_command(args: &[String]) -> anyhow::Result<i32> {
         anyhow::anyhow!("unknown command '{name}'. Run `omni install {name}` to install it")
     })?;
 
-    match &plugin.manifest {
-        Some(manifest) => run_plugin_command(manifest, &remaining),
-        None => {
-            // PATH-only fallback: run directly
-            let status = std::process::Command::new(name)
-                .args(&remaining)
-                .stdin(std::process::Stdio::inherit())
-                .stdout(std::process::Stdio::inherit())
-                .stderr(std::process::Stdio::inherit())
-                .status()
-                .map_err(|e| anyhow::anyhow!("failed to execute '{name}': {e}"))?;
-            Ok(status.code().unwrap_or(1))
-        }
+    if let Some(manifest) = &plugin.manifest {
+        run_plugin_command(manifest, &remaining)
+    } else {
+        // PATH-only fallback: run directly
+        let status = std::process::Command::new(name)
+            .args(&remaining)
+            .stdin(std::process::Stdio::inherit())
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit())
+            .status()
+            .map_err(|e| anyhow::anyhow!("failed to execute '{name}': {e}"))?;
+        Ok(status.code().unwrap_or(1))
     }
 }
 
