@@ -11,20 +11,6 @@ pub mod auth;
 #[command(version)]
 #[command(propagate_version = true)]
 pub struct Cli {
-    /// Natural language shell command (shell mode).
-    ///
-    /// Converts natural language to shell commands and executes them.
-    /// Safe commands auto-execute; others require confirmation.
-    pub prompt: Option<String>,
-
-    /// Skip confirmation for all commands.
-    #[arg(short, long)]
-    pub yes: bool,
-
-    /// Show command only, don't execute.
-    #[arg(short = 'n', long)]
-    pub dry_run: bool,
-
     /// Increase logging verbosity.
     #[arg(short, long, action = clap::ArgAction::Count, global = true)]
     pub verbose: u8,

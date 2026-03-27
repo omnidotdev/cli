@@ -118,8 +118,8 @@ cargo-husky = { version = "1", default-features = false, features = ["precommit-
 tempfile = "3"
 tokio-test = "0.4"
 
-[patch."https://github.com/omnidotdev/agent-core.git"]
-agent-core = { path = "../../../agent-core" }
+[patch.crates-io]
+agent-core = { git = "https://github.com/omnidotdev/agent-core.git" }
 
 [profile.release]
 lto = "thin"
