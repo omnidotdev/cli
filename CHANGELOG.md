@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.0
+
+### Minor Changes
+
+- [#30](https://github.com/omnidotdev/cli/pull/30) [`ef1cb6a`](https://github.com/omnidotdev/cli/commit/ef1cb6a1132a78070b2d709dde29f41887ec9c7a) Thanks [@coopbri](https://github.com/coopbri)! - Add ecosystem plugin system with three plugin types (bin, api, launch), plugin discovery from config directory and PATH, and CLI routing via external_subcommand
+
+- [#31](https://github.com/omnidotdev/cli/pull/31) [`b7b0321`](https://github.com/omnidotdev/cli/commit/b7b03219915cdb83355b1b8217531c0e6d1cef86) Thanks [@coopbri](https://github.com/coopbri)! - Remove the standalone `omni shell` subcommand in favor of a unified agent interface. Natural language shell tasks are now handled by `omni agent`, which routes simple shell commands through its existing tool system. This aligns with industry best practice (single agentic entry point) and reduces user-facing complexity.
+
+  Breaking change: `omni shell "list files"` is now `omni agent "list files"` (or `omni a "list files"`)
+
 ## 0.6.0
 
 ### Minor Changes
