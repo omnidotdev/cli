@@ -81,6 +81,26 @@ pub enum Commands {
         #[command(subcommand)]
         command: AuthCommands,
     },
+
+    /// List installed plugins.
+    Plugins,
+
+    /// Install a plugin.
+    Install {
+        /// Plugin names to install.
+        #[arg(required = true)]
+        plugins: Vec<String>,
+    },
+
+    /// Remove a plugin.
+    Uninstall {
+        /// Plugin name to remove.
+        plugin: String,
+    },
+
+    /// Delegate to an ecosystem plugin.
+    #[command(external_subcommand)]
+    External(Vec<String>),
 }
 
 #[derive(Subcommand)]
