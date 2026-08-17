@@ -95,7 +95,7 @@ notify = "8"
 ignore = "0.4"
 
 # Diff
-similar = "2.7"
+similar = "3.0"
 
 # Regex for HTML parsing
 regex = "1"
