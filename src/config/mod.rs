@@ -706,7 +706,7 @@ impl Default for AgentConfig {
     fn default() -> Self {
         Self {
             provider: "anthropic".to_string(),
-            model: "claude-sonnet-4-20250514".to_string(),
+            model: "claude-sonnet-5-5".to_string(),
             max_tokens: 8192,
             persona: "orin".to_string(),
             default_agent: "build".to_string(),

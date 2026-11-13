@@ -63,7 +63,7 @@ Configuration file (`~/.config/omni/cli/config.toml`):
 ```toml
 [agent]
 provider = "anthropic"
-model = "claude-sonnet-4-20250514"
+model = "claude-sonnet-5-5"
 max_tokens = 8192
 
 [api]

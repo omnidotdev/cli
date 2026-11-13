@@ -6,7 +6,7 @@
 mod parse;
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub use agent_core::skills::{Skill, SkillLookup, SkillMetadata, SkillSource};
 pub use parse::parse_skill_file;
@@ -29,6 +29,11 @@ impl SkillRegistry {
     /// - `.claude/skills/*/SKILL.md`
     #[must_use]
     pub fn discover(project_root: &Path) -> Self {
+        Self::discover_in(project_root, &Self::global_skill_dirs())
+    }
+
+    /// Discover skills from the project-local paths plus the given global directories
+    fn discover_in(project_root: &Path, global_dirs: &[PathBuf]) -> Self {
         let mut skills = HashMap::new();
 
         // Project-local paths (walk up from project root)
@@ -41,29 +46,29 @@ impl SkillRegistry {
             }
         }
 
-        // Global paths
-        if let Some(config_dir) = dirs::config_dir() {
-            let global_patterns = [
-                config_dir.join("omni/skill"),
-                config_dir.join("opencode/skill"),
-            ];
-
-            for path in global_patterns {
-                if path.is_dir() {
-                    Self::scan_directory(&path, &mut skills);
-                }
-            }
-        }
-
-        // Also check ~/.claude/skills for compatibility
-        if let Some(home) = dirs::home_dir() {
-            let claude_skills = home.join(".claude/skills");
-            if claude_skills.is_dir() {
-                Self::scan_directory(&claude_skills, &mut skills);
+        for path in global_dirs {
+            if path.is_dir() {
+                Self::scan_directory(path, &mut skills);
             }
         }
 
         Self { skills }
+    }
+
+    /// Global skill directories, including `~/.claude/skills` for compatibility
+    fn global_skill_dirs() -> Vec<PathBuf> {
+        let mut out = Vec::new();
+
+        if let Some(config_dir) = dirs::config_dir() {
+            out.push(config_dir.join("omni/skill"));
+            out.push(config_dir.join("opencode/skill"));
+        }
+
+        if let Some(home) = dirs::home_dir() {
+            out.push(home.join(".claude/skills"));
+        }
+
+        out
     }
 
     /// Scan a directory for SKILL.md files
@@ -204,7 +209,8 @@ mod tests {
         create_skill(&skill_root, "test-skill", "A test skill");
         create_skill(&skill_root, "another-skill", "Another skill");
 
-        let registry = SkillRegistry::discover(dir.path());
+        // Skip global dirs so skills installed on the host do not leak into the count
+        let registry = SkillRegistry::discover_in(dir.path(), &[]);
 
         assert_eq!(registry.all().len(), 2);
         assert!(registry.contains("test-skill"));

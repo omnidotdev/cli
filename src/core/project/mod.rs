@@ -97,11 +97,23 @@ impl Project {
     }
 }
 
+/// Build a git command that resolves the repository from `dir` alone.
+///
+/// Inherited `GIT_DIR` / `GIT_WORK_TREE` (set by git hooks, among others) would
+/// otherwise point every lookup at that repository instead of `dir`.
+fn git_in(dir: &Path) -> Command {
+    let mut cmd = Command::new("git");
+    cmd.current_dir(dir)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_COMMON_DIR");
+    cmd
+}
+
 /// Find the git repository root from a directory.
 fn find_git_root(start: &Path) -> Option<PathBuf> {
-    let output = Command::new("git")
+    let output = git_in(start)
         .args(["rev-parse", "--show-toplevel"])
-        .current_dir(start)
         .output()
         .ok()?;
 
@@ -117,9 +129,8 @@ fn find_git_root(start: &Path) -> Option<PathBuf> {
 ///
 /// This returns the first commit, which uniquely identifies the repository.
 fn get_git_root_commit(repo_path: &Path) -> anyhow::Result<String> {
-    let output = Command::new("git")
+    let output = git_in(repo_path)
         .args(["rev-list", "--max-parents=0", "--all"])
-        .current_dir(repo_path)
         .output()?;
 
     if !output.status.success() {

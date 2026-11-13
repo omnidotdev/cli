@@ -542,8 +542,10 @@ impl Agent {
 
         // Make a simple completion request (no tools, no streaming needed)
         let request = CompletionRequest {
-            model: "claude-3-5-haiku-latest".to_string(), // Use haiku for cheap/fast titling
-            max_tokens: 50,
+            // Use haiku for cheap/fast titling
+            model: "claude-haiku-5-5".to_string(),
+            // Haiku 5.5 thinks by default and thinking counts against max_tokens, so leave headroom
+            max_tokens: 1024,
             messages: vec![Message {
                 role: Role::User,
                 content: Content::Text(prompt),
