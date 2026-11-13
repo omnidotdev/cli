@@ -49,7 +49,43 @@ pub fn lookup_pricing(model: &str, provider: &str) -> TokenPricing {
 
     let model_lower = model.to_lowercase();
 
-    // Anthropic
+    // Anthropic (current generations first, since "opus-5" also matches "opus-5-5")
+    if model_lower.contains("opus-5-5") {
+        return TokenPricing {
+            input_per_mtok: 4.0,
+            output_per_mtok: 20.0,
+        };
+    }
+    if model_lower.contains("opus-5")
+        || model_lower.contains("opus-4-5")
+        || model_lower.contains("opus-4-6")
+        || model_lower.contains("opus-4-7")
+        || model_lower.contains("opus-4-8")
+    {
+        return TokenPricing {
+            input_per_mtok: 5.0,
+            output_per_mtok: 25.0,
+        };
+    }
+    if model_lower.contains("sonnet-5") {
+        return TokenPricing {
+            input_per_mtok: 2.0,
+            output_per_mtok: 10.0,
+        };
+    }
+    // Prompts up to 100K tokens; longer prompts bill higher and are not modeled here
+    if model_lower.contains("haiku-5-5") {
+        return TokenPricing {
+            input_per_mtok: 0.10,
+            output_per_mtok: 0.50,
+        };
+    }
+    if model_lower.contains("haiku-4-5") {
+        return TokenPricing {
+            input_per_mtok: 1.0,
+            output_per_mtok: 5.0,
+        };
+    }
     if model_lower.contains("opus-4") || model_lower.contains("opus4") {
         return TokenPricing {
             input_per_mtok: 15.0,
@@ -189,6 +225,40 @@ mod tests {
         let p = lookup_pricing("claude-3-5-sonnet-20241022", "anthropic");
         assert_eq!(p.input_per_mtok, 3.0);
         assert_eq!(p.output_per_mtok, 15.0);
+    }
+
+    #[test]
+    fn current_anthropic_models() {
+        let p = lookup_pricing("claude-opus-5-5", "anthropic");
+        assert_eq!(p.input_per_mtok, 4.0);
+        assert_eq!(p.output_per_mtok, 20.0);
+
+        let p = lookup_pricing("claude-opus-5", "anthropic");
+        assert_eq!(p.input_per_mtok, 5.0);
+        assert_eq!(p.output_per_mtok, 25.0);
+
+        let p = lookup_pricing("claude-opus-4-6", "anthropic");
+        assert_eq!(p.input_per_mtok, 5.0);
+        assert_eq!(p.output_per_mtok, 25.0);
+
+        let p = lookup_pricing("claude-sonnet-5-5", "anthropic");
+        assert_eq!(p.input_per_mtok, 2.0);
+        assert_eq!(p.output_per_mtok, 10.0);
+
+        let p = lookup_pricing("anthropic/claude-sonnet-5-5", "synapse");
+        assert_eq!(p.input_per_mtok, 2.0);
+
+        let p = lookup_pricing("claude-sonnet-4-6", "anthropic");
+        assert_eq!(p.input_per_mtok, 3.0);
+        assert_eq!(p.output_per_mtok, 15.0);
+
+        let p = lookup_pricing("claude-haiku-5-5", "anthropic");
+        assert_eq!(p.input_per_mtok, 0.10);
+        assert_eq!(p.output_per_mtok, 0.50);
+
+        let p = lookup_pricing("claude-haiku-4-5-20251001", "anthropic");
+        assert_eq!(p.input_per_mtok, 1.0);
+        assert_eq!(p.output_per_mtok, 5.0);
     }
 
     #[test]

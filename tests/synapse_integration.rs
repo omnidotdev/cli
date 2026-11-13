@@ -23,7 +23,7 @@ async fn start_mock_synapse() -> (SocketAddr, tokio::task::JoinHandle<()>) {
                     "object": "list",
                     "data": [
                         {
-                            "id": "claude-sonnet-4-20250514",
+                            "id": "claude-sonnet-5-5",
                             "object": "model",
                             "created": 1_700_000_000_u64,
                             "owned_by": "anthropic"
@@ -58,7 +58,7 @@ async fn synapse_client_connects_to_mock_server() {
     let models = client.list_models().await.unwrap();
 
     assert_eq!(models.len(), 2);
-    assert!(models.iter().any(|m| m.id == "claude-sonnet-4-20250514"));
+    assert!(models.iter().any(|m| m.id == "claude-sonnet-5-5"));
     assert!(models.iter().any(|m| m.id == "gpt-4o"));
 }
 
@@ -70,10 +70,7 @@ async fn synapse_client_reports_correct_model_metadata() {
     let client = synapse_client::SynapseClient::new(&base_url).unwrap();
     let models = client.list_models().await.unwrap();
 
-    let claude = models
-        .iter()
-        .find(|m| m.id == "claude-sonnet-4-20250514")
-        .unwrap();
+    let claude = models.iter().find(|m| m.id == "claude-sonnet-5-5").unwrap();
     assert_eq!(claude.owned_by, "anthropic");
     assert_eq!(claude.object, "model");
 }
@@ -111,12 +108,7 @@ async fn config_discovers_models_from_mock_synapse() {
     assert!(discovered, "should discover models from mock synapse");
 
     // Models from mock server should be merged into config
-    assert!(
-        config
-            .models
-            .iter()
-            .any(|m| m.id == "claude-sonnet-4-20250514")
-    );
+    assert!(config.models.iter().any(|m| m.id == "claude-sonnet-5-5"));
     assert!(config.models.iter().any(|m| m.id == "gpt-4o"));
 }
 
