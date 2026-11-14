@@ -74,10 +74,6 @@ pub struct Agent {
     max_iterations: u32,
     /// Recent tool calls for loop detection (`tool_name`, `input_hash`)
     recent_tool_calls: Vec<(String, u64)>,
-    /// Usage recorder for Aether billing (optional)
-    usage_recorder: Option<synapse_billing::UsageRecorder>,
-    /// Entity ID for usage recording (e.g. machine hostname)
-    usage_entity_id: String,
     /// All knowledge chunks for per-turn selection
     knowledge_chunks: Vec<crate::config::KnowledgeChunk>,
     /// Optional embedder for semantic knowledge retrieval
@@ -106,8 +102,6 @@ impl Agent {
             tool_filter: None,
             max_iterations: DEFAULT_MAX_ITERATIONS,
             recent_tool_calls: Vec::new(),
-            usage_recorder: None,
-            usage_entity_id: default_entity_id(),
             knowledge_chunks: Vec::new(),
             embedder: None,
             condenser: None,
@@ -137,8 +131,6 @@ impl Agent {
             tool_filter: None,
             max_iterations: DEFAULT_MAX_ITERATIONS,
             recent_tool_calls: Vec::new(),
-            usage_recorder: None,
-            usage_entity_id: default_entity_id(),
             knowledge_chunks: Vec::new(),
             embedder: None,
             condenser: None,
@@ -1200,27 +1192,16 @@ impl Agent {
                     usage,
                 } => {
                     stop_reason = sr;
-                    // Emit usage event if we have usage data
+                    // Emit usage for display; the cost is a list-price estimate
+                    // (the Synapse gateway meters and bills the real usage)
                     if let Some(u) = usage {
-                        let cost = pricing::lookup_pricing(&self.model, self.provider.name())
+                        let estimate = pricing::lookup_pricing(&self.model, self.provider.name())
                             .cost(u.input_tokens, u.output_tokens);
                         on_event(ChatEvent::Usage {
                             input_tokens: u.input_tokens,
                             output_tokens: u.output_tokens,
-                            cost_usd: cost,
+                            estimated_cost_usd: estimate,
                         });
-                        if let Some(ref recorder) = self.usage_recorder {
-                            recorder.record(synapse_billing::UsageEvent {
-                                entity_type: "user".to_string(),
-                                entity_id: self.usage_entity_id.clone(),
-                                model: self.model.clone(),
-                                provider: self.provider.name().to_string(),
-                                input_tokens: u.input_tokens,
-                                output_tokens: u.output_tokens,
-                                estimated_cost_usd: cost,
-                                idempotency_key: ulid::Ulid::new().to_string(),
-                            });
-                        }
                     }
                 }
                 CompletionEvent::Error(msg) => {
@@ -1412,11 +1393,6 @@ impl Agent {
         self.provider = provider;
     }
 
-    /// Set the usage recorder for Aether billing.
-    pub fn set_usage_recorder(&mut self, recorder: synapse_billing::UsageRecorder) {
-        self.usage_recorder = Some(recorder);
-    }
-
     /// Get the current provider name.
     #[must_use]
     pub fn provider_name(&self) -> &'static str {
@@ -1518,15 +1494,6 @@ Follow this plan. Refer back to it as you work.
     pub const fn plan_manager(&self) -> &PlanManager {
         &self.plan_manager
     }
-}
-
-/// Return a stable entity ID for usage recording.
-///
-/// Prefers `OMNI_USER_ID`, then `HOSTNAME`, then falls back to `"cli"`.
-fn default_entity_id() -> String {
-    std::env::var("OMNI_USER_ID")
-        .or_else(|_| std::env::var("HOSTNAME"))
-        .unwrap_or_else(|_| "cli".to_string())
 }
 
 /// Format tool input for display in the UI

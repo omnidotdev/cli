@@ -85,11 +85,11 @@ pub enum ChatMessage {
         output: String,
         is_error: bool,
     },
-    /// Token usage and cost information
+    /// Token usage with a display-only cost estimate
     Usage {
         input_tokens: u32,
         output_tokens: u32,
-        cost_usd: f64,
+        estimated_cost_usd: f64,
     },
     /// Chat completed, returning the agent
     Done(Agent),
@@ -270,13 +270,7 @@ impl App {
         let model = config.agent.model.clone();
 
         let mut agent = match config.agent.create_provider() {
-            Ok(provider) => {
-                let mut a = config.agent.create_agent(provider).await;
-                if let Some(recorder) = config.agent.create_usage_recorder() {
-                    a.set_usage_recorder(recorder);
-                }
-                Some(a)
-            }
+            Ok(provider) => Some(config.agent.create_agent(provider).await),
             Err(_) => None,
         };
 

@@ -97,11 +97,7 @@ pub fn render_session(
     let status_left = status_text.as_deref();
     // Show mode, model, cost, and build version in status
     let version = crate::build_info::short_version();
-    let cost_str = if session_cost > 0.0 {
-        format!(" · ${session_cost:.4}")
-    } else {
-        String::new()
-    };
+    let cost_str = cost_status_label(session_cost);
     let status_right_text = match agent_mode {
         AgentMode::Build => format!("{model}{cost_str} | {version}"),
         AgentMode::Plan => format!("plan mode · {model}{cost_str} | {version}"),
@@ -325,9 +321,50 @@ pub fn calculate_content_height(
     total
 }
 
+/// Status-bar label for the session's estimated cost (empty when zero)
+///
+/// The figure is a list-price estimate from token counts, never the bill: the
+/// Synapse gateway meters and charges the real usage
+#[must_use]
+pub fn cost_status_label(estimated_cost: f64) -> String {
+    if estimated_cost > 0.0 {
+        format!(" · est. ${estimated_cost:.4}")
+    } else {
+        String::new()
+    }
+}
+
+/// `/cost` report for the session, labeled as an estimate
+#[must_use]
+pub fn cost_report(input_tokens: u32, output_tokens: u32, estimated_cost: f64) -> String {
+    format!(
+        "Estimated session cost\n\
+         Input   {input_tokens:>10} tokens\n\
+         Output  {output_tokens:>10} tokens\n\
+         ─────────────────────\n\
+         Total           ~${estimated_cost:.4}\n\
+         List-price estimate, not your bill"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn status_cost_is_labeled_an_estimate() {
+        assert_eq!(cost_status_label(0.0), "");
+        assert_eq!(cost_status_label(0.012_34), " · est. $0.0123");
+    }
+
+    #[test]
+    fn cost_report_is_labeled_an_estimate() {
+        let report = cost_report(1200, 340, 0.5);
+        assert!(report.starts_with("Estimated session cost"), "{report}");
+        assert!(report.contains("1200"), "{report}");
+        assert!(report.contains("~$0.5000"), "{report}");
+        assert!(report.contains("not your bill"), "{report}");
+    }
 
     fn user_message(text: &str) -> DisplayMessage {
         DisplayMessage::User {
