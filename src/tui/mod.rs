@@ -346,11 +346,11 @@ async fn run_app(
                         // Add tool message
                         app.messages.push(DisplayMessage::tool(&name, &invocation, &output, is_error));
                     }
-                    Some(ChatMessage::Usage { input_tokens, output_tokens, cost_usd }) => {
+                    Some(ChatMessage::Usage { input_tokens, output_tokens, estimated_cost_usd }) => {
                         // Accumulate session usage
                         app.session_tokens.0 += input_tokens;
                         app.session_tokens.1 += output_tokens;
-                        app.session_cost += cost_usd;
+                        app.session_cost += estimated_cost_usd;
                     }
                     Some(ChatMessage::Done(agent)) => {
                         // Finalize streaming text into an assistant message
@@ -689,14 +689,7 @@ fn handle_key(
                     app.clear_input();
                     app.enter_session();
                     let (input_k, output_k) = app.session_tokens;
-                    let cost = app.session_cost;
-                    let report = format!(
-                        "Session cost\n\
-                         Input   {input_k:>10} tokens\n\
-                         Output  {output_k:>10} tokens\n\
-                         ─────────────────────\n\
-                         Total            ${cost:.4}"
-                    );
+                    let report = components::cost_report(input_k, output_k, app.session_cost);
                     app.messages
                         .push(DisplayMessage::tool("cost", "", report, false));
                     return false;
@@ -1567,12 +1560,12 @@ fn start_chat(app: &mut App, permission_tx: mpsc::UnboundedSender<PermissionMess
                     ChatEvent::Usage {
                         input_tokens,
                         output_tokens,
-                        cost_usd,
+                        estimated_cost_usd,
                     } => {
                         let _ = tx_clone.send(ChatMessage::Usage {
                             input_tokens,
                             output_tokens,
-                            cost_usd,
+                            estimated_cost_usd,
                         });
                     }
                 }

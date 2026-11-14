@@ -13,6 +13,6 @@ pub use command_palette::{
     render_command_dropdown, render_file_dropdown, render_model_dropdown, should_show_dropdown,
 };
 pub use prompt::PLACEHOLDERS;
-pub use session::{MESSAGE_PADDING_X, calculate_content_height, render_session};
+pub use session::{MESSAGE_PADDING_X, calculate_content_height, cost_report, render_session};
 pub use session_list::{SessionListDialog, render_session_list};
 pub use welcome::render_welcome;

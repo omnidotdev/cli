@@ -21,11 +21,12 @@ pub enum ChatEvent {
         output: String,
         is_error: bool,
     },
-    /// Token usage and cost for the response
+    /// Token usage for the response, with a display-only list-price cost
+    /// estimate (the Synapse gateway meters and bills the real usage)
     Usage {
         input_tokens: u32,
         output_tokens: u32,
-        cost_usd: f64,
+        estimated_cost_usd: f64,
     },
 }
 
