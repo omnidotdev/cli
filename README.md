@@ -72,6 +72,17 @@ port = 7890
 token = "omni_..."  # Generate with: omni config generate-token
 ```
 
+### Cloud Synapse
+
+To run on the hosted Synapse gateway, create a Synapse API key at <https://synapse.omni.dev/dashboard/keys> and connect it:
+
+```bash
+omni auth login     # Paste the key at the hidden prompt (or pipe it on stdin)
+omni auth logout    # Remove the stored key
+```
+
+`omni auth login` checks the key against the gateway, stores it on the `synapse` provider in the config file (owner-only permissions), and makes Synapse the active provider with a provider-prefixed model id (for example `anthropic/claude-sonnet-5-5`). Usage is billed to the workspace that owns the key. A `SYNAPSE_API_KEY` environment variable takes precedence over the stored key.
+
 ## HTTP API
 
 ### Endpoints
