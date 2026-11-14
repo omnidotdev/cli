@@ -51,13 +51,44 @@ pub struct Config {
     pub auth: AuthConfig,
 }
 
-/// Authentication state (cloud Synapse login).
+/// Legacy authentication state.
+///
+/// Earlier `omni auth login` stored an account session token here, which the
+/// Synapse gateway never accepted (it takes only `synapse_` API keys). It is
+/// still read so old config files parse, but never written back; `omni auth
+/// login` now stores a Synapse API key on the `synapse` provider instead
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AuthConfig {
-    /// JWT access token from Gatekeeper. Used as Bearer token for cloud Synapse.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Legacy session token (ignored, dropped on the next save)
+    #[serde(skip_serializing)]
     pub access_token: Option<String>,
+}
+
+/// Prefix every Synapse API key carries
+pub const SYNAPSE_KEY_PREFIX: &str = "synapse_";
+
+/// Default hosted Synapse gateway (mirrors the agent-core provider default)
+pub const DEFAULT_SYNAPSE_GATEWAY_URL: &str = "https://gateway.synapse.omni.dev";
+
+/// Validate the shape of a pasted Synapse API key, returning it trimmed.
+///
+/// # Errors
+///
+/// Returns an error if the key is empty, lacks the `synapse_` prefix, or
+/// contains whitespace.
+pub fn normalize_synapse_key(input: &str) -> anyhow::Result<String> {
+    let key = input.trim();
+    if key.is_empty() {
+        anyhow::bail!("no Synapse API key entered");
+    }
+    if !key.starts_with(SYNAPSE_KEY_PREFIX) || key.len() == SYNAPSE_KEY_PREFIX.len() {
+        anyhow::bail!("Synapse API keys start with `{SYNAPSE_KEY_PREFIX}`");
+    }
+    if key.chars().any(char::is_whitespace) {
+        anyhow::bail!("a Synapse API key cannot contain whitespace");
+    }
+    Ok(key.to_string())
 }
 
 impl Config {
@@ -222,16 +253,79 @@ impl Config {
         Ok(())
     }
 
-    /// Resolve the Bearer token to use for Synapse requests.
+    /// Load only the global config file (no project-local merge), for
+    /// commands that write the global file back.
     ///
-    /// Prefers the cloud auth token (from `omni auth login`), falls back to
-    /// the provider-specific API key configured under `[agent.providers.synapse]`.
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be read or parsed.
+    pub fn load_global() -> anyhow::Result<Self> {
+        let path = Self::config_path()?;
+        if path.exists() {
+            Ok(toml::from_str(&std::fs::read_to_string(&path)?)?)
+        } else {
+            Ok(Self::default())
+        }
+    }
+
+    /// Base URL of the configured Synapse gateway
     #[must_use]
-    pub fn synapse_bearer_token(&self) -> Option<String> {
-        self.auth
-            .access_token
-            .clone()
-            .or_else(|| resolve_api_key(self.agent.providers.get("synapse")?))
+    pub fn synapse_gateway_url(&self) -> String {
+        self.agent
+            .providers
+            .get("synapse")
+            .and_then(|p| p.base_url.clone())
+            .unwrap_or_else(|| DEFAULT_SYNAPSE_GATEWAY_URL.to_string())
+    }
+
+    /// Store a Synapse API key on the `synapse` provider and make Synapse the
+    /// active provider, so every Synapse client path authenticates with it.
+    ///
+    /// Gateway model ids are provider-prefixed, so a bare model id (e.g.
+    /// `claude-sonnet-5-5`) is prefixed with its provider.
+    pub fn set_synapse_key(&mut self, key: String) {
+        let synapse = self
+            .agent
+            .providers
+            .entry("synapse".to_string())
+            .or_insert_with(|| {
+                registry::default_providers()
+                    .remove("synapse")
+                    .unwrap_or_default()
+            });
+        synapse.api_key = Some(key);
+
+        if !self.agent.model.contains('/') {
+            if let Some(provider) = self.agent.provider_for_model(&self.agent.model) {
+                let provider = provider.to_string();
+                if provider != "synapse" {
+                    self.agent.model = format!("{provider}/{}", self.agent.model);
+                }
+            }
+        }
+        self.agent.provider = "synapse".to_string();
+        self.auth.access_token = None;
+    }
+
+    /// Remove the stored Synapse API key. When Synapse was the active
+    /// provider, fall back to the default provider and an unprefixed model
+    pub fn clear_synapse_key(&mut self) {
+        if let Some(synapse) = self.agent.providers.get_mut("synapse") {
+            synapse.api_key = None;
+        }
+        if self.agent.provider == "synapse" {
+            let fallback = AgentConfig::default().provider;
+            if let Some(model) = self
+                .agent
+                .model
+                .strip_prefix(&format!("{fallback}/"))
+                .map(str::to_string)
+            {
+                self.agent.model = model;
+            }
+            self.agent.provider = fallback;
+        }
+        self.auth.access_token = None;
     }
 }
 
@@ -834,49 +928,61 @@ mod tests {
     }
 
     #[test]
-    fn synapse_bearer_token_prefers_auth_token() {
-        let mut config = Config::default();
-        config.auth.access_token = Some("auth-jwt-123".to_string());
-        config.agent.providers.insert(
-            "synapse".to_string(),
-            ProviderConfig {
-                api_type: ProviderApiType::Synapse,
-                base_url: None,
-                api_key_env: None,
-                api_key: Some("sk-synapse".to_string()),
-            },
-        );
+    fn synapse_key_must_carry_the_prefix() {
         assert_eq!(
-            config.synapse_bearer_token(),
-            Some("auth-jwt-123".to_string())
+            normalize_synapse_key("  synapse_abc123\n").unwrap(),
+            "synapse_abc123"
         );
+        assert!(normalize_synapse_key("").is_err());
+        assert!(normalize_synapse_key("synapse_").is_err());
+        assert!(normalize_synapse_key("sk-ant-123").is_err());
+        assert!(normalize_synapse_key("eyJhbGciOi.jwt.token").is_err());
+        assert!(normalize_synapse_key("synapse_abc def").is_err());
     }
 
     #[test]
-    fn synapse_bearer_token_falls_back_to_provider_key() {
+    fn set_synapse_key_stores_key_and_activates_synapse() {
         let mut config = Config::default();
-        config.auth.access_token = None;
-        config.agent.providers.insert(
-            "synapse".to_string(),
-            ProviderConfig {
-                api_type: ProviderApiType::Synapse,
-                base_url: None,
-                api_key_env: None,
-                api_key: Some("sk-synapse".to_string()),
-            },
-        );
-        assert_eq!(
-            config.synapse_bearer_token(),
-            Some("sk-synapse".to_string())
-        );
+        config.auth.access_token = Some("legacy-session".to_string());
+        config.set_synapse_key("synapse_abc".to_string());
+
+        let synapse = config.agent.providers.get("synapse").unwrap();
+        assert_eq!(synapse.api_key.as_deref(), Some("synapse_abc"));
+        assert_eq!(resolve_api_key(synapse).as_deref(), Some("synapse_abc"));
+        assert_eq!(config.agent.provider, "synapse");
+        assert_eq!(config.agent.model, "anthropic/claude-sonnet-5-5");
+        assert_eq!(config.auth.access_token, None);
     }
 
     #[test]
-    fn synapse_bearer_token_returns_none() {
+    fn set_synapse_key_restores_a_missing_synapse_provider() {
         let mut config = Config::default();
-        config.auth.access_token = None;
         config.agent.providers.clear();
-        assert_eq!(config.synapse_bearer_token(), None);
+        config.set_synapse_key("synapse_abc".to_string());
+        let synapse = config.agent.providers.get("synapse").unwrap();
+        assert_eq!(synapse.api_type, ProviderApiType::Synapse);
+        assert_eq!(
+            config.synapse_gateway_url(),
+            "https://gateway.synapse.omni.dev"
+        );
+    }
+
+    #[test]
+    fn clear_synapse_key_reverts_to_the_default_provider() {
+        let mut config = Config::default();
+        config.set_synapse_key("synapse_abc".to_string());
+        config.clear_synapse_key();
+        assert_eq!(config.agent.providers.get("synapse").unwrap().api_key, None);
+        assert_eq!(config.agent.provider, "anthropic");
+        assert_eq!(config.agent.model, "claude-sonnet-5-5");
+    }
+
+    #[test]
+    fn legacy_session_token_parses_but_is_never_written() {
+        let config: Config = toml::from_str("[auth]\naccess_token = \"old\"\n").unwrap();
+        assert_eq!(config.auth.access_token.as_deref(), Some("old"));
+        let written = toml::to_string_pretty(&config).unwrap();
+        assert!(!written.contains("access_token"));
     }
 
     #[test]

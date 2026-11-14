@@ -76,7 +76,7 @@ pub enum Commands {
         command: SynapseCommands,
     },
 
-    /// Authenticate with cloud Synapse (Omni Credits).
+    /// Connect to cloud Synapse with a Synapse API key.
     Auth {
         #[command(subcommand)]
         command: AuthCommands,
@@ -171,9 +171,9 @@ pub enum SynapseCommands {
 
 #[derive(Subcommand, Debug)]
 pub enum AuthCommands {
-    /// Log in with your Omni account to use Omni Credits.
+    /// Store a Synapse API key (prompted, or read from stdin) and use Synapse.
     Login,
-    /// Log out and clear the stored access token.
+    /// Remove the stored Synapse API key.
     Logout,
 }
 
