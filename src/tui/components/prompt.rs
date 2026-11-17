@@ -404,9 +404,9 @@ mod tests {
 
     #[test]
     fn placeholders_not_empty() {
-        assert!(!PLACEHOLDERS.is_empty());
+        assert_ne!(PLACEHOLDERS.len(), 0);
         for placeholder in PLACEHOLDERS {
-            assert!(!placeholder.is_empty());
+            assert_ne!(*placeholder, "");
         }
     }
 }

@@ -319,7 +319,7 @@ impl SessionManager {
         }
 
         // Sort by updated time, newest first
-        sessions.sort_by(|a, b| b.time.updated.cmp(&a.time.updated));
+        sessions.sort_by_key(|session| std::cmp::Reverse(session.time.updated));
         Ok(sessions)
     }
 
@@ -497,11 +497,11 @@ mod tests {
         let session1 = manager.create_session().unwrap();
         let session2 = manager.create_session().unwrap();
 
-        let sessions = manager.list_sessions().unwrap();
-        assert_eq!(sessions.len(), 2);
+        let listed = manager.list_sessions().unwrap();
+        assert_eq!(listed.len(), 2);
 
         // Both sessions should be present
-        let ids: Vec<_> = sessions.iter().map(|s| s.id.as_str()).collect();
+        let ids: Vec<_> = listed.iter().map(|s| s.id.as_str()).collect();
         assert!(ids.contains(&session1.id.as_str()));
         assert!(ids.contains(&session2.id.as_str()));
     }

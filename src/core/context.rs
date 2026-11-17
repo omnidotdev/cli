@@ -210,8 +210,7 @@ fn is_git_repository(dir: &Path) -> bool {
         .args(["rev-parse", "--git-dir"])
         .current_dir(dir)
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+        .is_ok_and(|o| o.status.success())
 }
 
 /// Get the current git branch.
@@ -474,8 +473,8 @@ mod tests {
     #[test]
     fn gather_context_works() {
         let ctx = ProjectContext::gather();
-        assert!(!ctx.working_dir.as_os_str().is_empty());
-        assert!(!ctx.platform.is_empty());
-        assert!(!ctx.date.is_empty());
+        assert_ne!(ctx.working_dir.as_os_str(), "");
+        assert_ne!(ctx.platform, "");
+        assert_ne!(ctx.date, "");
     }
 }

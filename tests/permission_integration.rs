@@ -96,9 +96,8 @@ async fn session_cache_skips_second_request() {
 
     // Get interface message
     let msg = interface_rx.recv().await.unwrap();
-    let request_id = match msg {
-        InterfaceMessage::ShowPermissionDialog { request_id, .. } => request_id,
-        _ => panic!("unexpected message"),
+    let InterfaceMessage::ShowPermissionDialog { request_id, .. } = msg else {
+        panic!("unexpected message")
     };
 
     // Respond with AllowForSession

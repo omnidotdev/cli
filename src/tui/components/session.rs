@@ -455,6 +455,6 @@ mod tests {
 
     #[test]
     fn message_padding_constants() {
-        assert!(MESSAGE_PADDING_X > 0);
+        const { assert!(MESSAGE_PADDING_X > 0) };
     }
 }

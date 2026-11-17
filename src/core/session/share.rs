@@ -212,7 +212,7 @@ mod tests {
 
         assert_eq!(share.token.len(), 8);
         assert_eq!(share.session_id, session.id);
-        assert!(!share.secret.is_empty());
+        assert_ne!(share.secret, "");
     }
 
     #[test]
