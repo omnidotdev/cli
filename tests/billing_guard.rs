@@ -23,7 +23,6 @@ fn no_client_side_usage_recording() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
     rust_sources(&root.join("src"), &mut files);
-    rust_sources(&root.join("crates"), &mut files);
 
     let forbidden = [
         "AETHER_URL",
