@@ -71,6 +71,38 @@ pub const SYNAPSE_KEY_PREFIX: &str = "synapse_";
 /// Default hosted Synapse gateway (mirrors the agent-core provider default)
 pub const DEFAULT_SYNAPSE_GATEWAY_URL: &str = "https://gateway.synapse.omni.dev";
 
+/// Gateway the Synapse client falls back to when the provider sets no base URL
+const LOCAL_SYNAPSE_GATEWAY_URL: &str = "http://localhost:6000";
+
+/// Embedding and condensing models when calling `OpenAI` directly
+const OPENAI_EMBEDDING_MODEL: &str = "text-embedding-3-small";
+const OPENAI_CONDENSE_MODEL: &str = "gpt-4o-mini";
+
+/// The same models through the Synapse gateway, which routes provider-prefixed ids
+const SYNAPSE_EMBEDDING_MODEL: &str = "openai/text-embedding-3-small";
+const SYNAPSE_CONDENSE_MODEL: &str = "openai/gpt-4o-mini";
+
+/// Base URL the Synapse client talks to for a provider config
+fn synapse_base_url(config: &ProviderConfig) -> &str {
+    config
+        .base_url
+        .as_deref()
+        .unwrap_or(LOCAL_SYNAPSE_GATEWAY_URL)
+}
+
+/// Where retrieval AI (knowledge embeddings and query condensing) is sent
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetrievalRoute {
+    /// Key sent as the bearer token
+    pub api_key: String,
+    /// OpenAI-compatible API root, including `/v1`
+    pub base_url: String,
+    /// Embedding model id
+    pub embedding_model: String,
+    /// Chat model id used to condense retrieval queries
+    pub condense_model: String,
+}
+
 /// Validate the shape of a pasted Synapse API key, returning it trimmed.
 ///
 /// # Errors
@@ -527,10 +559,7 @@ impl AgentConfig {
             return false;
         };
 
-        let base_url = synapse_config
-            .base_url
-            .as_deref()
-            .unwrap_or("http://localhost:6000");
+        let base_url = synapse_base_url(synapse_config);
 
         let Ok(client) = SynapseClient::new(base_url) else {
             return false;
@@ -568,10 +597,7 @@ impl AgentConfig {
     #[must_use]
     pub fn create_synapse_client(&self) -> Option<std::sync::Arc<SynapseClient>> {
         let config = self.providers.get("synapse")?;
-        let base_url = config
-            .base_url
-            .as_deref()
-            .unwrap_or("http://localhost:6000");
+        let base_url = synapse_base_url(config);
         let client = SynapseClient::new(base_url).ok()?;
         let client = if let Some(key) = resolve_api_key(config) {
             client.with_api_key(key)
@@ -588,10 +614,7 @@ impl AgentConfig {
         registry.register_factory(
             "synapse",
             Box::new(|_name, config| {
-                let base_url = config
-                    .base_url
-                    .as_deref()
-                    .unwrap_or("http://localhost:6000");
+                let base_url = synapse_base_url(config);
                 let client = SynapseClient::new(base_url)
                     .map_err(|e| anyhow::anyhow!("failed to create Synapse client: {e}"))?;
                 let client = if let Some(key) = resolve_api_key(config) {
@@ -679,40 +702,73 @@ impl AgentConfig {
         agent
     }
 
-    /// Try to create an embedder from configured providers
+    /// Resolve where retrieval AI goes and with which key
     ///
-    /// Checks the openai provider first, then synapse, for an API key
-    /// that can be used with the `OpenAI` embeddings endpoint
-    fn try_create_embedder(&self) -> Option<agent_core::knowledge::Embedder> {
-        let key = resolve_api_key(self.providers.get("openai")?)
-            .or_else(|| resolve_api_key(self.providers.get("synapse")?))?;
-        agent_core::knowledge::Embedder::new(key).ok()
+    /// A real `OpenAI` key (bring your own key) goes direct to `OpenAI`. A
+    /// Synapse key goes only to the configured Synapse gateway, the same one
+    /// chat uses, with provider-prefixed model ids; it is never sent to a
+    /// third-party vendor, even when it was stored on the `openai` provider
+    pub fn retrieval_route(&self) -> Option<RetrievalRoute> {
+        use agent_core::knowledge::{OPENAI_BASE_URL, is_synapse_key};
+
+        let key_of = |name: &str| {
+            self.providers
+                .get(name)
+                .and_then(resolve_api_key)
+                .map(|key| key.trim().to_string())
+                .filter(|key| !key.is_empty())
+        };
+        let openai_key = key_of("openai");
+
+        if let Some(key) = openai_key.clone().filter(|key| !is_synapse_key(key)) {
+            let base_url = self
+                .providers
+                .get("openai")
+                .and_then(|p| p.base_url.clone())
+                .unwrap_or_else(|| OPENAI_BASE_URL.to_string());
+            return Some(RetrievalRoute {
+                api_key: key,
+                base_url: base_url.trim_end_matches('/').to_string(),
+                embedding_model: OPENAI_EMBEDDING_MODEL.to_string(),
+                condense_model: OPENAI_CONDENSE_MODEL.to_string(),
+            });
+        }
+
+        let key = key_of("synapse").or(openai_key)?;
+        let gateway = self
+            .providers
+            .get("synapse")
+            .map_or(DEFAULT_SYNAPSE_GATEWAY_URL, synapse_base_url);
+        Some(RetrievalRoute {
+            api_key: key,
+            base_url: format!("{}/v1", gateway.trim_end_matches('/')),
+            embedding_model: SYNAPSE_EMBEDDING_MODEL.to_string(),
+            condense_model: SYNAPSE_CONDENSE_MODEL.to_string(),
+        })
     }
 
-    /// Try to create a query condenser from configured providers
-    ///
-    /// Uses the same API key resolution as the embedder (OpenAI-compatible)
-    fn try_create_condenser(&self) -> Option<Box<dyn agent_core::knowledge::QueryCondenser>> {
-        let key = resolve_api_key(self.providers.get("openai")?)
-            .or_else(|| resolve_api_key(self.providers.get("synapse")?))?;
+    /// Try to create an embedder for semantic knowledge retrieval
+    fn try_create_embedder(&self) -> Option<agent_core::knowledge::Embedder> {
+        let route = self.retrieval_route()?;
+        agent_core::knowledge::Embedder::with_config(
+            route.api_key,
+            route.embedding_model,
+            route.base_url,
+        )
+        .inspect_err(|e| tracing::warn!(error = %e, "embedder disabled"))
+        .ok()
+    }
 
-        // Use the synapse base URL if available, otherwise default OpenAI
-        let condenser = if let Some(synapse_config) = self.providers.get("synapse") {
-            let base_url = synapse_config
-                .base_url
-                .as_deref()
-                .map_or("https://api.openai.com/v1".to_string(), |u| {
-                    format!("{u}/v1")
-                });
-            agent_core::knowledge::LlmCondenser::with_config(
-                key,
-                "gpt-4o-mini".to_string(),
-                base_url,
-            )
-            .ok()?
-        } else {
-            agent_core::knowledge::LlmCondenser::new(key).ok()?
-        };
+    /// Try to create a query condenser, routed like the embedder
+    fn try_create_condenser(&self) -> Option<Box<dyn agent_core::knowledge::QueryCondenser>> {
+        let route = self.retrieval_route()?;
+        let condenser = agent_core::knowledge::LlmCondenser::with_config(
+            route.api_key,
+            route.condense_model,
+            route.base_url,
+        )
+        .inspect_err(|e| tracing::warn!(error = %e, "query condenser disabled"))
+        .ok()?;
 
         Some(Box::new(condenser))
     }
@@ -966,5 +1022,208 @@ mod tests {
         let config = AgentConfig::default();
         let synapse = config.providers.get("synapse").unwrap();
         assert_eq!(synapse.api_type, ProviderApiType::Synapse);
+    }
+
+    /// Provider config with a direct key and no env var, so tests never
+    /// depend on the caller's environment
+    fn keyed(
+        api_type: ProviderApiType,
+        base_url: Option<&str>,
+        key: Option<&str>,
+    ) -> ProviderConfig {
+        ProviderConfig {
+            api_type,
+            base_url: base_url.map(String::from),
+            api_key_env: None,
+            api_key: key.map(String::from),
+        }
+    }
+
+    fn retrieval_config(
+        openai: Option<ProviderConfig>,
+        synapse: Option<ProviderConfig>,
+    ) -> AgentConfig {
+        let mut providers = HashMap::new();
+        if let Some(openai) = openai {
+            providers.insert("openai".to_string(), openai);
+        }
+        if let Some(synapse) = synapse {
+            providers.insert("synapse".to_string(), synapse);
+        }
+        AgentConfig {
+            providers,
+            ..Default::default()
+        }
+    }
+
+    const GATEWAY: &str = "https://gateway.synapse.omni.dev";
+
+    #[test]
+    fn synapse_key_routes_embeddings_to_the_gateway() {
+        let config = retrieval_config(
+            Some(keyed(ProviderApiType::OpenAi, None, None)),
+            Some(keyed(
+                ProviderApiType::Synapse,
+                Some(GATEWAY),
+                Some("synapse_abc"),
+            )),
+        );
+
+        let route = config.retrieval_route().unwrap();
+        assert_eq!(route.api_key, "synapse_abc");
+        assert_eq!(route.base_url, "https://gateway.synapse.omni.dev/v1");
+        assert_eq!(route.embedding_model, "openai/text-embedding-3-small");
+        assert_eq!(route.condense_model, "openai/gpt-4o-mini");
+
+        let embedder = config.try_create_embedder().unwrap();
+        assert_eq!(
+            embedder.endpoint_url(),
+            "https://gateway.synapse.omni.dev/v1/embeddings"
+        );
+        assert_eq!(embedder.model(), "openai/text-embedding-3-small");
+    }
+
+    #[test]
+    fn synapse_key_works_without_an_openai_provider() {
+        let config = retrieval_config(
+            None,
+            Some(keyed(
+                ProviderApiType::Synapse,
+                Some(GATEWAY),
+                Some("synapse_abc"),
+            )),
+        );
+        let embedder = config.try_create_embedder().unwrap();
+        assert_eq!(
+            embedder.endpoint_url(),
+            "https://gateway.synapse.omni.dev/v1/embeddings"
+        );
+    }
+
+    #[test]
+    fn synapse_retrieval_uses_the_chat_gateway_url() {
+        // Same base URL the chat client uses, including a self-hosted gateway
+        let config = retrieval_config(
+            None,
+            Some(keyed(
+                ProviderApiType::Synapse,
+                Some("http://localhost:6000/"),
+                Some("synapse_abc"),
+            )),
+        );
+        assert_eq!(
+            config.retrieval_route().unwrap().base_url,
+            "http://localhost:6000/v1"
+        );
+
+        let config = retrieval_config(
+            None,
+            Some(keyed(ProviderApiType::Synapse, None, Some("synapse_abc"))),
+        );
+        let synapse = config.providers.get("synapse").unwrap();
+        assert_eq!(
+            config.retrieval_route().unwrap().base_url,
+            format!("{}/v1", synapse_base_url(synapse))
+        );
+    }
+
+    #[test]
+    fn vendor_key_goes_direct_to_the_vendor() {
+        let config = retrieval_config(
+            Some(keyed(ProviderApiType::OpenAi, None, Some("sk-byok"))),
+            Some(keyed(
+                ProviderApiType::Synapse,
+                Some(GATEWAY),
+                Some("synapse_abc"),
+            )),
+        );
+
+        let route = config.retrieval_route().unwrap();
+        assert_eq!(route.api_key, "sk-byok");
+        assert_eq!(route.base_url, "https://api.openai.com/v1");
+        assert_eq!(route.embedding_model, "text-embedding-3-small");
+
+        let embedder = config.try_create_embedder().unwrap();
+        assert_eq!(
+            embedder.endpoint_url(),
+            "https://api.openai.com/v1/embeddings"
+        );
+    }
+
+    #[test]
+    fn synapse_key_in_the_openai_slot_still_goes_to_the_gateway() {
+        let config = retrieval_config(
+            Some(keyed(ProviderApiType::OpenAi, None, Some("synapse_abc"))),
+            Some(keyed(ProviderApiType::Synapse, Some(GATEWAY), None)),
+        );
+        let route = config.retrieval_route().unwrap();
+        assert_eq!(route.api_key, "synapse_abc");
+        assert_eq!(route.base_url, "https://gateway.synapse.omni.dev/v1");
+    }
+
+    #[test]
+    fn no_key_means_no_retrieval_ai() {
+        let config = retrieval_config(
+            Some(keyed(ProviderApiType::OpenAi, None, None)),
+            Some(keyed(ProviderApiType::Synapse, Some(GATEWAY), Some(""))),
+        );
+        assert!(config.retrieval_route().is_none());
+        assert!(config.try_create_embedder().is_none());
+    }
+
+    #[test]
+    fn synapse_key_is_never_sent_to_a_non_synapse_host() {
+        let openai_slots = [
+            None,
+            Some(keyed(ProviderApiType::OpenAi, None, None)),
+            Some(keyed(
+                ProviderApiType::OpenAi,
+                None,
+                Some("synapse_in_openai"),
+            )),
+            Some(keyed(
+                ProviderApiType::OpenAi,
+                Some("https://api.openai.com/v1"),
+                Some("synapse_in_openai"),
+            )),
+        ];
+        let synapse_slots = [
+            None,
+            Some(keyed(
+                ProviderApiType::Synapse,
+                Some(GATEWAY),
+                Some("synapse_abc"),
+            )),
+            Some(keyed(ProviderApiType::Synapse, None, Some("synapse_abc"))),
+            Some(keyed(ProviderApiType::Synapse, Some(GATEWAY), None)),
+        ];
+
+        for openai in &openai_slots {
+            for synapse in &synapse_slots {
+                let config = retrieval_config(openai.clone(), synapse.clone());
+                let Some(route) = config.retrieval_route() else {
+                    continue;
+                };
+                assert!(
+                    agent_core::knowledge::is_synapse_key(&route.api_key),
+                    "only Synapse keys are configured here: {route:?}"
+                );
+                let gateway = config
+                    .providers
+                    .get("synapse")
+                    .map_or(DEFAULT_SYNAPSE_GATEWAY_URL, synapse_base_url);
+                assert_eq!(
+                    route.base_url,
+                    format!("{}/v1", gateway.trim_end_matches('/'))
+                );
+                assert!(!agent_core::knowledge::is_vendor_host(&route.base_url));
+
+                if let Some(embedder) = config.try_create_embedder() {
+                    assert!(!agent_core::knowledge::is_vendor_host(
+                        &embedder.endpoint_url()
+                    ));
+                }
+            }
+        }
     }
 }
