@@ -173,7 +173,7 @@ impl Storage {
                 let name = path.file_name().unwrap().to_string_lossy().to_string();
                 let mut new_prefix: Vec<&str> = prefix.to_vec();
                 // Use leaked string to maintain lifetime (acceptable for path traversal)
-                let leaked: &'static str = Box::leak(name.clone().into_boxed_str());
+                let leaked: &'static str = Box::leak(name.into_boxed_str());
                 new_prefix.push(leaked);
                 self.list_recursive(&path, &new_prefix, results)?;
             } else if path.extension().is_some_and(|e| e == "json") {

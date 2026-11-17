@@ -334,7 +334,7 @@ fn handle_plugins_command() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    println!("{:<16} {:<10} {:<8} Description", "Name", "Version", "Type",);
+    println!("{:<16} {:<10} {:<8} Description", "Name", "Version", "Type");
     println!("{}", "-".repeat(60));
 
     for plugin in &plugins {

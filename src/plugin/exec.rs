@@ -69,7 +69,7 @@ mod tests {
             plugin_type,
             bin: bin.map(String::from),
             endpoint: None,
-            commands: Default::default(),
+            commands: std::collections::HashMap::default(),
             packages: None,
         }
     }
@@ -88,7 +88,7 @@ mod tests {
         let empty: &[&str] = &[];
         let (bin, args) = resolve_bin_and_args(&manifest, empty).unwrap();
         assert_eq!(bin, "echo");
-        assert!(args.is_empty());
+        assert_eq!(args, &[] as &[&str]);
     }
 
     #[test]

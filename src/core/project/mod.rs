@@ -166,7 +166,7 @@ mod tests {
         // Should be a git project
         assert!(project.vcs.is_some());
         assert_ne!(project.id, GLOBAL_PROJECT_ID);
-        assert!(!project.id.is_empty());
+        assert_ne!(project.id, "");
     }
 
     #[test]

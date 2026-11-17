@@ -220,8 +220,8 @@ mod tests {
         ));
         manager.save_message(&session.id, &msg).unwrap();
 
-        let part = Part::Text(TextPart::new(&msg.id(), &session.id, "Hello world"));
-        manager.save_part(&msg.id(), &part).unwrap();
+        let part = Part::Text(TextPart::new(msg.id(), &session.id, "Hello world"));
+        manager.save_part(msg.id(), &part).unwrap();
 
         // Export
         let exported = manager.export_session(&session.id).unwrap();

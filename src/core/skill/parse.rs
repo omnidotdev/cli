@@ -113,7 +113,7 @@ mod tests {
         let skill_file = dir.path().join("SKILL.md");
         fs::write(
             &skill_file,
-            r#"---
+            r"---
 name: test-skill
 description: A test skill for testing
 tags:
@@ -123,7 +123,7 @@ tags:
 # Test Skill
 
 This is the skill content.
-"#,
+",
         )
         .unwrap();
 
@@ -144,18 +144,18 @@ This is the skill content.
         let skill_file = dir.path().join("SKILL.md");
         fs::write(
             &skill_file,
-            r#"---
+            r"---
 name: minimal
 description: Minimal skill
 ---
 Content here.
-"#,
+",
         )
         .unwrap();
 
         let skill = parse_skill_file(&skill_file).unwrap();
         assert_eq!(skill.id, "minimal");
-        assert!(skill.metadata.tags.is_empty());
+        assert_eq!(skill.metadata.tags, Vec::<String>::new());
     }
 
     #[test]

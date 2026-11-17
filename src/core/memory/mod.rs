@@ -149,7 +149,7 @@ impl MemoryManager {
             store.items.into_iter().partition(|i| i.pinned);
 
         // Sort unpinned by access recency
-        unpinned.sort_by(|a, b| b.accessed_at.cmp(&a.accessed_at));
+        unpinned.sort_by_key(|item| std::cmp::Reverse(item.accessed_at));
 
         // Combine: pinned first, then recent
         let mut result = pinned;
@@ -240,7 +240,7 @@ mod tests {
     #[test]
     fn format_for_prompt_empty() {
         let output = MemoryManager::format_for_prompt(&[]);
-        assert!(output.is_empty());
+        assert_eq!(output, "");
     }
 
     #[test]

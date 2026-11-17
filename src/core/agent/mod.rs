@@ -340,8 +340,7 @@ impl Agent {
                 // Load if session has messages
                 let has_messages = manager
                     .list_messages(&session.id)
-                    .map(|msgs| !msgs.is_empty())
-                    .unwrap_or(false);
+                    .is_ok_and(|msgs| !msgs.is_empty());
                 (session.id, has_messages)
             }
             SessionTarget::Specific(id_or_slug) => {
