@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.7.0
+
+### Minor Changes
+
+- [#49](https://github.com/omnidotdev/cli/pull/49) [`6f04ee5`](https://github.com/omnidotdev/cli/commit/6f04ee5fc321974cf501cca63ec0c6ae6edd8fa1) Thanks [@coopbri](https://github.com/coopbri)! - `omni auth login` now connects the CLI to cloud Synapse with a Synapse API key (hidden prompt or stdin, checked against the gateway, stored on the `synapse` provider with owner-only file permissions) and makes Synapse the active provider. The old email and password sign-in stored a session token the gateway never accepted, so cloud usage could not work or bill; that flow and the unused bearer-token path are removed. `omni auth logout` removes the stored key
+
+- [#50](https://github.com/omnidotdev/cli/pull/50) [`d11c635`](https://github.com/omnidotdev/cli/commit/d11c635588a55afe5541db898e1c266be329914e) Thanks [@coopbri](https://github.com/coopbri)! - Remove the client-side Aether usage recorder. The CLI no longer reads `AETHER_URL`, `AETHER_APP_ID`, or `AETHER_SERVICE_API_KEY` or posts usage costs: a client never holds a service key, and the Synapse gateway meters and bills AI usage. The status bar and `/cost` now label the session cost as a list-price estimate, not the bill
+
+- [#30](https://github.com/omnidotdev/cli/pull/30) [`ef1cb6a`](https://github.com/omnidotdev/cli/commit/ef1cb6a1132a78070b2d709dde29f41887ec9c7a) Thanks [@coopbri](https://github.com/coopbri)! - Add ecosystem plugin system with three plugin types (bin, api, launch), plugin discovery from config directory and PATH, and CLI routing via external_subcommand
+
+- [#31](https://github.com/omnidotdev/cli/pull/31) [`b7b0321`](https://github.com/omnidotdev/cli/commit/b7b03219915cdb83355b1b8217531c0e6d1cef86) Thanks [@coopbri](https://github.com/coopbri)! - Remove the standalone `omni shell` subcommand in favor of a unified agent interface. Natural language shell tasks are now handled by `omni agent`, which routes simple shell commands through its existing tool system. This aligns with industry best practice (single agentic entry point) and reduces user-facing complexity.
+
+  Breaking change: `omni shell "list files"` is now `omni agent "list files"` (or `omni a "list files"`)
+
+### Patch Changes
+
+- [#47](https://github.com/omnidotdev/cli/pull/47) [`e4c600b`](https://github.com/omnidotdev/cli/commit/e4c600bbe6776e1ff5bc9d91b07c3ad46a9edc17) Thanks [@coopbri](https://github.com/coopbri)! - Update `agent-core` and `llm` to 1.3.8
+
+- [#46](https://github.com/omnidotdev/cli/pull/46) [`0e252d5`](https://github.com/omnidotdev/cli/commit/0e252d5ca9ff6b0b8f9509d76a0f21a6401869b2) Thanks [@coopbri](https://github.com/coopbri)! - Default to `claude-sonnet-5-5` and title sessions with `claude-haiku-5-5`, replacing retired Claude model ids that now fail upstream, and price the current Claude models for usage estimates
+
+- [#53](https://github.com/omnidotdev/cli/pull/53) [`034b06d`](https://github.com/omnidotdev/cli/commit/034b06d9fca5e940c802ad597b50f7e3bc489ea4) Thanks [@coopbri](https://github.com/coopbri)! - Route knowledge retrieval (embeddings and query condensing) through the Synapse gateway when you sign in with a Synapse API key, instead of sending that key to OpenAI. A Synapse key is now only ever sent to your Synapse gateway; an OpenAI key still goes directly to OpenAI. Semantic knowledge search also works when no `openai` provider is configured
+
 ## 0.6.0
 
 ### Minor Changes
